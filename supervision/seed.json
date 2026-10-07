@@ -1,0 +1,320 @@
+{
+ "noeuds": [
+  {
+   "commune": "Cannes",
+   "lat": 43.551,
+   "lon": 7.03,
+   "nom": "FR06-CANN Lutetia P1",
+   "proprio": "externe",
+   "role": "repeteur",
+   "statut": "en-ligne",
+   "voisins": [],
+   "id": "FR06-CANN-Lutetia-P1"
+  },
+  {
+   "commune": "Cannes",
+   "lat": 43.563,
+   "lon": 7.012,
+   "nom": "FR06-CANNesCarnot",
+   "proprio": "externe",
+   "role": "repeteur",
+   "statut": "en-ligne",
+   "voisins": [],
+   "id": "FR06-CANNesCarnot"
+  },
+  {
+   "aFaire": "",
+   "alt": 230,
+   "antenne": "",
+   "bruit": "",
+   "commune": "Mandelieu-la-Napoule",
+   "erreursRx": "",
+   "firmware": "",
+   "lat": 43.55,
+   "lon": 6.925,
+   "maj": "",
+   "materiel": "",
+   "nom": "FR06-MAND-ADRASEC06",
+   "notes": "Gestion d'énergie à distance : préférer powersaving on/off (poweroff impose une intervention sur site). Batterie lisible dans l'onglet Statut.",
+   "proprio": "adrasec",
+   "role": "repeteur",
+   "site": "Site ~230 m",
+   "statut": "en-ligne",
+   "tx": "",
+   "voisins": [],
+   "id": "FR06-MAND-ADRASEC06"
+  },
+  {
+   "commune": "Mouans-Sartoux",
+   "lat": 43.621,
+   "lon": 6.97,
+   "nom": "FR06-MOUAnsSartoux",
+   "proprio": "externe",
+   "role": "repeteur",
+   "statut": "en-ligne",
+   "voisins": [],
+   "id": "FR06-MOUAnsSartoux"
+  },
+  {
+   "aFaire": "Suivre la mise en service permanente",
+   "alt": "",
+   "antenne": "",
+   "bruit": "",
+   "commune": "Mougins",
+   "erreursRx": "",
+   "firmware": "",
+   "lat": 43.607,
+   "lon": 7.012,
+   "maj": "",
+   "materiel": "",
+   "nom": "FR06-MOUG-ADRASEC06",
+   "notes": "",
+   "proprio": "adrasec",
+   "role": "repeteur",
+   "site": "",
+   "statut": "test",
+   "tx": "",
+   "voisins": [],
+   "id": "FR06-MOUG-ADRASEC06"
+  },
+  {
+   "aFaire": "Mise à jour OTA v1.16.0 → v1.17.1 depuis le pied du clocher (start ota, fichier .bin non merged)",
+   "alt": "",
+   "antenne": "35 cm, 3 dBi + filtre passe-bande 868 MHz",
+   "bruit": -112,
+   "commune": "Mougins",
+   "erreursRx": 1789,
+   "firmware": "v1.16.0",
+   "lat": 43.6,
+   "lon": 7,
+   "maj": "2026-09-19T21:00:00+02:00",
+   "materiel": "Heltec V3",
+   "nom": "FR06-MOUGins-ADRASEC06",
+   "notes": "Antennes de téléphonie mobile à ~30 m. Bruit passé de ~−90 à −112 dBm après pose du filtre. 1 789 erreurs RX sur ~5 h : site haut qui reçoit beaucoup de signaux faibles et de collisions.",
+   "proprio": "adrasec",
+   "role": "repeteur",
+   "site": "Clocher",
+   "statut": "en-ligne",
+   "tx": 22,
+   "voisins": [],
+   "id": "FR06-MOUGins-ADRASEC06"
+  },
+  {
+   "aFaire": "Contrôler la carte 36 h : nouveaux pairs sortants après passage à 14 dBm ?",
+   "alt": "",
+   "antenne": "35 cm, 3 dBi",
+   "bruit": "",
+   "commune": "Mougins",
+   "erreursRx": 271,
+   "firmware": "v1.17.1",
+   "lat": 43.592,
+   "lon": 6.988,
+   "maj": "2026-09-19T21:00:00+02:00",
+   "materiel": "Heltec T096",
+   "nom": "FR06-MOUGins-F4JCF",
+   "notes": "TX passée de 9 à 14 dBm le 19/09 pour mieux atteindre Mandelieu et FR06-MOUG-ADRASEC06.",
+   "proprio": "adrasec",
+   "role": "repeteur",
+   "site": "Domicile, 5 m du sol",
+   "statut": "en-ligne",
+   "tx": 14,
+   "voisins": [
+    {
+     "nom": "FR06-MOUGins-ADRASEC06",
+     "snr": 11.5
+    },
+    {
+     "nom": "FR06-STVA-RPL1w",
+     "snr": 2.25
+    },
+    {
+     "nom": "FR06-CANNesCarnot",
+     "snr": -3.75
+    },
+    {
+     "nom": "FR06-CANN Lutetia P1",
+     "snr": -10.5
+    }
+   ],
+   "id": "FR06-MOUGins-F4JCF"
+  },
+  {
+   "commune": "Saint-Vallier-de-Thiey",
+   "lat": 43.698,
+   "lon": 6.848,
+   "nom": "FR06-STVA-RPL1w",
+   "proprio": "externe",
+   "role": "repeteur",
+   "statut": "en-ligne",
+   "voisins": [],
+   "id": "FR06-STVA-RPL1w"
+  },
+  {
+   "alt": 2080,
+   "commune": "Moulinet",
+   "lat": 44.01,
+   "lon": 7.425,
+   "nom": "Authion",
+   "notes": "Nœud autonome solaire, site saisonnier",
+   "proprio": "adrasec",
+   "role": "repeteur",
+   "statut": "prevu",
+   "voisins": [],
+   "id": "site-authion"
+  },
+  {
+   "alt": 1270,
+   "commune": "Caussols",
+   "lat": 43.753,
+   "lon": 6.921,
+   "nom": "Plateau de Calern",
+   "notes": "Nœud autonome solaire",
+   "proprio": "adrasec",
+   "role": "repeteur",
+   "statut": "prevu",
+   "voisins": [],
+   "id": "site-calern"
+  },
+  {
+   "alt": 1778,
+   "commune": "Gréolières",
+   "lat": 43.814,
+   "lon": 6.946,
+   "nom": "Cheiron",
+   "notes": "Nœud autonome solaire, site saisonnier",
+   "proprio": "adrasec",
+   "role": "repeteur",
+   "statut": "prevu",
+   "voisins": [],
+   "id": "site-cheiron"
+  },
+  {
+   "alt": 1335,
+   "commune": "Gourdon",
+   "lat": 43.723,
+   "lon": 6.978,
+   "nom": "Gourdon",
+   "proprio": "adrasec",
+   "role": "repeteur",
+   "statut": "prevu",
+   "voisins": [],
+   "id": "site-gourdon"
+  },
+  {
+   "commune": "Grasse",
+   "lat": 43.66,
+   "lon": 6.925,
+   "nom": "Site Grasse",
+   "proprio": "adrasec",
+   "role": "repeteur",
+   "statut": "prevu",
+   "voisins": [],
+   "id": "site-grasse"
+  },
+  {
+   "commune": "Menton",
+   "lat": 43.776,
+   "lon": 7.497,
+   "nom": "Base Menton",
+   "proprio": "adrasec",
+   "role": "repeteur",
+   "statut": "prevu",
+   "voisins": [],
+   "id": "site-menton"
+  },
+  {
+   "alt": 870,
+   "commune": "Aspremont",
+   "lat": 43.769,
+   "lon": 7.249,
+   "nom": "Mont Chauve d'Aspremont",
+   "proprio": "adrasec",
+   "role": "repeteur",
+   "statut": "prevu",
+   "voisins": [],
+   "id": "site-mont-chauve"
+  },
+  {
+   "alt": 1549,
+   "commune": "Revest-les-Roches",
+   "lat": 43.958,
+   "lon": 7.123,
+   "nom": "Mont Vial",
+   "proprio": "adrasec",
+   "role": "repeteur",
+   "statut": "prevu",
+   "voisins": [],
+   "id": "site-mont-vial"
+  },
+  {
+   "commune": "Nice",
+   "lat": 43.703,
+   "lon": 7.266,
+   "nom": "Base Nice",
+   "proprio": "adrasec",
+   "role": "repeteur",
+   "statut": "prevu",
+   "voisins": [],
+   "id": "site-nice"
+  },
+  {
+   "commune": "Sospel",
+   "lat": 43.877,
+   "lon": 7.448,
+   "nom": "Sospel",
+   "proprio": "adrasec",
+   "role": "repeteur",
+   "statut": "prevu",
+   "voisins": [],
+   "id": "site-sospel"
+  },
+  {
+   "commune": "Saint-Martin-Vésubie",
+   "lat": 44.069,
+   "lon": 7.256,
+   "nom": "Saint-Martin-Vésubie",
+   "proprio": "adrasec",
+   "role": "repeteur",
+   "statut": "prevu",
+   "voisins": [],
+   "id": "site-st-martin-vesubie"
+  },
+  {
+   "alt": 1604,
+   "commune": "La Bollène-Vésubie",
+   "lat": 43.977,
+   "lon": 7.391,
+   "nom": "Col de Turini",
+   "proprio": "adrasec",
+   "role": "repeteur",
+   "statut": "prevu",
+   "voisins": [],
+   "id": "site-turini"
+  },
+  {
+   "commune": "Valbonne",
+   "lat": 43.641,
+   "lon": 7.009,
+   "nom": "Site Valbonne",
+   "proprio": "adrasec",
+   "role": "repeteur",
+   "statut": "prevu",
+   "voisins": [],
+   "id": "site-valbonne"
+  }
+ ],
+ "journal": [
+  {
+   "auteur": "F4JCF",
+   "date": "2026-09-19T20:30:00+02:00",
+   "noeud": "FR06-MOUGins-ADRASEC06",
+   "texte": "Diagnostic à distance : 1 789 erreurs RX (contre 271 sur F4JCF), bruit −112 dBm avec filtre. Asymétrie 3,2:1 sur la carte = artefact de comptage, pas un défaut radio. OTA vers v1.17.1 à prévoir."
+  },
+  {
+   "auteur": "F4JCF",
+   "date": "2026-09-19T21:00:00+02:00",
+   "noeud": "FR06-MOUGins-F4JCF",
+   "texte": "TX passée de 9 à 14 dBm (set tx 14 puis advert). Période d'observation de 24 à 36 h sur la carte avant d'évaluer les nouveaux pairs sortants."
+  }
+ ]
+}

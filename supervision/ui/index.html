@@ -1,0 +1,706 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Supervision MeshCore ADRASEC 06</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+html{color-scheme:light}
+body{margin:0}
+[hidden]{display:none!important}
+
+/* Layout: bandeau paramètres radio · synthèse d'état · carte schématique + fiche nœud · tableau · journal & actions */
+:root{
+  --bg:#eef1f3; --panel:#ffffff; --sunk:#e3e8ec; --line:#cdd5dc; --fg:#17232e; --muted:#5a6876;
+  --accent:#c4520f; --accent-ink:#ffffff; --navy:#1d3a57;
+  --ok:#2f8a4c; --warn:#b7790d; --crit:#c23434; --test:#2f6fb5; --plan:#8794a1;
+  --sea:#d6e3ec; --land:#f6f8f9;
+  --f-display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"Source Sans 3",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f161d; --panel:#16212b; --sunk:#1c2934; --line:#2b3a47; --fg:#e4ebf0; --muted:#93a3b2;
+  --accent:#ec7a33; --accent-ink:#1a0d04; --navy:#8db6dc;
+  --ok:#4fbf72; --warn:#e2a43a; --crit:#ee6262; --test:#6aa6e8; --plan:#6f7f8e;
+  --sea:#13283a; --land:#1a2631; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f161d; --panel:#16212b; --sunk:#1c2934; --line:#2b3a47; --fg:#e4ebf0; --muted:#93a3b2;
+  --accent:#ec7a33; --accent-ink:#1a0d04; --navy:#8db6dc;
+  --ok:#4fbf72; --warn:#e2a43a; --crit:#ee6262; --test:#6aa6e8; --plan:#6f7f8e;
+  --sea:#13283a; --land:#1a2631; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.45;padding-inline:16px;padding-block:0 40px}
+.wrap{max-width:1240px;margin:0 auto;display:grid;gap:18px}
+h1,h2,h3{font-family:var(--f-display);font-weight:600;letter-spacing:.01em;margin:0;text-wrap:balance}
+h2{font-size:1.35rem;text-transform:uppercase;letter-spacing:.06em;color:var(--navy)}
+.mono,.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* En-tête */
+header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px;padding-block:22px 14px;border-bottom:3px solid var(--accent)}
+.brand{display:grid;gap:2px}
+.eyebrow{font-family:var(--f-mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+.brand h1{font-size:clamp(1.8rem,4vw,2.5rem);line-height:1}
+.radio{display:flex;flex-wrap:wrap;gap:6px}
+.radio span{font-family:var(--f-mono);font-size:.78rem;padding:4px 8px;border:1px solid var(--line);background:var(--panel);border-radius:3px}
+.radio b{font-weight:500;color:var(--muted);margin-right:4px}
+
+/* Synthèse */
+.summary{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:999px;background:var(--panel);border:1px solid var(--line);font-weight:600;font-size:.9rem}
+.chip .n{font-family:var(--f-mono)}
+.chip.on{border-color:var(--fg)}
+.dot{width:10px;height:10px;border-radius:50%;flex:none;background:var(--c,var(--plan))}
+.dot.hollow{background:transparent;border:2px solid var(--c,var(--plan))}
+.summary .spacer{flex:1}
+.btn{border:1px solid var(--line);background:var(--panel);padding:7px 14px;border-radius:4px;font-weight:600}
+.btn:hover{border-color:var(--fg)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.danger{color:var(--crit);border-color:var(--crit)}
+.btn.small{padding:4px 10px;font-size:.85rem}
+
+/* Grille principale */
+.main{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:18px}
+@media (max-width:900px){.main{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px;display:grid;gap:12px;min-width:0;align-content:start}
+.panel-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+
+/* Carte */
+.map-box{overflow:hidden;border-radius:4px;border:1px solid var(--line);background:var(--sea)}
+#map{display:block;width:100%;height:auto}
+#map .land{fill:var(--land)}
+#map .coast{fill:none;stroke:var(--line);stroke-width:1.2}
+#map .grid{stroke:var(--line);stroke-width:.5;stroke-dasharray:2 4}
+#map text{font-family:var(--f-mono);fill:var(--muted)}
+#map .lbl{font-size:10px;fill:var(--fg)}
+#map .lbl.dim{fill:var(--muted)}
+#map .node{cursor:pointer}
+#map .node:hover circle,#map .node.sel circle{stroke-width:3}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.82rem;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{display:inline-block;width:22px;height:0;border-top:3px solid var(--c)}
+
+/* Fiche */
+.fiche dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0}
+.fiche dt{color:var(--muted);font-size:.85rem}
+.fiche dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:.8rem;font-weight:600;padding:2px 9px;border-radius:999px;border:1px solid var(--c);color:var(--c);white-space:nowrap}
+.flag{font-size:.75rem;font-weight:600;color:var(--warn);border:1px solid var(--warn);border-radius:3px;padding:0 5px;margin-left:6px;white-space:nowrap}
+.todo{border-left:3px solid var(--accent);background:var(--sunk);padding:8px 10px;border-radius:0 4px 4px 0}
+.neigh{display:grid;gap:4px}
+.neigh div{display:flex;justify-content:space-between;gap:10px;font-size:.9rem}
+.snr{font-family:var(--f-mono);font-variant-numeric:tabular-nums;color:var(--c)}
+.empty{padding:22px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:4px}
+
+/* Formulaire */
+form.edit{display:grid;gap:10px}
+.fgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media (max-width:480px){.fgrid{grid-template-columns:minmax(0,1fr)}}
+label{display:grid;gap:3px;font-size:.82rem;color:var(--muted);min-width:0}
+label.full{grid-column:1/-1}
+input,select,textarea{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:6px 8px;font-size:.92rem;min-width:0}
+textarea{resize:vertical;min-height:60px}
+.actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.confirm{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:.9rem;color:var(--crit)}
+.msg{font-size:.85rem;color:var(--muted)}
+.msg.err{color:var(--crit)}
+
+/* Tableau */
+.tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.tools input{max-width:240px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.seg button{border:0;background:var(--panel);padding:5px 12px;font-size:.85rem;font-weight:600;color:var(--muted)}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--navy);color:var(--panel)}
+.table-wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:880px;font-size:.9rem}
+th{text-align:left;font-family:var(--f-mono);font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500;padding:6px 8px;border-bottom:2px solid var(--line);white-space:nowrap}
+td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:middle}
+tbody tr{cursor:pointer}
+tbody tr:hover{background:var(--sunk)}
+tbody tr.sel{background:var(--sunk);box-shadow:inset 3px 0 0 var(--accent)}
+td.name{font-family:var(--f-mono);font-size:.82rem;font-weight:500;white-space:nowrap}
+td.r{text-align:right}
+
+/* Journal */
+.low{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px}
+@media (max-width:900px){.low{grid-template-columns:minmax(0,1fr)}}
+.log{display:grid;gap:0;max-height:420px;overflow:auto}
+.log article{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;padding:9px 0;border-bottom:1px solid var(--line)}
+.log time{font-family:var(--f-mono);font-size:.78rem;color:var(--muted);white-space:nowrap}
+.log .who{font-family:var(--f-mono);font-size:.78rem;color:var(--accent)}
+.log p{grid-column:2;margin:0;overflow-wrap:anywhere}
+.todo-list{display:grid;gap:8px}
+.todo-list button{text-align:left;border:1px solid var(--line);background:var(--bg);border-radius:4px;padding:8px 10px;display:grid;gap:2px}
+.todo-list button:hover{border-color:var(--fg)}
+.todo-list .name{font-family:var(--f-mono);font-size:.78rem;color:var(--muted)}
+footer{font-size:.8rem;color:var(--muted)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* Liaison USB */
+.link{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
+.link-ctl{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.link-ctl select{width:auto;max-width:100%}
+.link-ctl #port,.link-ctl #bleDev{min-width:240px}
+.grp{display:inline-flex;flex-wrap:wrap;gap:8px;align-items:center}
+.link-ctl label{display:inline-flex;flex-direction:row;align-items:center;gap:6px;font-size:.88rem;color:var(--fg)}
+.link-ctl label input{width:auto}
+.link-state{display:flex;align-items:center;gap:10px;min-width:0}
+.link-state .txt{display:grid;min-width:0}
+.link-state .txt b{font-weight:600}
+.link-state .txt span{font-size:.85rem;color:var(--muted);overflow-wrap:anywhere}
+.led{width:12px;height:12px;border-radius:50%;flex:none;background:var(--plan)}
+.led.on{background:var(--ok);box-shadow:0 0 0 4px color-mix(in srgb,var(--ok) 25%,transparent)}
+.led.busy{background:var(--test);animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.35}}
+details.activity{grid-column:1/-1;font-size:.85rem}
+details.activity summary{cursor:pointer;color:var(--muted)}
+details.activity ol{list-style:none;margin:8px 0 0;padding:0;max-height:160px;overflow:auto;display:grid;gap:2px}
+details.activity li{display:grid;grid-template-columns:auto 1fr;gap:10px}
+details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78rem}
+.spark{display:grid;gap:4px}
+.spark svg{width:100%;height:56px;display:block}
+.spark .head{display:flex;justify-content:space-between;font-size:.82rem;color:var(--muted)}
+.spark .head b{color:var(--fg);font-family:var(--f-mono);font-weight:500}
+.sparks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media (max-width:520px){.sparks{grid-template-columns:minmax(0,1fr)}}
+.auto{font-size:.72rem;font-family:var(--f-mono);color:var(--test);border:1px solid var(--test);border-radius:3px;padding:0 4px;margin-left:6px}
+.log article.is-auto .who{color:var(--test)}
+.reading{font-size:.82rem;color:var(--muted)}
+.foot{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between}
+.toast{position:fixed;right:16px;bottom:16px;background:var(--fg);color:var(--panel);padding:10px 14px;border-radius:4px;font-size:.9rem;max-width:min(420px,calc(100% - 32px))}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <span class="eyebrow">ADRASEC 06 · Réseau LoRa MeshCore</span>
+      <h1>Supervision du réseau</h1>
+    </div>
+    <div class="radio" id="radio" aria-label="Paramètres radio du réseau"></div>
+  </header>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Liaison avec le nœud</h2><span class="muted" style="font-size:.82rem">Nœud MeshCore « Companion » relié à ce PC en USB ou en Bluetooth</span></div>
+    <div class="link">
+      <div class="link-state"><span class="led" id="led"></span><div class="txt"><b id="linkTitle">Non connecté</b><span id="linkMsg">Choisissez USB ou Bluetooth, puis connectez le nœud companion.</span></div></div>
+      <div class="link-ctl">
+        <div class="seg" id="mode" role="group" aria-label="Type de liaison"><button type="button" data-m="usb" aria-pressed="true">USB</button><button type="button" data-m="ble" aria-pressed="false">Bluetooth</button></div>
+        <span class="grp" id="grpUsb"><select id="port" aria-label="Port COM"></select>
+        <button class="btn small" id="refreshPorts" type="button">Actualiser</button></span>
+        <span class="grp" id="grpBle" hidden><select id="bleDev" aria-label="Nœud Bluetooth"><option value="">Premier nœud MeshCore trouvé</option></select>
+        <button class="btn small" id="scanBle" type="button">Rechercher</button>
+        <input id="blePin" inputmode="numeric" maxlength="6" placeholder="PIN" aria-label="Code PIN Bluetooth" style="width:7em"></span>
+        <button class="btn primary" id="connect" type="button">Connecter</button>
+        <button class="btn" id="disconnect" type="button" hidden>Déconnecter</button>
+        <button class="btn" id="pollNow" type="button" disabled>Interroger maintenant</button>
+        <label>Toutes les <select id="interval"><option value="5">5 min</option><option value="10">10 min</option><option value="15">15 min</option><option value="30">30 min</option><option value="60">1 h</option></select></label>
+        <label><input type="checkbox" id="discover"> Ajouter les répéteurs entendus</label>
+      </div>
+      <details class="activity"><summary>Activité de la liaison</summary><ol id="events"></ol></details>
+    </div>
+  </section>
+
+  <section class="summary" id="summary" aria-label="Synthèse des états"></section>
+
+  <div class="main">
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Carte du réseau</h2>
+        <span class="muted" style="font-size:.82rem">Vue schématique · cliquez un nœud</span>
+      </div>
+      <div class="map-box"><svg id="map" viewBox="0 0 560 560" role="img" aria-label="Carte schématique des nœuds MeshCore des Alpes-Maritimes"></svg></div>
+      <div class="legend">
+        <span><i style="--c:var(--ok)"></i>SNR ≥ +5 dB</span>
+        <span><i style="--c:var(--warn)"></i>−5 à +5 dB</span>
+        <span><i style="--c:var(--crit)"></i>&lt; −5 dB</span>
+      </div>
+    </section>
+    <section class="panel fiche" id="fiche" aria-live="polite"></section>
+  </div>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Nœuds</h2>
+      <div class="tools">
+        <input id="q" type="search" placeholder="Rechercher un nœud, un site…" aria-label="Rechercher">
+        <div class="seg" id="scope" role="group" aria-label="Filtre">
+          <button data-v="tous" aria-pressed="true">Tous</button>
+          <button data-v="adrasec" aria-pressed="false">ADRASEC</button>
+          <button data-v="externe" aria-pressed="false">Voisins</button>
+          <button data-v="prevu" aria-pressed="false">Prévus</button>
+        </div>
+      </div>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Nœud</th><th>État</th><th>Site</th><th>Matériel</th><th>Firmware</th><th class="r">TX dBm</th><th class="r">Bruit dBm</th><th class="r">Err. RX</th><th class="r">Batt. V</th><th>Vérifié</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table></div>
+  </section>
+
+  <div class="low">
+    <section class="panel">
+      <div class="panel-head"><h2>Actions en attente</h2></div>
+      <div class="todo-list" id="todos"></div>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Journal d'exploitation</h2></div>
+      <form id="logForm" class="edit">
+        <div class="fgrid">
+          <label>Nœud<select id="logNode"></select></label>
+          <label>Opérateur (indicatif)<input id="logWho" placeholder="F4JCF" maxlength="20"></label>
+          <label class="full">Observation ou intervention<textarea id="logText" required placeholder="Ex. : passage TX 9 → 14 dBm, advert envoyé"></textarea></label>
+        </div>
+        <div class="actions"><button class="btn primary" type="submit">Ajouter au journal</button><span class="msg" id="logMsg"></span></div>
+      </form>
+      <div class="log" id="log"></div>
+    </section>
+  </div>
+
+  <footer class="foot">
+    <span id="footInfo">Données enregistrées sur ce PC.</span>
+    <span class="actions"><button class="btn small" id="export" type="button">Exporter les données</button><button class="btn small" id="import" type="button">Importer un export</button></span>
+  </footer>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(() => {
+  const STATUTS = {
+    "en-ligne":  {t:"En ligne",  c:"var(--ok)"},
+    "degrade":   {t:"Dégradé",   c:"var(--warn)"},
+    "hors-ligne":{t:"Hors ligne",c:"var(--crit)"},
+    "test":      {t:"En test",   c:"var(--test)"},
+    "prevu":     {t:"Prévu",     c:"var(--plan)", hollow:true},
+  };
+  const ROLES = {repeteur:"Répéteur", room:"Room server", compagnon:"Compagnon"};
+  const $ = s => document.querySelector(s);
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+  let api = null, nodes = [], journal = [], liaison = {}, rev = -1, loaded = false;
+  let sel = null, editing = null, filter = {scope:"tous", q:"", statut:null}, confirmDel = false, histFor = null, hist = [];
+
+  /* ---------- utilitaires ---------- */
+  const ver = v => String(v||"").replace(/^v/i,"").split(".").map(n => parseInt(n,10)||0);
+  const cmpVer = (a,b) => { const x=ver(a), y=ver(b); for (let i=0;i<3;i++){ if((x[i]||0)!==(y[i]||0)) return (x[i]||0)-(y[i]||0);} return 0; };
+  const refFw = () => nodes.filter(n => n.firmware && n.proprio!=="externe").reduce((m,n) => !m || cmpVer(n.firmware,m)>0 ? n.firmware : m, null);
+  const fwOld = n => { const r = refFw(); return n.proprio!=="externe" && n.firmware && r && cmpVer(n.firmware, r) < 0; };
+  const snrColor = s => s >= 5 ? "var(--ok)" : s >= -5 ? "var(--warn)" : "var(--crit)";
+  const fmtSnr = s => (s > 0 ? "+" : s < 0 ? "−" : "") + Math.abs(s).toLocaleString("fr-FR",{maximumFractionDigits:2}) + " dB";
+  const empty = v => v === "" || v == null || (typeof v === "number" && isNaN(v));
+  const fmtNum = (v,d=0) => empty(v) || isNaN(v) ? "—" : Number(v).toLocaleString("fr-FR",{maximumFractionDigits:d}).replace("-", "−");
+  const ago = iso => {
+    if (!iso) return "—";
+    const ms = Date.now() - new Date(iso);
+    if (isNaN(ms)) return "—";
+    const m = Math.floor(ms/60000);
+    if (m < 60) return m <= 1 ? "à l'instant" : `il y a ${m} min`;
+    const h = Math.floor(m/60); if (h < 24) return `il y a ${h} h`;
+    const d = Math.floor(h/24); return d === 1 ? "hier" : `il y a ${d} j`;
+  };
+  const fmtDate = iso => { try { return new Date(iso).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"}); } catch(e){ return iso; } };
+  const fmtUptime = s => { if (empty(s)) return ""; const d=Math.floor(s/86400), h=Math.floor(s%86400/3600), m=Math.floor(s%3600/60); return (d?d+" j ":"")+h+" h "+String(m).padStart(2,"0"); };
+  const statusOf = n => n.proprio === "externe" ? {t:"Voisin", c:"var(--navy)"} : (STATUTS[n.statut] || STATUTS.prevu);
+  const pill = n => { const s = statusOf(n); return `<span class="pill" style="--c:${s.c}"><span class="dot${s.hollow?" hollow":""}" style="--c:${s.c}"></span>${s.t}</span>`; };
+  const byName = name => nodes.find(n => (n.nom||"").toLowerCase() === String(name||"").toLowerCase());
+  let toastT;
+  const toast = t => { const el=$("#toast"); el.textContent=t; el.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>el.hidden=true, 4000); };
+
+  /* ---------- en-tête radio ---------- */
+  function renderRadio(){
+    const r = liaison.radio || {};
+    const f = r.radio_freq ? (+r.radio_freq).toLocaleString("fr-FR",{maximumFractionDigits:3}) + " MHz" : "869,618 MHz";
+    const bw = r.radio_bw ? (+r.radio_bw).toLocaleString("fr-FR",{maximumFractionDigits:1}) + " kHz" : "62,5 kHz";
+    const sf = r.radio_sf || 8, cr = r.radio_cr ? "4/" + r.radio_cr : "4/8";
+    $("#radio").innerHTML = `<span><b>f</b>${f}</span><span><b>BW</b>${bw}</span><span><b>SF</b>${sf}</span><span><b>CR</b>${cr}</span>` +
+      (liaison.connecte ? `<span><b>Lu sur</b>${esc(liaison.noeudLocal||"nœud companion")}</span>` : `<span><b>Preset</b>EU narrow</span>`);
+  }
+
+  /* ---------- liaison ---------- */
+  let mode = "usb", lastBle = "";
+  function setMode(m){
+    mode = m;
+    document.querySelectorAll("#mode button").forEach(b => b.setAttribute("aria-pressed", b.dataset.m===m));
+    $("#grpUsb").hidden = m !== "usb"; $("#grpBle").hidden = m !== "ble";
+  }
+  async function loadSettings(){
+    const r = await api.derniers_reglages();
+    lastBle = r.ble || ""; $("#blePin").value = r.pin || "";
+    if (lastBle) $("#bleDev").innerHTML = `<option value="">Premier nœud MeshCore trouvé</option><option value="${esc(lastBle)}" selected>${esc(lastBle)} (dernier utilisé)</option>`;
+    setMode(r.mode === "ble" ? "ble" : "usb");
+    await loadPorts(r.port);
+  }
+  async function scanBle(){
+    const b = $("#scanBle"); b.disabled = true; b.textContent = "Recherche…";
+    const r = await api.chercher_bluetooth();
+    b.disabled = false; b.textContent = "Rechercher";
+    if (!r.ok) { toast(r.erreur); return; }
+    const opts = r.noeuds.map(n => `<option value="${esc(n.adresse)}"${n.adresse===lastBle?" selected":""}>${esc(n.nom)} · ${n.rssi ?? "?"} dBm</option>`).join("");
+    $("#bleDev").innerHTML = opts || `<option value="">Aucun nœud MeshCore trouvé</option>`;
+    toast(r.noeuds.length ? `${r.noeuds.length} nœud(s) MeshCore trouvé(s)` : "Aucun nœud MeshCore en Bluetooth à portée. Est-il flashé en Companion Bluetooth et libre (pas connecté au téléphone) ?");
+  }
+  async function loadPorts(last){
+    const ports = await api.ports();
+    const cur = $("#port").value || last || "";
+    $("#port").innerHTML = ports.length
+      ? ports.map(p => `<option value="${esc(p.port)}"${p.port===cur?" selected":""}>${esc(p.port)} — ${esc(p.description||"port série")}</option>`).join("")
+      : `<option value="">Aucun port COM détecté</option>`;
+  }
+  function renderLink(){
+    const L = liaison;
+    $("#led").className = "led" + (L.occupe ? " busy" : L.connecte ? " on" : "");
+    $("#linkTitle").textContent = L.connecte ? `Connecté · ${L.noeudLocal || "nœud companion"} (${L.port})` : "Non connecté";
+    let msg = L.message || "";
+    if (!L.bibliotheque) msg = "La bibliothèque meshcore est absente : la lecture automatique est désactivée.";
+    else if (L.connecte && !L.occupe && L.prochainCycle) {
+      const s = Math.max(0, Math.round(L.prochainCycle - Date.now()/1000));
+      msg += ` · prochaine lecture dans ${s >= 60 ? Math.round(s/60) + " min" : s + " s"}`;
+    } else if (!L.connecte) msg = "Choisissez USB ou Bluetooth, puis connectez le nœud companion.";
+    $("#linkMsg").textContent = msg;
+    $("#connect").hidden = !!L.connecte; $("#disconnect").hidden = !L.connecte;
+    ["#port","#refreshPorts","#bleDev","#scanBle","#blePin"].forEach(k => $(k).disabled = !!L.connecte);
+    document.querySelectorAll("#mode button").forEach(b => b.disabled = !!L.connecte);
+    if (L.connecte && L.mode && L.mode !== mode) setMode(L.mode);
+    $("#pollNow").disabled = !L.connecte || L.occupe;
+    if (document.activeElement !== $("#interval")) $("#interval").value = String(L.intervalle || 15);
+    $("#discover").checked = !!L.decouverte;
+    $("#events").innerHTML = (L.evenements||[]).map(e => `<li><time>${fmtDate(e.date)}</time><span>${esc(e.texte)}</span></li>`).join("") || `<li><span></span><span class="muted">Aucune activité.</span></li>`;
+  }
+
+  /* ---------- synthèse ---------- */
+  function renderSummary(){
+    const own = nodes.filter(n => n.proprio !== "externe");
+    const parts = Object.entries(STATUTS).map(([k,s]) => {
+      const c = own.filter(n => n.statut === k).length;
+      return `<button class="chip${filter.statut===k?" on":""}" data-st="${k}" aria-pressed="${filter.statut===k}"><span class="dot${s.hollow?" hollow":""}" style="--c:${s.c}"></span>${s.t}<span class="n">${c}</span></button>`;
+    }).join("");
+    const ext = nodes.filter(n => n.proprio === "externe").length;
+    const old = own.filter(fwOld).length;
+    $("#summary").innerHTML = parts +
+      `<span class="chip"><span class="dot" style="--c:var(--navy)"></span>Voisins<span class="n">${ext}</span></span>` +
+      (old ? `<span class="chip" style="color:var(--warn)">Firmware à jour : ${esc(refFw())} · ${old} en retard</span>` : "") +
+      `<span class="spacer"></span><button class="btn primary" id="addNode">Nouveau nœud</button>`;
+  }
+
+  /* ---------- carte ---------- */
+  const B = {lon0:6.78, lon1:7.56, lat0:43.44, lat1:44.10};
+  const W = 560, H = 560, P = 24;
+  const kx = Math.cos(43.77*Math.PI/180);
+  const sc = Math.min((W-2*P)/((B.lon1-B.lon0)*kx), (H-2*P)/(B.lat1-B.lat0));
+  const offX = (W - (B.lon1-B.lon0)*kx*sc)/2, offY = (H - (B.lat1-B.lat0)*sc)/2;
+  const px = (lat,lon) => [offX + (lon-B.lon0)*kx*sc, offY + (B.lat1-lat)*sc];
+  const COAST = [[43.40,6.78],[43.43,6.84],[43.47,6.89],[43.50,6.93],[43.53,6.94],[43.546,6.955],[43.548,7.017],[43.536,7.036],[43.562,7.06],[43.568,7.085],[43.548,7.125],[43.565,7.14],[43.585,7.128],[43.64,7.142],[43.658,7.165],[43.658,7.205],[43.692,7.272],[43.70,7.31],[43.678,7.333],[43.706,7.335],[43.716,7.362],[43.722,7.40],[43.734,7.425],[43.752,7.485],[43.775,7.505],[43.785,7.535],[43.79,7.60]];
+  const PLACES = [["Cannes",43.553,7.017],["Grasse",43.658,6.923],["Nice",43.703,7.266],["Menton",43.776,7.497],["Antibes",43.581,7.125]];
+  const hasPos = n => !empty(n.lat) && !empty(n.lon) && isFinite(n.lat) && isFinite(n.lon);
+
+  function renderMap(){
+    const svg = $("#map");
+    const land = COAST.map(([a,o]) => px(a,o));
+    const landPath = `M${px(44.3,6.6).join(",")} L${px(43.40,6.6).join(",")} ` + land.map(p => "L"+p.join(",")).join(" ") + ` L${px(43.79,7.7).join(",")} L${px(44.3,7.7).join(",")} Z`;
+    let g = `<path class="land" d="${landPath}"/><path class="coast" d="M${land.map(p=>p.join(",")).join(" L")}"/>`;
+    for (let lat=43.5; lat<=44.05; lat+=0.1){ const [,y]=px(lat,0); g += `<line class="grid" x1="0" x2="${W}" y1="${y}" y2="${y}"/><text x="4" y="${y-3}" font-size="9">${lat.toFixed(1)}°N</text>`; }
+    for (let lon=6.9; lon<=7.5; lon+=0.2){ const [x]=px(44,lon); g += `<line class="grid" y1="0" y2="${H}" x1="${x}" x2="${x}"/><text x="${x+3}" y="${H-6}" font-size="9">${lon.toFixed(1)}°E</text>`; }
+    PLACES.forEach(([n,a,o]) => { const [x,y]=px(a,o); g += `<text x="${x}" y="${y+16}" font-size="9" text-anchor="middle" opacity=".7">${n}</text>`; });
+    const [sx,sy] = px(43.5,7.35); g += `<text x="${sx}" y="${sy}" font-size="11" letter-spacing="3" opacity=".6">MÉDITERRANÉE</text>`;
+
+    const vis = nodes.filter(hasPos);
+    const seen = new Set();
+    vis.forEach(n => (n.voisins||[]).forEach(v => {
+      const m = byName(v.nom); if (!m || !hasPos(m)) return;
+      const key = [n.nom,m.nom].sort().join("|"); if (seen.has(key)) return; seen.add(key);
+      const [x1,y1]=px(+n.lat,+n.lon), [x2,y2]=px(+m.lat,+m.lon);
+      const on = sel && (sel===n.id || sel===m.id);
+      g += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${snrColor(+v.snr)}" stroke-width="${on?3:2}" stroke-opacity="${sel && !on ? .25 : .85}" stroke-linecap="round"><title>${esc(n.nom)} ↔ ${esc(m.nom)} : ${fmtSnr(+v.snr)}</title></line>`;
+    }));
+    const order = [...vis].sort((a,b) => (a.statut==="prevu"?0:1)-(b.statut==="prevu"?0:1) || (a.id===sel)-(b.id===sel));
+    order.forEach(n => {
+      const [x,y]=px(+n.lat,+n.lon); const s=statusOf(n);
+      const r = n.proprio==="externe" ? 4.5 : n.statut==="prevu" ? 5 : 6.5;
+      const fill = s.hollow || n.proprio==="externe" ? "var(--panel)" : s.c;
+      const showLbl = (n.statut!=="prevu" && n.proprio!=="externe") || n.id===sel || (+n.alt||0) >= 1000;
+      const short = n.nom.replace(/^FR06-/,"");
+      g += `<g class="node${n.id===sel?" sel":""}" data-id="${esc(n.id)}" tabindex="0" role="button" aria-label="${esc(n.nom)}"><circle cx="${x}" cy="${y}" r="${r}" fill="${fill}" stroke="${s.c}" stroke-width="2"/>` +
+        (fwOld(n) ? `<circle cx="${x+r}" cy="${y-r}" r="2.6" fill="var(--warn)"/>` : "") +
+        (showLbl ? `<text class="lbl${n.statut==="prevu"||n.proprio==="externe"?" dim":""}" x="${x+r+4}" y="${y+3.5}">${esc(short)}</text>` : "") +
+        `<title>${esc(n.nom)} · ${s.t}</title></g>`;
+    });
+    if (!vis.length) g += `<text x="${W/2}" y="${H/2}" text-anchor="middle" font-size="12">${loaded?"Aucun nœud positionné":"Chargement…"}</text>`;
+    svg.innerHTML = g;
+  }
+
+  /* ---------- historique ---------- */
+  function spark(label, unit, pts, digits=0){
+    const vals = pts.filter(p => p.v != null && isFinite(p.v));
+    if (vals.length < 2) return `<div class="spark"><div class="head"><span>${label}</span><b>${vals.length ? fmtNum(vals[0].v,digits)+" "+unit : "—"}</b></div><svg viewBox="0 0 200 56"><text x="100" y="32" text-anchor="middle" font-size="10" fill="var(--muted)" font-family="var(--f-mono)">historique en cours</text></svg></div>`;
+    const t0 = vals[0].t, t1 = vals[vals.length-1].t || t0+1;
+    let lo = Math.min(...vals.map(p=>p.v)), hi = Math.max(...vals.map(p=>p.v)); if (hi===lo){hi+=1;lo-=1;}
+    const X = t => 4 + (t-t0)/(t1-t0||1)*192, Y = v => 50 - (v-lo)/(hi-lo)*42;
+    const line = vals.map((p,i) => (i?"L":"M") + X(p.t).toFixed(1) + "," + Y(p.v).toFixed(1)).join(" ");
+    const last = vals[vals.length-1];
+    return `<div class="spark"><div class="head"><span>${label}</span><b>${fmtNum(last.v,digits)} ${unit}</b></div>
+      <svg viewBox="0 0 200 56" preserveAspectRatio="none"><line x1="0" x2="200" y1="50" y2="50" stroke="var(--line)" stroke-width="1"/>
+      <path d="${line} L${X(last.t).toFixed(1)},54 L4,54 Z" fill="var(--accent)" opacity=".12"/>
+      <path d="${line}" fill="none" stroke="var(--accent)" stroke-width="1.6" vector-effect="non-scaling-stroke"/>
+      <circle cx="${X(last.t)}" cy="${Y(last.v)}" r="2.5" fill="var(--accent)"/></svg>
+      <div class="head"><span>min ${fmtNum(lo,digits)}</span><span>max ${fmtNum(hi,digits)}</span></div></div>`;
+  }
+  async function loadHistory(id){
+    histFor = id; hist = await api.historique(id, 7);
+    if (histFor === id && !editing) renderFiche();
+  }
+
+  /* ---------- fiche ---------- */
+  function renderFiche(){
+    const f = $("#fiche");
+    if (editing) return renderForm(f);
+    const n = nodes.find(x => x.id === sel);
+    if (!n){
+      f.innerHTML = `<div class="panel-head"><h2>Fiche nœud</h2></div>` + (loaded && !nodes.length
+        ? `<div class="empty">Aucun nœud enregistré.<br>Ajoutez le premier avec « Nouveau nœud ».</div>`
+        : `<div class="empty">${loaded ? "Sélectionnez un nœud sur la carte ou dans le tableau." : "Chargement des données…"}</div>`);
+      return;
+    }
+    const neigh = (n.voisins||[]).slice().sort((a,b)=>b.snr-a.snr).map(v =>
+      `<div><span class="mono" style="font-size:.82rem">${esc(v.nom)}${!empty(v.ilYa)?` <span class="muted">(${ago(new Date(Date.now()-v.ilYa*1000).toISOString())})</span>`:""}</span><span class="snr" style="--c:${snrColor(+v.snr)}">${fmtSnr(+v.snr)}</span></div>`).join("");
+    const row = (k,v) => v === "" || v == null ? "" : `<dt>${k}</dt><dd>${v}</dd>`;
+    const own = n.proprio !== "externe" && n.statut !== "prevu";
+    const h = histFor === n.id ? hist : [];
+    const sparks = own && h.length ? `<div class="sparks">
+        ${spark("Bruit", "dBm", h.map(p=>({t:p.ts, v:p.bruit})))}
+        ${spark("Erreurs RX", "", h.map(p=>({t:p.ts, v:p.erreurs})))}
+        ${spark("Batterie", "V", h.map(p=>({t:p.ts, v:p.bat_mv!=null && p.bat_mv>0 ? p.bat_mv/1000 : null})), 2)}
+      </div><span class="reading">Historique des 7 derniers jours</span>` : "";
+    f.innerHTML = `
+      <div class="panel-head"><h2 class="mono" style="font-family:var(--f-mono);font-size:1rem;text-transform:none;letter-spacing:0">${esc(n.nom)}</h2>${pill(n)}</div>
+      ${n.aFaire ? `<div class="todo"><strong>À faire :</strong> ${esc(n.aFaire)}</div>` : ""}
+      ${n.lecture ? `<span class="reading">${esc(n.lecture)}${n.dernierEssai?` · ${ago(n.dernierEssai)}`:""}</span>` : ""}
+      <dl>
+        ${row("Rôle", esc(ROLES[n.role]||n.role))}
+        ${row("Site", esc([n.site,n.commune].filter(Boolean).join(" · ")) + (!empty(n.alt) ? ` <span class="muted">(${fmtNum(n.alt)} m)</span>` : ""))}
+        ${row("Matériel", esc(n.materiel))}
+        ${row("Antenne", esc(n.antenne))}
+        ${row("Firmware", n.firmware ? `<span class="mono">${esc(n.firmware)}</span>${fwOld(n)?`<span class="flag">→ ${esc(refFw())}</span>`:""}` : "")}
+        ${row("Puissance TX", !empty(n.tx) ? `<span class="num">${fmtNum(n.tx)} dBm</span>` : "")}
+        ${row("Bruit", !empty(n.bruit) ? `<span class="num">${fmtNum(n.bruit)} dBm</span>` : "")}
+        ${row("Erreurs RX", !empty(n.erreursRx) ? `<span class="num">${fmtNum(n.erreursRx)}</span>` : "")}
+        ${row("Batterie", !empty(n.batterie) ? `<span class="num">${fmtNum(n.batterie,2)} V</span>` : "")}
+        ${row("En service depuis", !empty(n.uptime) ? `<span class="num">${fmtUptime(n.uptime)}</span>` : "")}
+        ${row("Paquets reçus / émis", !empty(n.paquetsRecus) ? `<span class="num">${fmtNum(n.paquetsRecus)} / ${fmtNum(n.paquetsEmis)}</span>` : "")}
+        ${row("Dernière annonce", n.dernierAdvert ? ago(n.dernierAdvert) : "")}
+        ${row("Vérifié", n.maj ? `${fmtDate(n.maj)} <span class="muted">(${ago(n.maj)})</span>` : "")}
+        ${own ? row("Mot de passe admin", n.aMotDePasse ? "enregistré" : `<span style="color:var(--warn)">non renseigné</span>`) : ""}
+      </dl>
+      ${sparks}
+      ${neigh ? `<div class="neigh"><strong style="font-size:.9rem">Voisins entendus</strong>${neigh}</div>` : ""}
+      ${n.notes ? `<p style="margin:0;white-space:pre-wrap">${esc(n.notes)}</p>` : ""}
+      <div class="actions"><button class="btn" id="edit">Modifier</button><button class="btn" id="checked">Marquer vérifié</button><span class="msg" id="ficheMsg"></span></div>`;
+  }
+
+  function renderForm(f){
+    const n = editing;
+    const v = k => esc(n[k] ?? "");
+    const opt = (o,cur) => Object.entries(o).map(([k,t]) => `<option value="${k}"${k===cur?" selected":""}>${t}</option>`).join("");
+    const neighTxt = (n.voisins||[]).map(x => `${x.nom} ${x.snr}`).join("\n");
+    f.innerHTML = `
+      <div class="panel-head"><h2>${n.id ? "Modifier le nœud" : "Nouveau nœud"}</h2></div>
+      <form class="edit" id="nodeForm">
+        <div class="fgrid">
+          <label class="full">Nom du nœud (identique au nom annoncé sur le réseau)<input id="f-nom" required value="${v("nom")}" placeholder="FR06-XXXX-ADRASEC06" ${n.id?"readonly":""}></label>
+          <label>Appartenance<select id="f-proprio">${opt({adrasec:"ADRASEC 06",externe:"Voisin externe"}, n.proprio||"adrasec")}</select></label>
+          <label>État<select id="f-statut">${opt(Object.fromEntries(Object.entries(STATUTS).map(([k,s])=>[k,s.t])), n.statut||"en-ligne")}</select></label>
+          <label>Rôle<select id="f-role">${opt(ROLES, n.role||"repeteur")}</select></label>
+          <label>Firmware<input id="f-firmware" value="${v("firmware")}" placeholder="v1.17.1"></label>
+          <label>Site<input id="f-site" value="${v("site")}" placeholder="Clocher"></label>
+          <label>Commune<input id="f-commune" value="${v("commune")}"></label>
+          <label>Latitude<input id="f-lat" inputmode="decimal" value="${v("lat")}" placeholder="43.600"></label>
+          <label>Longitude<input id="f-lon" inputmode="decimal" value="${v("lon")}" placeholder="7.000"></label>
+          <label>Altitude (m)<input id="f-alt" inputmode="numeric" value="${v("alt")}"></label>
+          <label>Matériel<input id="f-materiel" value="${v("materiel")}" placeholder="Heltec V3"></label>
+          <label class="full">Antenne<input id="f-antenne" value="${v("antenne")}"></label>
+          <label>TX (dBm)<input id="f-tx" inputmode="numeric" value="${v("tx")}"></label>
+          <label>Bruit (dBm)<input id="f-bruit" inputmode="numeric" value="${v("bruit")}"></label>
+          <label>Erreurs RX<input id="f-erreursRx" inputmode="numeric" value="${v("erreursRx")}"></label>
+          <label>Mot de passe admin du répéteur<input id="f-pwd" type="password" autocomplete="off" placeholder="${n.aMotDePasse ? "enregistré · laisser vide pour le garder" : "pour lire voisins et firmware"}"></label>
+          ${n.aMotDePasse ? `<label style="flex-direction:row;display:flex;align-items:center;gap:6px;color:var(--fg)"><input type="checkbox" id="f-pwdClear" style="width:auto"> Effacer le mot de passe</label>` : ""}
+          <label class="full">Voisins entendus (un par ligne : NOM SNR)<textarea id="f-voisins" placeholder="FR06-STVA-RPL1w 2.25">${esc(neighTxt)}</textarea></label>
+          <label class="full">À faire<input id="f-aFaire" value="${v("aFaire")}" placeholder="Mise à jour OTA…"></label>
+          <label class="full">Notes<textarea id="f-notes">${v("notes")}</textarea></label>
+        </div>
+        <div class="actions">
+          <button class="btn primary" type="submit">Enregistrer</button>
+          <button class="btn" type="button" id="cancel">Annuler</button>
+          ${n.id ? `<button class="btn danger" type="button" id="del">Supprimer</button>` : ""}
+          <span class="msg" id="formMsg"></span>
+        </div>
+        ${confirmDel ? `<div class="confirm">Supprimer définitivement ${esc(n.nom)} ? <button class="btn danger small" type="button" id="delYes">Oui, supprimer</button><button class="btn small" type="button" id="delNo">Non</button></div>` : ""}
+        <span class="reading">Le mot de passe reste sur ce PC. Les valeurs lues automatiquement remplacent les valeurs saisies à chaque interrogation.</span>
+      </form>`;
+  }
+
+  /* ---------- tableau ---------- */
+  function visibleNodes(){
+    const q = filter.q.trim().toLowerCase();
+    return nodes.filter(n => {
+      if (filter.scope==="adrasec" && n.proprio==="externe") return false;
+      if (filter.scope==="externe" && n.proprio!=="externe") return false;
+      if (filter.scope==="prevu" && n.statut!=="prevu") return false;
+      if (filter.statut && (n.proprio==="externe" || n.statut!==filter.statut)) return false;
+      if (q && ![n.nom,n.site,n.commune,n.materiel].join(" ").toLowerCase().includes(q)) return false;
+      return true;
+    }).sort((a,b) => {
+      const rank = n => n.proprio==="externe" ? 4 : ({"hors-ligne":0,"degrade":1,"en-ligne":2,"test":2,"prevu":5}[n.statut] ?? 3);
+      return rank(a)-rank(b) || a.nom.localeCompare(b.nom);
+    });
+  }
+  function renderTable(){
+    const list = visibleNodes();
+    $("#rows").innerHTML = list.length ? list.map(n => `
+      <tr data-id="${esc(n.id)}" class="${n.id===sel?"sel":""}" tabindex="0">
+        <td class="name">${esc(n.nom)}${n.decouvert?'<span class="auto">auto</span>':""}</td><td>${pill(n)}</td>
+        <td>${esc([n.site,n.commune].filter(Boolean).join(" · ")) || "—"}</td>
+        <td>${esc(n.materiel) || "—"}</td>
+        <td class="mono" style="font-size:.82rem;white-space:nowrap">${esc(n.firmware) || "—"}${fwOld(n)?'<span class="flag">MAJ</span>':""}</td>
+        <td class="r num">${fmtNum(n.tx)}</td><td class="r num">${fmtNum(n.bruit)}</td><td class="r num">${fmtNum(n.erreursRx)}</td>
+        <td class="r num">${fmtNum(n.batterie,2)}</td>
+        <td class="muted" style="white-space:nowrap">${ago(n.maj)}</td>
+      </tr>`).join("")
+      : `<tr><td colspan="10"><div class="empty">${loaded ? (nodes.length ? "Aucun nœud ne correspond au filtre." : "Aucun nœud enregistré. Ajoutez le premier avec « Nouveau nœud ».") : "Chargement…"}</div></td></tr>`;
+    document.querySelectorAll("#scope button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v===filter.scope));
+  }
+
+  /* ---------- actions & journal ---------- */
+  function renderTodos(){
+    const t = nodes.filter(n => n.proprio!=="externe" && (n.aFaire || fwOld(n) || n.statut==="hors-ligne" || n.statut==="degrade"));
+    $("#todos").innerHTML = t.length ? t.map(n => {
+      const items = [];
+      if (n.statut==="hors-ligne" || n.statut==="degrade") items.push(statusOf(n).t);
+      if (n.aFaire) items.push(esc(n.aFaire));
+      else if (fwOld(n)) items.push(`Mettre à jour le firmware ${esc(n.firmware)} → ${esc(refFw())}`);
+      return `<button data-id="${esc(n.id)}"><span class="name">${esc(n.nom)}</span><span>${items.join(" · ")}</span></button>`;
+    }).join("") : `<div class="empty">${loaded ? "Rien en attente." : "Chargement…"}</div>`;
+  }
+  function renderLog(){
+    const cur = $("#logNode").value;
+    $("#logNode").innerHTML = `<option value="">Réseau (général)</option>` + nodes.filter(n=>n.proprio!=="externe").map(n => `<option${n.nom===(cur||nodes.find(x=>x.id===sel)?.nom)?" selected":""}>${esc(n.nom)}</option>`).join("");
+    $("#log").innerHTML = journal.length ? journal.map(j => `
+      <article class="${j.auto?"is-auto":""}"><time>${fmtDate(j.date)}</time><span><span class="who">${esc(j.auteur||"—")}</span>${j.noeud?` · <span class="mono" style="font-size:.78rem">${esc(j.noeud)}</span>`:""}</span><p>${esc(j.texte)}</p></article>`).join("")
+      : `<div class="empty">${loaded ? "Le journal est vide. Notez la première intervention ci-dessus." : "Chargement…"}</div>`;
+  }
+
+  function renderAll(){
+    renderRadio(); renderLink(); renderSummary(); renderMap();
+    if (!editing) renderFiche();
+    renderTable(); renderTodos(); renderLog();
+  }
+
+  /* ---------- données ---------- */
+  async function refresh(force){
+    let r;
+    try { r = await api.revision(); } catch(e) { return; }
+    if (!force && r === rev) { renderLink(); return; }
+    const st = await api.etat();
+    rev = st.revision; nodes = st.noeuds; journal = st.journal; liaison = st.liaison; loaded = true;
+    $("#footInfo").textContent = `Données enregistrées sur ce PC (${st.dossier}) · version ${st.version}`;
+    if (sel && !nodes.some(n => n.id===sel)) sel = null;
+    renderAll();
+    if (sel && !editing) loadHistory(sel);
+  }
+
+  /* ---------- événements ---------- */
+  function pick(id){ sel = id; editing = null; confirmDel = false; hist = []; histFor = null; renderAll(); loadHistory(id); }
+  document.addEventListener("click", async e => {
+    const t = e.target;
+    const node = t.closest("#map .node, #rows tr[data-id], #todos button[data-id]");
+    if (node) { pick(node.dataset.id); if (node.matches("#todos button, #rows tr")) $("#fiche").scrollIntoView({block:"nearest",behavior:"smooth"}); return; }
+    const chip = t.closest("#summary [data-st]");
+    if (chip) { filter.statut = filter.statut===chip.dataset.st ? null : chip.dataset.st; renderSummary(); renderTable(); return; }
+    const mb = t.closest("#mode button");
+    if (mb && !mb.disabled) { setMode(mb.dataset.m); return; }
+    const seg = t.closest("#scope button");
+    if (seg) { filter.scope = seg.dataset.v; renderTable(); return; }
+    switch (t.id) {
+      case "addNode": editing = {proprio:"adrasec",statut:"en-ligne",role:"repeteur"}; confirmDel=false; renderFiche(); $("#fiche").scrollIntoView({block:"nearest"}); return;
+      case "edit": editing = structuredClone(nodes.find(n=>n.id===sel)); confirmDel=false; renderFiche(); return;
+      case "cancel": editing = null; confirmDel=false; renderFiche(); return;
+      case "del": confirmDel = true; renderFiche(); return;
+      case "delNo": confirmDel = false; renderFiche(); return;
+      case "delYes": await api.supprimer_noeud(editing.id); sel=null; editing=null; confirmDel=false; refresh(true); return;
+      case "checked": await api.marquer_verifie(sel); toast("Vérification enregistrée"); return;
+      case "refreshPorts": loadPorts(); return;
+      case "scanBle": scanBle(); return;
+      case "connect": {
+        let r;
+        if (mode === "usb") {
+          const p = $("#port").value; if (!p) { toast("Aucun port COM sélectionné."); return; }
+          t.disabled = true; $("#linkMsg").textContent = "Connexion en cours…";
+          r = await api.connecter(p, "usb", null);
+        } else {
+          t.disabled = true; $("#linkMsg").textContent = "Connexion Bluetooth en cours (jusqu'à 30 s)…";
+          r = await api.connecter($("#bleDev").value, "ble", $("#blePin").value.trim() || null);
+        }
+        t.disabled = false;
+        if (!r.ok) toast(r.erreur || "Connexion impossible.");
+        refresh(true); return;
+      }
+      case "disconnect": await api.deconnecter(); refresh(true); return;
+      case "pollNow": { const r = await api.interroger(); if (!r.ok) toast(r.erreur); else toast("Interrogation lancée"); return; }
+      case "export": { const r = await api.exporter(); if (r.ok) toast("Export enregistré : " + r.chemin); return; }
+      case "import": { const r = await api.importer(); if (r.ok) toast(`Import terminé : ${r.noeuds} nœud(s), ${r.journal} entrée(s) de journal ajoutée(s).`); else if (r.erreur) toast(r.erreur); refresh(true); return; }
+    }
+  });
+  document.addEventListener("change", async e => {
+    if (e.target.id === "interval") { await api.regler(+e.target.value, null); toast("Intervalle enregistré"); }
+    if (e.target.id === "discover") { await api.regler(null, e.target.checked); }
+  });
+  document.addEventListener("keydown", e => {
+    if ((e.key==="Enter"||e.key===" ") && e.target.matches("#map .node, #rows tr[data-id]")) { e.preventDefault(); pick(e.target.dataset.id); }
+  });
+  $("#q").addEventListener("input", e => { filter.q = e.target.value; renderTable(); });
+
+  document.addEventListener("submit", async e => {
+    e.preventDefault();
+    if (e.target.id === "nodeForm") {
+      const g = id => document.getElementById("f-"+id).value.trim();
+      const numOr = s => s==="" ? "" : (isNaN(+s.replace(",",".")) ? "" : +s.replace(",","."));
+      const nom = g("nom"); if (!nom) return;
+      const voisins = g("voisins").split("\n").map(l => l.trim()).filter(Boolean).map(l => {
+        const m = l.match(/^(.*\S)\s+([+\-−]?\d+(?:[.,]\d+)?)\s*(?:dB)?$/i);
+        return m ? {nom:m[1].trim(), snr:+m[2].replace("−","-").replace(",",".")} : null;
+      }).filter(Boolean);
+      const doc = {...(editing.id ? editing : {}), id: editing.id || null, nom, proprio:g("proprio"), statut:g("statut"), role:g("role"), firmware:g("firmware"), site:g("site"), commune:g("commune"),
+        lat:numOr(g("lat")), lon:numOr(g("lon")), alt:numOr(g("alt")), materiel:g("materiel"), antenne:g("antenne"),
+        tx:numOr(g("tx")), bruit:numOr(g("bruit")), erreursRx:numOr(g("erreursRx")), voisins, aFaire:g("aFaire"), notes:g("notes")};
+      if (!editing.id) doc.maj = new Date().toISOString();
+      const pwd = document.getElementById("f-pwd").value;
+      const clear = document.getElementById("f-pwdClear")?.checked;
+      const r = await api.enregistrer_noeud(doc, clear ? "" : (pwd ? pwd : null));
+      if (!r.ok) { $("#formMsg").textContent = r.erreur; $("#formMsg").className="msg err"; return; }
+      sel = r.id; editing = null; refresh(true);
+    }
+    if (e.target.id === "logForm") {
+      const texte = $("#logText").value.trim(); if (!texte) return;
+      const r = await api.ajouter_journal($("#logNode").value, $("#logWho").value, texte);
+      if (r.ok) { $("#logText").value = ""; $("#logMsg").textContent = "Ajouté"; $("#logMsg").className="msg"; refresh(true); }
+      else { $("#logMsg").textContent = r.erreur; $("#logMsg").className="msg err"; }
+    }
+  });
+
+  async function start(){
+    api = window.pywebview.api;
+    $("#logWho").value = await api.operateur();
+    await loadSettings();
+    await refresh(true);
+    setInterval(() => refresh(false), 2000);
+  }
+  if (window.pywebview && window.pywebview.api) start();
+  else window.addEventListener("pywebviewready", start);
+})();
+</script>
+</body>
+</html>
