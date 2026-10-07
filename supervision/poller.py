@@ -109,7 +109,7 @@ class Poller:
             quoi = "Bluetooth" if mode == "ble" else cible
             return {"ok": False, "erreur": f"Connexion impossible ({quoi}) : {e}"}
 
-    def scan_ble(self, duree: float = 6.0) -> dict:
+    def scan_ble(self, duree: float = 10.0) -> dict:
         try:
             return {"ok": True, "noeuds": self._submit(self._scan_ble(duree), timeout=duree + 10)}
         except Exception as e:  # noqa: BLE001
@@ -117,14 +117,26 @@ class Poller:
                                            "Vérifiez que le Bluetooth du PC est activé.", "noeuds": []}
 
     async def _scan_ble(self, duree: float) -> list[dict]:
+        """Liste tous les appareils Bluetooth LE à portée, les nœuds MeshCore en tête.
+
+        Windows ne transmet pas toujours le nom annoncé pendant la recherche : on garde donc
+        tous les appareils, en repérant les MeshCore par leur nom ou par le service UART Nordic."""
         from bleak import BleakScanner
+        uart = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
         found = await BleakScanner.discover(timeout=duree, return_adv=True)
         out = []
-        for addr, (dev, adv) in found.items():
+        for _addr, (dev, adv) in found.items():
             name = adv.local_name or dev.name or ""
-            if name.startswith("MeshCore"):
-                out.append({"adresse": dev.address, "nom": name.replace("MeshCore-", "", 1), "rssi": adv.rssi})
-        out.sort(key=lambda x: -(x["rssi"] or -999))
+            uuids = [u.lower() for u in (adv.service_uuids or [])]
+            low = name.lower()
+            meshcore = (low.startswith("meshcore") or uart in uuids
+                        or any(k in low for k in ("wio tracker", "t1000", "sensecap", "heltec", "rak", "lilygo", "t-echo", "t-beam", "xiao")))
+            out.append({"adresse": dev.address, "nom": name.replace("MeshCore-", "", 1) if name else "(sans nom)",
+                        "rssi": adv.rssi, "meshcore": meshcore, "uart": uart in uuids})
+            log.info("BLE vu : %s | nom=%r | rssi=%s | services=%s", dev.address, name, adv.rssi, uuids)
+        log.info("Recherche Bluetooth : %d appareil(s), dont %d MeshCore probable(s)",
+                 len(out), sum(1 for x in out if x["meshcore"]))
+        out.sort(key=lambda x: (not x["meshcore"], x["nom"] == "(sans nom)", -(x["rssi"] or -999)))
         return out
 
     def disconnect(self) -> dict:

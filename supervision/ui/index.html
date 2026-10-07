@@ -337,13 +337,19 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
     await loadPorts(r.port);
   }
   async function scanBle(){
-    const b = $("#scanBle"); b.disabled = true; b.textContent = "Recherche…";
+    const b = $("#scanBle"); b.disabled = true; b.textContent = "Recherche (10 s)…";
     const r = await api.chercher_bluetooth();
     b.disabled = false; b.textContent = "Rechercher";
     if (!r.ok) { toast(r.erreur); return; }
-    const opts = r.noeuds.map(n => `<option value="${esc(n.adresse)}"${n.adresse===lastBle?" selected":""}>${esc(n.nom)} · ${n.rssi ?? "?"} dBm</option>`).join("");
-    $("#bleDev").innerHTML = opts || `<option value="">Aucun nœud MeshCore trouvé</option>`;
-    toast(r.noeuds.length ? `${r.noeuds.length} nœud(s) MeshCore trouvé(s)` : "Aucun nœud MeshCore en Bluetooth à portée. Est-il flashé en Companion Bluetooth et libre (pas connecté au téléphone) ?");
+    const mc = r.noeuds.filter(n => n.meshcore), other = r.noeuds.filter(n => !n.meshcore);
+    const opt = n => `<option value="${esc(n.adresse)}"${n.adresse===lastBle?" selected":""}>${esc(n.nom)} · ${esc(n.adresse)} · ${n.rssi ?? "?"} dBm</option>`;
+    $("#bleDev").innerHTML = r.noeuds.length
+      ? (mc.length ? `<optgroup label="Nœuds MeshCore">${mc.map(opt).join("")}</optgroup>` : "") +
+        (other.length ? `<optgroup label="Autres appareils Bluetooth">${other.map(opt).join("")}</optgroup>` : "")
+      : `<option value="">Aucun appareil Bluetooth trouvé</option>`;
+    if (mc.length) toast(`${mc.length} nœud(s) MeshCore trouvé(s)`);
+    else if (r.noeuds.length) toast(`${r.noeuds.length} appareil(s) Bluetooth trouvé(s), aucun identifié comme MeshCore. Cherchez votre nœud dans « Autres appareils » (nom ou adresse) et essayez de le connecter.`);
+    else toast("Aucun appareil Bluetooth à portée. Le Bluetooth du PC est-il activé ?");
   }
   async function loadPorts(last){
     const ports = await api.ports();
