@@ -342,6 +342,7 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
           <button data-v="adrasec" aria-pressed="false">ADRASEC</button>
           <button data-v="externe" aria-pressed="false">Voisins</button>
           <button data-v="prevu" aria-pressed="false">Prévus</button>
+          <button data-v="supprimes" aria-pressed="false">Supprimés</button>
         </div>
       </div>
     </div>
@@ -479,12 +480,14 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
     "hors-ligne":{t:"Hors ligne",c:"var(--crit)"},
     "test":      {t:"En test",   c:"var(--test)"},
     "prevu":     {t:"Prévu",     c:"var(--plan)", hollow:true},
+    "supprime":  {t:"Supprimé",  c:"var(--muted)", hollow:true},
   };
+  const actif = n => n.statut !== "supprime";
   const ROLES = {repeteur:"Répéteur", room:"Room server", compagnon:"Compagnon"};
   const $ = s => document.querySelector(s);
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
-  let api = null, nodes = [], journal = [], liaison = {}, rev = -1, loaded = false;
+  let api = null, nodes = [], allNodes = [], journal = [], liaison = {}, rev = -1, loaded = false;
   let messages = [], alertes = [], exercice = null, exercices = [], reglages = {}, tab = "reseau";
   let traces = {}, couvertures = [], dispo = {}, maj = null, showTeams = true, showCov = false, crise = false, crMap = null, crLayer = null;
   let conv = null, lastMsgCount = -1, seenMsgs = 0, msgInit = false, lastAlertId = null, son = true;
@@ -511,7 +514,7 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
   };
   const fmtDate = iso => { try { return new Date(iso).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"}); } catch(e){ return iso; } };
   const fmtUptime = s => { if (empty(s)) return ""; const d=Math.floor(s/86400), h=Math.floor(s%86400/3600), m=Math.floor(s%3600/60); return (d?d+" j ":"")+h+" h "+String(m).padStart(2,"0"); };
-  const statusOf = n => n.proprio === "externe" ? {t:"Voisin", c:"var(--navy)"} : (STATUTS[n.statut] || STATUTS.prevu);
+  const statusOf = n => n.statut === "supprime" ? STATUTS.supprime : n.proprio === "externe" ? {t:"Voisin", c:"var(--navy)"} : (STATUTS[n.statut] || STATUTS.prevu);
   const pill = n => { const s = statusOf(n); return `<span class="pill" style="--c:${s.c}"><span class="dot${s.hollow?" hollow":""}" style="--c:${s.c}"></span>${s.t}</span>`; };
   const byName = name => nodes.find(n => (n.nom||"").toLowerCase() === String(name||"").toLowerCase());
   let toastT;
@@ -587,7 +590,7 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
   /* ---------- synthèse ---------- */
   function renderSummary(){
     const own = nodes.filter(n => n.proprio !== "externe");
-    const parts = Object.entries(STATUTS).map(([k,s]) => {
+    const parts = Object.entries(STATUTS).filter(([k]) => k !== "supprime").map(([k,s]) => {
       const c = own.filter(n => n.statut === k).length;
       return `<button class="chip${filter.statut===k?" on":""}" data-st="${k}" aria-pressed="${filter.statut===k}"><span class="dot${s.hollow?" hollow":""}" style="--c:${s.c}"></span>${s.t}<span class="n">${c}</span></button>`;
     }).join("");
@@ -750,7 +753,7 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
   function renderFiche(){
     const f = $("#fiche");
     if (editing) return renderForm(f);
-    const n = nodes.find(x => x.id === sel);
+    const n = allNodes.find(x => x.id === sel);
     if (!n){
       f.innerHTML = `<div class="panel-head"><h2>Fiche nœud</h2></div>` + (loaded && !nodes.length
         ? `<div class="empty">Aucun nœud enregistré.<br>Ajoutez le premier avec « Nouveau nœud ».</div>`
@@ -873,7 +876,8 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
   /* ---------- tableau ---------- */
   function visibleNodes(){
     const q = filter.q.trim().toLowerCase();
-    return nodes.filter(n => {
+    const base = filter.scope==="supprimes" ? allNodes.filter(n => !actif(n)) : nodes;
+    return base.filter(n => {
       if (filter.scope==="adrasec" && n.proprio==="externe") return false;
       if (filter.scope==="externe" && n.proprio!=="externe") return false;
       if (filter.scope==="prevu" && n.statut!=="prevu") return false;
@@ -897,7 +901,7 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
         <td class="r num">${fmtNum(n.batterie,2)}</td>
         <td class="muted" style="white-space:nowrap">${ago(n.maj)}</td>
       </tr>`).join("")
-      : `<tr><td colspan="10"><div class="empty">${loaded ? (nodes.length ? "Aucun nœud ne correspond au filtre." : "Aucun nœud enregistré. Ajoutez le premier avec « Nouveau nœud ».") : "Chargement…"}</div></td></tr>`;
+      : `<tr><td colspan="10"><div class="empty">${loaded ? (filter.scope==="supprimes" ? "Aucun nœud supprimé. Pour retirer un nœud sans l'effacer : Modifier, puis État « Supprimé »." : nodes.length ? "Aucun nœud ne correspond au filtre." : "Aucun nœud enregistré. Ajoutez le premier avec « Nouveau nœud ».") : "Chargement…"}</div></td></tr>`;
     document.querySelectorAll("#scope button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v===filter.scope));
   }
 
@@ -1103,7 +1107,7 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
     try { r = await api.revision(); } catch(e) { return; }
     if (!force && r === rev) { renderLink(); return; }
     const st = await api.etat();
-    rev = st.revision; nodes = st.noeuds; journal = st.journal; liaison = st.liaison; loaded = true;
+    rev = st.revision; allNodes = st.noeuds; nodes = allNodes.filter(actif); journal = st.journal; liaison = st.liaison; loaded = true;
     messages = st.messages || []; exercice = st.exercice; exercices = st.exercices || []; reglages = st.reglages || {};
     alertes = st.alertes || []; traces = st.traces || {}; couvertures = st.couvertures || []; dispo = st.dispo || {}; maj = st.maj;
     const top = alertes.find(a => !a.vue);
@@ -1112,7 +1116,7 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
     if (!msgInit) { seenMsgs = messages.filter(m => m.sens==="recu").length; msgInit = true; }
     $("#footInfo").textContent = `Données enregistrées sur ce PC (${st.dossier}) · version ${st.version}`;
     window._ver = st.version;
-    if (sel && !nodes.some(n => n.id===sel)) sel = null;
+    if (sel && !allNodes.some(n => n.id===sel)) sel = null;
     renderAll();
     if (sel && !editing) loadHistory(sel);
   }
@@ -1155,7 +1159,7 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
     if (seg) { filter.scope = seg.dataset.v; renderTable(); return; }
     switch (t.id) {
       case "addNode": editing = {proprio:"adrasec",statut:"en-ligne",role:"repeteur"}; confirmDel=false; renderFiche(); $("#fiche").scrollIntoView({block:"nearest"}); return;
-      case "edit": editing = structuredClone(nodes.find(n=>n.id===sel)); confirmDel=false; renderFiche(); return;
+      case "edit": editing = structuredClone(allNodes.find(n=>n.id===sel)); confirmDel=false; renderFiche(); return;
       case "cancel": editing = null; confirmDel=false; renderFiche(); return;
       case "del": confirmDel = true; renderFiche(); return;
       case "delNo": confirmDel = false; renderFiche(); return;

@@ -12,7 +12,7 @@ from . import rapports, systeme, taches
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.2.0"
+VERSION = "1.2.1"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -65,7 +65,7 @@ class Api:
             "couvertures": self._store.list_coverage(),
             "dispo": {n["id"]: {"j7": self._store.availability(n["id"], 7)["pct"],
                                 "j30": self._store.availability(n["id"], 30)["pct"]}
-                      for n in nodes if n.get("proprio") != "externe" and n.get("statut") != "prevu"},
+                      for n in nodes if n.get("proprio") != "externe" and n.get("statut") not in ("prevu", "supprime")},
         }
 
     def historique(self, node_id, jours=7):

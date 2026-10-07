@@ -27,7 +27,7 @@ def _etat(n: dict) -> str:
 
 def _lignes(store: Store, voisins: bool) -> list[dict]:
     rank = {"hors-ligne": 0, "degrade": 1, "en-ligne": 2, "test": 3, "prevu": 5}
-    nodes = [n for n in store.list_nodes() if voisins or n.get("proprio") != "externe"]
+    nodes = [n for n in store.list_nodes() if (voisins or n.get("proprio") != "externe") and n.get("statut") != "supprime"]
     nodes.sort(key=lambda n: (n.get("proprio") == "externe", rank.get(n.get("statut"), 4), n.get("nom", "")))
     out = []
     for n in nodes:
@@ -45,7 +45,7 @@ def _lignes(store: Store, voisins: bool) -> list[dict]:
 
 
 def _synthese(store: Store) -> dict:
-    own = [n for n in store.list_nodes() if n.get("proprio") != "externe"]
+    own = [n for n in store.list_nodes() if n.get("proprio") != "externe" and n.get("statut") != "supprime"]
     s = {v: 0 for v in STATUTS.values()}
     for n in own:
         s[STATUTS.get(n.get("statut"), "Prévu")] = s.get(STATUTS.get(n.get("statut"), "Prévu"), 0) + 1

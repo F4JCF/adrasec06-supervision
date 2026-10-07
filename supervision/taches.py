@@ -134,7 +134,7 @@ class Taches:
         limite = date.today() + timedelta(days=7)
         for n in self.store.list_nodes():
             pv = n.get("prochaineVisite")
-            if not pv or n.get("proprio") == "externe":
+            if not pv or n.get("proprio") == "externe" or n.get("statut") == "supprime":
                 continue
             try:
                 d = date.fromisoformat(str(pv)[:10])

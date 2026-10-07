@@ -286,7 +286,7 @@ class Poller:
             self._discover()
 
         targets = [n for n in self.store.list_nodes()
-                   if n.get("proprio") != "externe" and n.get("statut") != "prevu"]
+                   if n.get("proprio") != "externe" and n.get("statut") not in ("prevu", "supprime")]
         for i, node in enumerate(targets, 1):
             if self.mc is None:
                 return
@@ -708,7 +708,7 @@ class Poller:
             res = await self.mc.commands.get_contacts()
             if res is not None and res.type != EventType.ERROR:
                 self._contacts = dict(res.payload or {})
-            cibles = [n for n in self.store.list_nodes() if n.get("proprio") != "externe" and n.get("statut") != "prevu"]
+            cibles = [n for n in self.store.list_nodes() if n.get("proprio") != "externe" and n.get("statut") not in ("prevu", "supprime")]
             resultats = []
             for i, node in enumerate(cibles, 1):
                 self.message = f"Test de couverture {i}/{len(cibles)} : {node.get('nom')}"
