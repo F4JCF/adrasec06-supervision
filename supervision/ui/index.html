@@ -237,6 +237,13 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
 .settings .hint{font-size:.82rem;color:var(--muted);margin:-8px 0 0 28px}
 /* Équipes et couverture sur la carte */
 .team-icon{width:16px;height:16px;transform:rotate(45deg);border:2px solid #fff;box-shadow:0 0 0 1.5px #7a3fb0;background:#9b59d0;border-radius:2px}
+/* expéditeur récent sur le canal ADRASEC 06 : orange fluo, pulsation */
+.team-icon.hot{width:22px;height:22px;background:#ff5f00;border-color:#fff200;box-shadow:0 0 0 2px #ff5f00,0 0 14px 6px rgba(255,95,0,.75);animation:hotpulse 1.2s ease-in-out infinite}
+@keyframes hotpulse{50%{box-shadow:0 0 0 2px #ff5f00,0 0 26px 12px rgba(255,95,0,.35)}}
+@media (prefers-reduced-motion:reduce){.team-icon.hot{animation:none}}
+.map-label.hot{color:#b33c00;font-weight:700;font-size:11px}
+.legend-hot{display:inline-flex;align-items:center;gap:6px}
+.legend-hot i{width:10px;height:10px;background:#ff5f00;transform:rotate(45deg);box-shadow:0 0 6px 2px rgba(255,95,0,.7);border:0}
 .map-tools{display:flex;gap:12px;flex-wrap:wrap;font-size:.82rem;color:var(--muted)}
 .map-tools label{display:inline-flex;flex-direction:row;align-items:center;gap:5px;color:var(--fg)}
 .map-tools input{width:auto}
@@ -331,6 +338,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
         <span><i style="--c:var(--ok)"></i>SNR ≥ +5 dB</span>
         <span><i style="--c:var(--warn)"></i>−5 à +5 dB</span>
         <span><i style="--c:var(--crit)"></i>&lt; −5 dB</span>
+        <span class="legend-hot"><i></i>A écrit sur #ADRASEC 06 (15 min)</span>
       </div>
     </section>
     <section class="panel fiche" id="fiche" aria-live="polite"></section>
@@ -681,12 +689,31 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     }
     setTimeout(() => lmap.invalidateSize(), 0);
   }
+  /* canal ADRASEC 06 et expéditeurs récents (mis en évidence sur la carte) */
+  const normNom = x => String(x || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  function canalAdrasec(){
+    const ch = liaison.canaux || [];
+    return ch.find(c => normNom(c.nom) === "adrasec06") || ch.find(c => normNom(c.nom).includes("adrasec06")) || null;
+  }
+  const HOT_MIN = 15;
+  function expediteursRecents(){
+    const chan = canalAdrasec(), lim = Date.now() - HOT_MIN*60000, out = {};
+    messages.forEach(m => {
+      if (m.sens !== "recu" || m.canal == null || !m.auteur) return;
+      if (!(chan ? m.canal === chan.index : normNom(m.canal_nom).includes("adrasec06"))) return;
+      const t = new Date(m.date).getTime();
+      if (t >= lim) { const k = normNom(m.auteur); if (!out[k] || out[k].t < t) out[k] = {t, texte: m.texte, date: m.date}; }
+    });
+    return out;
+  }
   function drawOverlays(layer){
+    const hot = expediteursRecents();
     if (showTeams) (liaison.equipes || []).forEach(t => {
       const tr = traces[t.cle];
       if (tr && tr.length > 1) L.polyline(tr.map(p => [p[0], p[1]]), {color:"#9b59d0", weight:2.5, opacity:.8, dashArray:"2 6"}).addTo(layer);
-      L.marker([t.lat, t.lon], {icon: L.divIcon({className:"", html:'<div class="team-icon"></div>', iconSize:[16,16], iconAnchor:[8,8]})})
-        .bindTooltip(`${esc(t.nom)} · ${ago(t.vu)}`, {permanent:true, direction:"right", offset:[10,0], className:"map-label"})
+      const h = hot[normNom(t.nom)];
+      L.marker([t.lat, t.lon], {zIndexOffset: h ? 1000 : 0, icon: L.divIcon({className:"", html:`<div class="team-icon${h ? " hot" : ""}"></div>`, iconSize: h ? [22,22] : [16,16], iconAnchor: h ? [11,11] : [8,8]})})
+        .bindTooltip(h ? `${esc(t.nom)} · message ${ago(h.date)} : « ${esc(h.texte.slice(0,60))}${h.texte.length>60?"…":""} »` : `${esc(t.nom)} · ${ago(t.vu)}`, {permanent:true, direction:"right", offset:[h ? 13 : 10, 0], className: "map-label" + (h ? " hot" : "")})
         .bindPopup(`<b>${esc(t.nom)}</b><br>Équipe / mobile<br>Position ${ago(t.vu)}<br>${(+t.lat).toFixed(5)}, ${(+t.lon).toFixed(5)}`).addTo(layer);
     });
     if (showCov) couvertures.forEach(c => {
@@ -1334,6 +1361,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     await loadSettings();
     await refresh(true);
     setInterval(() => refresh(false), 2000);
+    setInterval(() => { if (Object.keys(expediteursRecents()).length || document.querySelector(".team-icon.hot")) { if (tab === "reseau") renderMap(); if (crise) renderCrise(); } }, 60000);
   }
   if (window.pywebview && window.pywebview.api) start();
   else window.addEventListener("pywebviewready", start);
