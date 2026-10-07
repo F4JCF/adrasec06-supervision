@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Supervision MeshCore ADRASEC 06</title>
+<link rel="stylesheet" href="leaflet/leaflet.css">
+<script src="leaflet/leaflet.js"></script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
 <style>
 html{color-scheme:light}
@@ -174,6 +176,65 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
 .reading{font-size:.82rem;color:var(--muted)}
 .foot{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between}
 .toast{position:fixed;right:16px;bottom:16px;background:var(--fg);color:var(--panel);padding:10px 14px;border-radius:4px;font-size:.9rem;max-width:min(420px,calc(100% - 32px))}
+/* Onglets */
+.tabs{display:flex;flex-wrap:wrap;gap:4px;border-bottom:2px solid var(--line)}
+.tabs button{border:0;background:none;padding:10px 16px;font-family:var(--f-display);font-size:1.05rem;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-2px;display:inline-flex;gap:8px;align-items:center}
+.tabs button[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--accent)}
+.tabs .badge{font-family:var(--f-mono);font-size:.72rem;background:var(--accent);color:var(--accent-ink);border-radius:999px;padding:0 7px;letter-spacing:0}
+.tabpane{display:grid;gap:18px}
+/* Alertes */
+.alerts{border:1px solid var(--crit);border-left:4px solid var(--crit);background:var(--panel);border-radius:6px;padding:10px 14px;display:grid;gap:6px}
+.alerts.calm{border-color:var(--line);border-left-color:var(--warn)}
+.alerts-head{display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}
+.alerts ul{list-style:none;margin:0;padding:0;display:grid;gap:3px;max-height:140px;overflow:auto}
+.alerts li{display:grid;grid-template-columns:auto auto 1fr;gap:10px;font-size:.9rem;align-items:baseline}
+.alerts time{font-family:var(--f-mono);font-size:.78rem;color:var(--muted)}
+.lvl{font-family:var(--f-mono);font-size:.7rem;padding:0 6px;border-radius:3px;border:1px solid var(--c);color:var(--c);text-transform:uppercase}
+/* Carte réelle */
+#lmap{height:520px;width:100%;background:var(--sea)}
+.leaflet-container{font-family:var(--f-body)}
+.leaflet-popup-content{font-size:.85rem;margin:10px 12px}
+.leaflet-popup-content b{font-family:var(--f-mono)}
+.map-label{background:transparent;border:0;box-shadow:none;font-family:var(--f-mono);font-size:10px;color:#17232e;text-shadow:0 0 3px #fff,0 0 3px #fff;padding:0}
+.leaflet-tooltip.map-label:before{display:none}
+/* Chemin et commandes */
+.path{display:flex;flex-wrap:wrap;gap:4px;align-items:center;font-family:var(--f-mono);font-size:.78rem}
+.path span{border:1px solid var(--line);border-radius:3px;padding:1px 6px;background:var(--bg)}
+.path i{color:var(--muted);font-style:normal}
+.cmds{display:grid;gap:8px;border-top:1px solid var(--line);padding-top:10px}
+.cmds .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.cmds input{width:5.5em}
+/* Messagerie */
+.chat{display:grid;grid-template-columns:260px minmax(0,1fr);gap:0;border:1px solid var(--line);border-radius:6px;background:var(--panel);min-height:560px;overflow:hidden}
+@media (max-width:760px){.chat{grid-template-columns:minmax(0,1fr)}}
+.convs{border-right:1px solid var(--line);display:flex;flex-direction:column;min-width:0;max-height:640px;overflow:auto}
+.convs h3{font-family:var(--f-mono);font-size:.7rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:12px 14px 4px;font-weight:500}
+.convs button{border:0;background:none;text-align:left;padding:8px 14px;display:flex;justify-content:space-between;gap:8px;font-size:.92rem;border-left:3px solid transparent}
+.convs button:hover{background:var(--sunk)}
+.convs button[aria-pressed="true"]{background:var(--sunk);border-left-color:var(--accent);font-weight:600}
+.convs .n{font-family:var(--f-mono);font-size:.72rem;color:var(--muted)}
+.thread{display:flex;flex-direction:column;min-width:0}
+.thread-head{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.msgs{flex:1;overflow:auto;padding:14px 16px;display:flex;flex-direction:column;gap:8px;max-height:520px;min-height:320px}
+.msg{max-width:78%;padding:7px 11px;border-radius:8px;background:var(--sunk);display:grid;gap:2px;align-self:flex-start;overflow-wrap:anywhere}
+.msg.out{align-self:flex-end;background:color-mix(in srgb,var(--accent) 18%,var(--panel))}
+.msg .meta{font-family:var(--f-mono);font-size:.7rem;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap}
+.msg .who{font-weight:600;font-size:.82rem;color:var(--navy)}
+.compose{border-top:1px solid var(--line);padding:10px 12px;display:flex;gap:8px;align-items:flex-end}
+.compose textarea{min-height:42px;flex:1}
+.compose .count{font-family:var(--f-mono);font-size:.72rem;color:var(--muted);white-space:nowrap}
+/* Main courante, rapports, réglages */
+.cols2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px}
+@media (max-width:900px){.cols2{grid-template-columns:minmax(0,1fr)}}
+.excard{border:1px solid var(--line);border-radius:6px;padding:14px;display:grid;gap:8px;background:var(--sunk)}
+.excard.live{border-color:var(--crit);border-left:4px solid var(--crit)}
+.excard .big{font-family:var(--f-display);font-size:1.4rem;font-weight:600}
+.exlist{display:grid;gap:0}
+.exlist div{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.settings{display:grid;gap:14px;max-width:640px}
+.settings label.line{display:flex;flex-direction:row;align-items:center;gap:10px;font-size:.95rem;color:var(--fg)}
+.settings label.line input[type=checkbox]{width:auto}
+.settings .hint{font-size:.82rem;color:var(--muted);margin:-8px 0 0 28px}
 </style>
 </head>
 <body>
@@ -207,15 +268,25 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
     </div>
   </section>
 
+  <section class="alerts" id="alerts" hidden></section>
+
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button role="tab" data-tab="reseau" aria-selected="true">Réseau</button>
+    <button role="tab" data-tab="messages" aria-selected="false">Messagerie <span class="badge" id="msgBadge" hidden></span></button>
+    <button role="tab" data-tab="courante" aria-selected="false">Main courante &amp; rapports <span class="badge" id="exBadge" hidden>EN COURS</span></button>
+    <button role="tab" data-tab="reglages" aria-selected="false">Réglages</button>
+  </nav>
+
+  <div class="tabpane" id="tab-reseau">
   <section class="summary" id="summary" aria-label="Synthèse des états"></section>
 
   <div class="main">
     <section class="panel">
       <div class="panel-head">
         <h2>Carte du réseau</h2>
-        <span class="muted" style="font-size:.82rem">Vue schématique · cliquez un nœud</span>
+        <span class="muted" style="font-size:.82rem" id="mapHint">Cliquez un nœud pour sa fiche</span>
       </div>
-      <div class="map-box"><svg id="map" viewBox="0 0 560 560" role="img" aria-label="Carte schématique des nœuds MeshCore des Alpes-Maritimes"></svg></div>
+      <div class="map-box"><div id="lmap" hidden></div><svg id="map" viewBox="0 0 560 560" role="img" aria-label="Carte schématique des nœuds MeshCore des Alpes-Maritimes"></svg></div>
       <div class="legend">
         <span><i style="--c:var(--ok)"></i>SNR ≥ +5 dB</span>
         <span><i style="--c:var(--warn)"></i>−5 à +5 dB</span>
@@ -263,6 +334,57 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
     </section>
   </div>
 
+  </div>
+
+  <div class="tabpane" id="tab-messages" hidden>
+    <div class="chat">
+      <div class="convs" id="convs"></div>
+      <div class="thread">
+        <div class="thread-head"><h2 id="threadTitle">Messagerie</h2><span class="muted" style="font-size:.82rem" id="threadSub"></span></div>
+        <div class="msgs" id="msgs"></div>
+        <form class="compose" id="compose">
+          <textarea id="msgText" placeholder="Votre message (150 octets max.)" aria-label="Message"></textarea>
+          <div style="display:grid;gap:4px;justify-items:end"><span class="count" id="msgCount">0 / 150</span><button class="btn primary" type="submit" id="msgSend">Envoyer</button></div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="tabpane" id="tab-courante" hidden>
+    <div class="cols2">
+      <section class="panel">
+        <div class="panel-head"><h2>Exercice ou intervention</h2></div>
+        <div id="exCurrent"></div>
+        <span class="reading">Pendant un exercice ou une intervention, chaque entrée du journal (y compris les événements automatiques) est rattachée à sa main courante. Les messages radio échangés pendant la période figurent aussi dans le PDF.</span>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><h2>Rapports d'état du réseau</h2></div>
+        <p style="margin:0">État de tous les nœuds ADRASEC, actions en attente et dernières alertes, prêt à transmettre au SDIS ou à la préfecture.</p>
+        <label style="display:flex;flex-direction:row;align-items:center;gap:8px;color:var(--fg)"><input type="checkbox" id="repVoisins" style="width:auto"> Inclure les répéteurs voisins</label>
+        <div class="actions"><button class="btn primary" id="repPdf" type="button">Rapport PDF</button><button class="btn" id="repXlsx" type="button">Tableau Excel</button></div>
+      </section>
+    </div>
+    <section class="panel">
+      <div class="panel-head"><h2>Mains courantes</h2></div>
+      <div class="exlist" id="exList"></div>
+    </section>
+  </div>
+
+  <div class="tabpane" id="tab-reglages" hidden>
+    <section class="panel settings">
+      <div class="panel-head"><h2>Réglages</h2></div>
+      <label class="line"><input type="checkbox" id="optNotif"> Notifications Windows (répéteur hors ligne, batterie faible, message reçu)</label>
+      <label class="line"><input type="checkbox" id="optSon"> Son d'alerte dans le logiciel</label>
+      <label class="line">Seuil d'alerte batterie <input id="optSeuil" type="number" step="0.05" min="2.8" max="4.3" style="width:6em"> V</label>
+      <p class="hint">Une alerte est émise quand la batterie d'un répéteur passe sous ce seuil (3,50 V conseillé pour une Li-ion 18650).</p>
+      <label class="line"><input type="checkbox" id="optAuto"> Démarrer la supervision avec Windows</label>
+      <p class="hint">Le logiciel démarre réduit près de l'horloge et se reconnecte au dernier nœud utilisé.</p>
+      <label class="line"><input type="checkbox" id="optZone"> La croix de la fenêtre réduit près de l'horloge au lieu de quitter</label>
+      <p class="hint">Pour quitter complètement : clic droit sur l'icône près de l'horloge, puis « Quitter ».</p>
+      <label class="line">Fond de carte <select id="optFond" style="width:auto"><option value="osmfr">OpenStreetMap France</option><option value="osm">OpenStreetMap standard</option><option value="topo">Relief (OpenTopoMap)</option><option value="schema">Schéma hors ligne</option></select></label>
+    </section>
+  </div>
+
   <footer class="foot">
     <span id="footInfo">Données enregistrées sur ce PC.</span>
     <span class="actions"><button class="btn small" id="export" type="button">Exporter les données</button><button class="btn small" id="import" type="button">Importer un export</button></span>
@@ -284,6 +406,9 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
   let api = null, nodes = [], journal = [], liaison = {}, rev = -1, loaded = false;
+  let messages = [], alertes = [], exercice = null, exercices = [], reglages = {}, tab = "reseau";
+  let conv = null, lastMsgCount = -1, seenMsgs = 0, msgInit = false, lastAlertId = null, son = true;
+  try { son = localStorage.getItem("son") !== "0"; } catch(e) {}
   let sel = null, editing = null, filter = {scope:"tous", q:"", statut:null}, confirmDel = false, histFor = null, hist = [];
 
   /* ---------- utilitaires ---------- */
@@ -405,7 +530,69 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
   const PLACES = [["Cannes",43.553,7.017],["Grasse",43.658,6.923],["Nice",43.703,7.266],["Menton",43.776,7.497],["Antibes",43.581,7.125]];
   const hasPos = n => !empty(n.lat) && !empty(n.lon) && isFinite(n.lat) && isFinite(n.lon);
 
+  /* ---------- carte réelle (Leaflet) ---------- */
+  let lmap = null, lLayer = null, lBase = null, lBaseKey = null, lFitted = false;
+  const FONDS = {
+    osmfr: ["https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png", "© contributeurs OpenStreetMap · OSM France", 20],
+    osm:   ["https://tile.openstreetmap.org/{z}/{x}/{y}.png", "© contributeurs OpenStreetMap", 19],
+    topo:  ["https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", "© OpenStreetMap · SRTM · OpenTopoMap (CC-BY-SA)", 17],
+  };
+  function cssVar(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim() || "#888"; }
+  function colorOf(c){ return c.startsWith("var(") ? cssVar(c.slice(4,-1)) : c; }
+  function useLeaflet(){ return !!window.L && (reglages.fondCarte || "osmfr") !== "schema"; }
+  function renderLeaflet(){
+    const el = $("#lmap");
+    if (!lmap) {
+      lmap = L.map(el, {zoomControl:true, attributionControl:true}).setView([43.70, 7.15], 9);
+      lLayer = L.layerGroup().addTo(lmap);
+    }
+    const key = reglages.fondCarte || "osmfr";
+    if (key !== lBaseKey) {
+      if (lBase) lmap.removeLayer(lBase);
+      const f = FONDS[key] || FONDS.osmfr;
+      lBase = L.tileLayer(f[0], {attribution:f[1], maxZoom:f[2], subdomains:"abc"}).addTo(lmap);
+      lBaseKey = key;
+    }
+    lLayer.clearLayers();
+    const vis = nodes.filter(hasPos);
+    const seen = new Set();
+    vis.forEach(n => (n.voisins||[]).forEach(v => {
+      const m = byName(v.nom); if (!m || !hasPos(m)) return;
+      const k = [n.nom,m.nom].sort().join("|"); if (seen.has(k)) return; seen.add(k);
+      const on = sel && (sel===n.id || sel===m.id);
+      L.polyline([[+n.lat,+n.lon],[+m.lat,+m.lon]], {color:colorOf(snrColor(+v.snr)), weight:on?4:2.5, opacity: sel && !on ? .3 : .85})
+        .bindTooltip(`${esc(n.nom)} ↔ ${esc(m.nom)} : ${fmtSnr(+v.snr)}`).addTo(lLayer);
+    }));
+    const selNode = nodes.find(n => n.id===sel);
+    if (selNode && selNode.chemin && selNode.chemin.relais && hasPos(selNode)) {
+      const pts = selNode.chemin.relais.map(r => byName(String(r).replace(/ \(\?\)$/,""))).filter(x => x && hasPos(x)).map(x => [+x.lat,+x.lon]);
+      if (pts.length) L.polyline([...pts, [+selNode.lat,+selNode.lon]], {color:colorOf("var(--accent)"), weight:3, dashArray:"6 6"}).addTo(lLayer);
+    }
+    const order = [...vis].sort((a,b) => (a.statut==="prevu"?0:1)-(b.statut==="prevu"?0:1) || (a.id===sel)-(b.id===sel));
+    order.forEach(n => {
+      const s = statusOf(n), c = colorOf(s.c);
+      const own = n.proprio!=="externe" && n.statut!=="prevu";
+      const mk = L.circleMarker([+n.lat,+n.lon], {radius: n.id===sel ? 10 : own ? 8 : 5, color:c, weight:2,
+        fillColor: own ? c : colorOf("var(--panel)"), fillOpacity: own ? .95 : .9});
+      mk.on("click", () => pick(n.id));
+      mk.bindPopup(`<b>${esc(n.nom)}</b><br>${s.t}${n.commune?` · ${esc(n.commune)}`:""}${!empty(n.bruit)?`<br>Bruit ${fmtNum(n.bruit)} dBm`:""}${!empty(n.batterie)?` · ${fmtNum(n.batterie,2)} V`:""}`);
+      if (own || n.id===sel) mk.bindTooltip(esc(n.nom.replace(/^FR06-/,"")), {permanent:true, direction:"right", offset:[8,0], className:"map-label"});
+      mk.addTo(lLayer);
+    });
+    if (!lFitted && vis.length) {
+      const own = vis.filter(n => n.proprio!=="externe");
+      if (own.length) lmap.fitBounds(L.latLngBounds(own.map(n => [+n.lat,+n.lon])).pad(0.15));
+      lFitted = true;
+    }
+    setTimeout(() => lmap.invalidateSize(), 0);
+  }
   function renderMap(){
+    const leaf = useLeaflet();
+    $("#lmap").hidden = !leaf; $("#map").hidden = leaf;
+    if (leaf) { try { renderLeaflet(); return; } catch(e) { console.error(e); $("#lmap").hidden = true; $("#map").hidden = false; } }
+    renderSchema();
+  }
+  function renderSchema(){
     const svg = $("#map");
     const land = COAST.map(([a,o]) => px(a,o));
     const landPath = `M${px(44.3,6.6).join(",")} L${px(43.40,6.6).join(",")} ` + land.map(p => "L"+p.join(",")).join(" ") + ` L${px(43.79,7.7).join(",")} L${px(44.3,7.7).join(",")} Z`;
@@ -503,9 +690,27 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
         ${own ? row("Mot de passe admin", n.aMotDePasse ? "enregistré" : `<span style="color:var(--warn)">non renseigné</span>`) : ""}
       </dl>
       ${sparks}
+      ${n.chemin ? `<div class="neigh"><strong style="font-size:.9rem">Chemin depuis le nœud companion</strong>${renderPath(n.chemin)}</div>` : ""}
+      ${own && liaison.connecte ? renderCmds(n) : ""}
       ${neigh ? `<div class="neigh"><strong style="font-size:.9rem">Voisins entendus</strong>${neigh}</div>` : ""}
       ${n.notes ? `<p style="margin:0;white-space:pre-wrap">${esc(n.notes)}</p>` : ""}
       <div class="actions"><button class="btn" id="edit">Modifier</button><button class="btn" id="checked">Marquer vérifié</button><span class="msg" id="ficheMsg"></span></div>`;
+  }
+
+  function renderPath(c){
+    if (c.type === "direct") return `<div class="path"><span>${esc(liaison.noeudLocal||"companion")}</span><i>→</i><span>direct, sans relais</span></div>`;
+    if (c.type === "inondation" || !c.relais) return `<div class="path"><span>route inconnue : diffusion (flood) à chaque message</span></div>`;
+    return `<div class="path"><span>${esc(liaison.noeudLocal||"companion")}</span>${c.relais.map(r => `<i>→</i><span>${esc(r)}</span>`).join("")}<i>→</i><span><b>destination</b></span></div><span class="reading">${c.sauts} relais${c.sauts>1?"":""}</span>`;
+  }
+  let cmdConfirm = null;
+  function renderCmds(n){
+    if (!n.aMotDePasse) return `<div class="cmds"><strong style="font-size:.9rem">Commandes à distance</strong><span class="reading">Saisissez le mot de passe admin (Modifier) pour commander ce répéteur.</span></div>`;
+    const conf = cmdConfirm && cmdConfirm.id === n.id ? cmdConfirm.cmd : null;
+    return `<div class="cmds"><strong style="font-size:.9rem">Commandes à distance</strong>
+      <div class="row"><label style="flex-direction:row;display:flex;align-items:center;gap:6px;color:var(--fg)">Puissance <input id="cmdTx" type="number" min="1" max="22" value="${esc(n.tx||"")}"> dBm</label><button class="btn small" data-cmd="tx">Appliquer</button></div>
+      <div class="row"><button class="btn small" data-cmd="advert">Envoyer un advert</button><button class="btn small" data-cmd="powersaving on">Économie d'énergie : activer</button><button class="btn small" data-cmd="powersaving off">désactiver</button><button class="btn small danger" data-cmd="reboot">Redémarrer</button></div>
+      ${conf ? `<div class="confirm">Confirmer « ${esc(conf)} » sur ${esc(n.nom)} ? <button class="btn danger small" data-cmdok="1">Oui, envoyer</button><button class="btn small" data-cmdno="1">Annuler</button></div>` : ""}
+      <span class="msg" id="cmdMsg"></span></div>`;
   }
 
   function renderForm(f){
@@ -600,9 +805,84 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
   }
 
   function renderAll(){
-    renderRadio(); renderLink(); renderSummary(); renderMap();
-    if (!editing) renderFiche();
-    renderTable(); renderTodos(); renderLog();
+    renderRadio(); renderLink(); renderAlerts(); renderTabs();
+    if (tab === "reseau") { renderSummary(); renderMap(); if (!editing) renderFiche(); renderTable(); renderTodos(); renderLog(); }
+    if (tab === "messages") renderChat();
+    if (tab === "courante") renderCourante();
+    if (tab === "reglages") renderSettings();
+  }
+
+  /* ---------- onglets ---------- */
+  function renderTabs(){
+    document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", b.dataset.tab===tab));
+    ["reseau","messages","courante","reglages"].forEach(k => $("#tab-"+k).hidden = k !== tab);
+    const unread = messages.filter(m => m.sens==="recu").length - seenMsgs;
+    const b = $("#msgBadge"); b.hidden = !(unread > 0 && tab !== "messages" && seenMsgs >= 0); b.textContent = unread;
+    $("#exBadge").hidden = !exercice;
+  }
+
+  /* ---------- alertes ---------- */
+  const NIV = {critique:["Hors ligne","var(--crit)"], attention:["Batterie","var(--warn)"], message:["Message","var(--test)"], info:["Info","var(--ok)"]};
+  function bip(){
+    if (!son) return;
+    try { const a = new (window.AudioContext||window.webkitAudioContext)(); [0,0.22].forEach(t => { const o=a.createOscillator(), g=a.createGain(); o.frequency.value=880; o.connect(g); g.connect(a.destination); g.gain.setValueAtTime(.15,a.currentTime+t); g.gain.exponentialRampToValueAtTime(.001,a.currentTime+t+.18); o.start(a.currentTime+t); o.stop(a.currentTime+t+.2); }); } catch(e) {}
+  }
+  function renderAlerts(){
+    const neuves = alertes.filter(a => !a.vue);
+    const el = $("#alerts");
+    if (!neuves.length) { el.hidden = true; return; }
+    el.hidden = false;
+    el.className = "alerts" + (neuves.some(a => a.niveau==="critique") ? "" : " calm");
+    el.innerHTML = `<div class="alerts-head"><strong>${neuves.length} alerte(s) non lue(s)</strong><button class="btn small" id="alertsSeen">Marquer comme lues</button></div>
+      <ul>${neuves.slice(0,8).map(a => { const [t,c] = NIV[a.niveau] || ["Info","var(--muted)"]; return `<li><time>${fmtDate(a.date)}</time><span class="lvl" style="--c:${c}">${t}</span><span>${esc(a.texte)}</span></li>`; }).join("")}</ul>`;
+  }
+
+  /* ---------- messagerie ---------- */
+  function convKey(m){ return m.canal != null ? "c:"+m.canal : "d:"+(m.contact_cle||"").slice(0,12); }
+  function renderChat(){
+    const chans = (liaison.canaux && liaison.canaux.length ? liaison.canaux : [{index:0, nom:"Public"}]);
+    const contacts = liaison.contactsMessagerie || [];
+    const dms = {};
+    messages.filter(m => m.canal == null).forEach(m => { const k = (m.contact_cle||"").slice(0,12); dms[k] = dms[k] || {cle:k, nom:m.contact||k, n:0}; dms[k].n++; });
+    contacts.forEach(c => { const k = c.cle.slice(0,12); dms[k] = Object.assign(dms[k] || {n:0}, {cle:k, full:c.cle, nom:c.nom}); });
+    if (!conv) conv = "c:" + chans[0].index;
+    const cnt = k => messages.filter(m => convKey(m)===k).length;
+    $("#convs").innerHTML = `<h3>Canaux</h3>` + chans.map(c => `<button data-conv="c:${c.index}" aria-pressed="${conv==="c:"+c.index}"><span>#${esc(c.nom)}</span><span class="n">${cnt("c:"+c.index)||""}</span></button>`).join("") +
+      `<h3>Messages directs</h3>` + (Object.values(dms).sort((a,b)=>(b.n-a.n)||a.nom.localeCompare(b.nom)).map(d => `<button data-conv="d:${esc(d.cle)}" aria-pressed="${conv==="d:"+d.cle}"><span>${esc(d.nom)}</span><span class="n">${d.n||""}</span></button>`).join("") || `<span class="reading" style="padding:4px 14px">Aucun contact. Connectez le nœud companion.</span>`);
+    const list = messages.filter(m => convKey(m)===conv);
+    const isChan = conv.startsWith("c:");
+    const title = isChan ? "#" + (chans.find(c => "c:"+c.index===conv)||{nom:"Canal"}).nom : (dms[conv.slice(2)]||{nom:"Contact"}).nom;
+    $("#threadTitle").textContent = title;
+    $("#threadSub").textContent = isChan ? "Canal partagé : tous les nœuds du canal reçoivent le message" : "Message direct chiffré";
+    const box = $("#msgs"), atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+    box.innerHTML = list.length ? list.map(m => `<div class="msg${m.sens==="emis"?" out":""}">${m.sens==="recu" && m.auteur ? `<span class="who">${esc(m.auteur)}</span>` : ""}<span>${esc(m.texte)}</span>
+      <span class="meta"><span>${fmtDate(m.date)}</span>${m.snr!=null?`<span>SNR ${fmtSnr(+m.snr)}</span>`:""}${m.sauts!=null?`<span>${m.sauts} saut(s)</span>`:""}${m.statut?`<span>${esc(m.statut)}</span>`:""}</span></div>`).join("")
+      : `<div class="empty">${liaison.connecte ? "Aucun message pour l'instant." : "Connectez le nœud companion pour recevoir et envoyer des messages."}</div>`;
+    if (atBottom || lastMsgCount !== messages.length) box.scrollTop = box.scrollHeight;
+    lastMsgCount = messages.length;
+    $("#msgSend").disabled = !liaison.connecte;
+    seenMsgs = messages.filter(m => m.sens==="recu").length;
+  }
+
+  /* ---------- main courante ---------- */
+  function renderCourante(){
+    const e = exercice;
+    $("#exCurrent").innerHTML = e
+      ? `<div class="excard live"><span class="eyebrow" style="color:var(--crit)">${esc(e.type||"exercice")} en cours</span><span class="big">${esc(e.nom)}</span><span class="muted">Depuis ${fmtDate(e.debut)} · ${esc(e.responsable||"")}</span>
+         <div class="actions"><button class="btn danger" id="exStop">Terminer</button><button class="btn" data-mc="${e.id}">Main courante PDF</button></div></div>`
+      : `<form class="edit" id="exForm"><div class="fgrid"><label class="full">Nom<input id="exNom" placeholder="Ex. : Exercice SATER départemental" maxlength="80"></label>
+         <label>Type<select id="exType"><option value="exercice">Exercice</option><option value="intervention">Intervention réelle</option><option value="veille">Veille / astreinte</option></select></label></div>
+         <div class="actions"><button class="btn primary" type="submit">Démarrer la main courante</button></div></form>`;
+    $("#exList").innerHTML = exercices.length ? exercices.map(x => `<div><span><b>${esc(x.nom)}</b> <span class="muted">· ${esc(x.type||"")} · ${fmtDate(x.debut)} → ${x.fin ? fmtDate(x.fin) : "en cours"}</span></span><button class="btn small" data-mc="${x.id}">PDF</button></div>`).join("")
+      : `<div class="empty">Aucune main courante pour l'instant.</div>`;
+  }
+
+  /* ---------- réglages ---------- */
+  function renderSettings(){
+    const r = reglages;
+    if (document.activeElement !== $("#optSeuil")) $("#optSeuil").value = (r.seuilBatterie ?? 3.5).toFixed(2);
+    $("#optNotif").checked = !!r.notifications; $("#optAuto").checked = !!r.demarrageAuto; $("#optZone").checked = !!r.reduireZone;
+    $("#optFond").value = r.fondCarte || "osmfr"; $("#optSon").checked = son;
   }
 
   /* ---------- données ---------- */
@@ -612,6 +892,12 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
     if (!force && r === rev) { renderLink(); return; }
     const st = await api.etat();
     rev = st.revision; nodes = st.noeuds; journal = st.journal; liaison = st.liaison; loaded = true;
+    messages = st.messages || []; exercice = st.exercice; exercices = st.exercices || []; reglages = st.reglages || {};
+    alertes = st.alertes || [];
+    const top = alertes.find(a => !a.vue);
+    if (top && lastAlertId !== null && top.id !== lastAlertId && (top.niveau==="critique" || top.niveau==="attention" || top.niveau==="message")) bip();
+    lastAlertId = top ? top.id : (alertes[0] ? alertes[0].id : 0);
+    if (!msgInit) { seenMsgs = messages.filter(m => m.sens==="recu").length; msgInit = true; }
     $("#footInfo").textContent = `Données enregistrées sur ce PC (${st.dossier}) · version ${st.version}`;
     if (sel && !nodes.some(n => n.id===sel)) sel = null;
     renderAll();
@@ -622,6 +908,26 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
   function pick(id){ sel = id; editing = null; confirmDel = false; hist = []; histFor = null; renderAll(); loadHistory(id); }
   document.addEventListener("click", async e => {
     const t = e.target;
+    const tb = t.closest(".tabs button");
+    if (tb) { tab = tb.dataset.tab; editing = null; renderAll(); if (tab==="reseau" && lmap) setTimeout(()=>lmap.invalidateSize(),0); return; }
+    const cv = t.closest("[data-conv]");
+    if (cv) { conv = cv.dataset.conv; lastMsgCount = -2; renderChat(); return; }
+    const mc = t.closest("[data-mc]");
+    if (mc) { const r = await api.main_courante(+mc.dataset.mc); if (r.ok) toast("Main courante enregistrée : " + r.chemin); else if (r.erreur) toast(r.erreur); return; }
+    const cb = t.closest("[data-cmd]");
+    if (cb) {
+      let cmd = cb.dataset.cmd;
+      if (cmd === "tx") { const v = +$("#cmdTx").value; if (!(v>=1 && v<=22)) { toast("Puissance entre 1 et 22 dBm."); return; } cmd = "set tx " + v; }
+      cmdConfirm = {id: sel, cmd}; renderFiche(); return;
+    }
+    if (t.closest("[data-cmdno]")) { cmdConfirm = null; renderFiche(); return; }
+    if (t.closest("[data-cmdok]") && cmdConfirm) {
+      const c = cmdConfirm; cmdConfirm = null; renderFiche();
+      const m = $("#cmdMsg"); if (m) m.textContent = "Envoi en cours (jusqu'à 1 min)…";
+      const r = await api.commande(c.id, c.cmd);
+      toast(r.ok ? (r.reponse ? `Réponse : ${r.reponse}` : "Commande envoyée (pas de réponse du répéteur)") : r.erreur);
+      refresh(true); return;
+    }
     const node = t.closest("#map .node, #rows tr[data-id], #todos button[data-id]");
     if (node) { pick(node.dataset.id); if (node.matches("#todos button, #rows tr")) $("#fiche").scrollIntoView({block:"nearest",behavior:"smooth"}); return; }
     const chip = t.closest("#summary [data-st]");
@@ -656,6 +962,10 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
       }
       case "disconnect": await api.deconnecter(); refresh(true); return;
       case "pollNow": { const r = await api.interroger(); if (!r.ok) toast(r.erreur); else toast("Interrogation lancée"); return; }
+      case "alertsSeen": await api.alertes_vues(); refresh(true); return;
+      case "exStop": await api.terminer_exercice(); refresh(true); return;
+      case "repPdf": { const r = await api.rapport("pdf", $("#repVoisins").checked); if (r.ok) toast("Rapport enregistré : " + r.chemin); else if (r.erreur) toast(r.erreur); return; }
+      case "repXlsx": { const r = await api.rapport("xlsx", $("#repVoisins").checked); if (r.ok) toast("Tableau enregistré : " + r.chemin); else if (r.erreur) toast(r.erreur); return; }
       case "export": { const r = await api.exporter(); if (r.ok) toast("Export enregistré : " + r.chemin); return; }
       case "import": { const r = await api.importer(); if (r.ok) toast(`Import terminé : ${r.noeuds} nœud(s), ${r.journal} entrée(s) de journal ajoutée(s).`); else if (r.erreur) toast(r.erreur); refresh(true); return; }
     }
@@ -663,11 +973,19 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
   document.addEventListener("change", async e => {
     if (e.target.id === "interval") { await api.regler(+e.target.value, null); toast("Intervalle enregistré"); }
     if (e.target.id === "discover") { await api.regler(null, e.target.checked); }
+    if (e.target.id === "optNotif") await api.regler_options({notifications: e.target.checked});
+    if (e.target.id === "optZone") await api.regler_options({reduireZone: e.target.checked});
+    if (e.target.id === "optFond") { await api.regler_options({fondCarte: e.target.value}); refresh(true); }
+    if (e.target.id === "optSeuil") { await api.regler_options({seuilBatterie: +e.target.value}); toast("Seuil enregistré"); }
+    if (e.target.id === "optSon") { son = e.target.checked; try { localStorage.setItem("son", son ? "1" : "0"); } catch(err) {} if (son) bip(); }
+    if (e.target.id === "optAuto") { const r = await api.regler_options({demarrageAuto: e.target.checked}); if (!r.ok) toast(r.erreur); refresh(true); }
   });
   document.addEventListener("keydown", e => {
     if ((e.key==="Enter"||e.key===" ") && e.target.matches("#map .node, #rows tr[data-id]")) { e.preventDefault(); pick(e.target.dataset.id); }
   });
   $("#q").addEventListener("input", e => { filter.q = e.target.value; renderTable(); });
+  $("#msgText").addEventListener("input", e => { const n = new TextEncoder().encode(e.target.value).length; const c = $("#msgCount"); c.textContent = `${n} / 150`; c.style.color = n > 150 ? "var(--crit)" : ""; });
+  $("#msgText").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#compose").requestSubmit(); } });
 
   document.addEventListener("submit", async e => {
     e.preventDefault();
@@ -688,6 +1006,20 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
       const r = await api.enregistrer_noeud(doc, clear ? "" : (pwd ? pwd : null));
       if (!r.ok) { $("#formMsg").textContent = r.erreur; $("#formMsg").className="msg err"; return; }
       sel = r.id; editing = null; refresh(true);
+    }
+    if (e.target.id === "compose") {
+      const texte = $("#msgText").value.trim(); if (!texte) return;
+      const isChan = conv.startsWith("c:");
+      let r;
+      if (isChan) r = await api.envoyer_message(texte, +conv.slice(2), null);
+      else { const c = (liaison.contactsMessagerie||[]).find(x => x.cle.startsWith(conv.slice(2))); if (!c) { toast("Contact introuvable dans le nœud companion."); return; } r = await api.envoyer_message(texte, null, c.cle); }
+      if (r.ok) { $("#msgText").value = ""; $("#msgCount").textContent = "0 / 150"; refresh(true); } else toast(r.erreur);
+      return;
+    }
+    if (e.target.id === "exForm") {
+      const r = await api.demarrer_exercice($("#exNom").value, $("#exType").value);
+      if (r.ok) { toast("Main courante démarrée"); refresh(true); } else toast(r.erreur);
+      return;
     }
     if (e.target.id === "logForm") {
       const texte = $("#logText").value.trim(); if (!texte) return;

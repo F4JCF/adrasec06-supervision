@@ -57,8 +57,23 @@ class Store:
                     last_snr REAL, nb_recv INTEGER, nb_sent INTEGER);
                 CREATE INDEX IF NOT EXISTS mesures_noeud ON mesures(noeud, ts);
                 CREATE TABLE IF NOT EXISTS config (cle TEXT PRIMARY KEY, valeur TEXT);
+                CREATE TABLE IF NOT EXISTS messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    date TEXT NOT NULL, ts REAL NOT NULL, sens TEXT NOT NULL,
+                    canal INTEGER, canal_nom TEXT, contact TEXT, contact_cle TEXT,
+                    auteur TEXT, texte TEXT NOT NULL, snr REAL, sauts INTEGER, statut TEXT);
+                CREATE INDEX IF NOT EXISTS messages_ts ON messages(ts);
+                CREATE TABLE IF NOT EXISTS exercices (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    nom TEXT NOT NULL, type TEXT, debut TEXT NOT NULL, fin TEXT, responsable TEXT);
+                CREATE TABLE IF NOT EXISTS alertes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    date TEXT NOT NULL, niveau TEXT NOT NULL, noeud TEXT, texte TEXT NOT NULL, vue INTEGER DEFAULT 0);
                 """
             )
+            cols = {r[1] for r in self._cx.execute("PRAGMA table_info(journal)")}
+            if "exercice" not in cols:
+                self._cx.execute("ALTER TABLE journal ADD COLUMN exercice INTEGER")
             self._cx.commit()
         if not self.list_nodes():
             self._seed()
@@ -134,11 +149,15 @@ class Store:
         self._bump()
 
     # ---------- journal ----------
-    def add_journal(self, noeud: str, auteur: str, texte: str, date: str | None = None, auto: bool = False, bump: bool = True):
+    def add_journal(self, noeud: str, auteur: str, texte: str, date: str | None = None, auto: bool = False,
+                    bump: bool = True, exercice: int | None = -1):
+        if exercice == -1:  # par défaut : rattachée à l'exercice en cours, s'il y en a un
+            ex = self.current_exercise()
+            exercice = ex["id"] if ex else None
         with self._lock:
             self._cx.execute(
-                "INSERT INTO journal(date, noeud, auteur, texte, auto) VALUES(?,?,?,?,?)",
-                (date or now_iso(), noeud or "", auteur or "", texte, 1 if auto else 0),
+                "INSERT INTO journal(date, noeud, auteur, texte, auto, exercice) VALUES(?,?,?,?,?,?)",
+                (date or now_iso(), noeud or "", auteur or "", texte, 1 if auto else 0, exercice),
             )
             self._cx.commit()
         if bump:
@@ -147,9 +166,102 @@ class Store:
     def list_journal(self, limit: int = 300) -> list[dict]:
         with self._lock:
             rows = self._cx.execute(
-                "SELECT id, date, noeud, auteur, texte, auto FROM journal ORDER BY date DESC, id DESC LIMIT ?", (limit,)
+                "SELECT id, date, noeud, auteur, texte, auto, exercice FROM journal ORDER BY date DESC, id DESC LIMIT ?", (limit,)
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def journal_of_exercise(self, ex_id: int) -> list[dict]:
+        with self._lock:
+            rows = self._cx.execute(
+                "SELECT id, date, noeud, auteur, texte, auto FROM journal WHERE exercice=? ORDER BY date, id", (ex_id,)
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ---------- exercices / interventions ----------
+    def current_exercise(self) -> dict | None:
+        with self._lock:
+            r = self._cx.execute("SELECT * FROM exercices WHERE fin IS NULL ORDER BY id DESC LIMIT 1").fetchone()
+        return dict(r) if r else None
+
+    def start_exercise(self, nom: str, type_: str, responsable: str) -> dict:
+        cur = self.current_exercise()
+        if cur:
+            self.stop_exercise()
+        with self._lock:
+            c = self._cx.execute("INSERT INTO exercices(nom, type, debut, responsable) VALUES(?,?,?,?)",
+                                 (nom, type_, now_iso(), responsable))
+            self._cx.commit()
+            ex_id = c.lastrowid
+        self.add_journal("", responsable or "AUTO", f"Début {type_ or 'exercice'} : {nom}", exercice=ex_id)
+        return self.get_exercise(ex_id)
+
+    def stop_exercise(self) -> dict | None:
+        cur = self.current_exercise()
+        if not cur:
+            return None
+        self.add_journal("", cur.get("responsable") or "AUTO", f"Fin {cur.get('type') or 'exercice'} : {cur['nom']}",
+                         exercice=cur["id"])
+        with self._lock:
+            self._cx.execute("UPDATE exercices SET fin=? WHERE id=?", (now_iso(), cur["id"]))
+            self._cx.commit()
+        self._bump()
+        return self.get_exercise(cur["id"])
+
+    def get_exercise(self, ex_id: int) -> dict | None:
+        with self._lock:
+            r = self._cx.execute("SELECT * FROM exercices WHERE id=?", (ex_id,)).fetchone()
+        return dict(r) if r else None
+
+    def list_exercises(self) -> list[dict]:
+        with self._lock:
+            rows = self._cx.execute("SELECT * FROM exercices ORDER BY id DESC").fetchall()
+        return [dict(r) for r in rows]
+
+    # ---------- messagerie ----------
+    def add_message(self, m: dict) -> int:
+        with self._lock:
+            c = self._cx.execute(
+                "INSERT INTO messages(date, ts, sens, canal, canal_nom, contact, contact_cle, auteur, texte, snr, sauts, statut)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                (m.get("date") or now_iso(), m.get("ts") or time.time(), m["sens"], m.get("canal"), m.get("canal_nom"),
+                 m.get("contact"), m.get("contact_cle"), m.get("auteur"), m["texte"], m.get("snr"), m.get("sauts"),
+                 m.get("statut")))
+            self._cx.execute("DELETE FROM messages WHERE ts < ?", (time.time() - 365 * 86400,))
+            self._cx.commit()
+            mid = c.lastrowid
+        self._bump()
+        return mid
+
+    def set_message_status(self, mid: int, statut: str):
+        with self._lock:
+            self._cx.execute("UPDATE messages SET statut=? WHERE id=?", (statut, mid))
+            self._cx.commit()
+        self._bump()
+
+    def list_messages(self, limit: int = 500) -> list[dict]:
+        with self._lock:
+            rows = self._cx.execute("SELECT * FROM messages ORDER BY ts DESC, id DESC LIMIT ?", (limit,)).fetchall()
+        return [dict(r) for r in rows][::-1]
+
+    # ---------- alertes ----------
+    def add_alert(self, niveau: str, noeud: str, texte: str):
+        with self._lock:
+            self._cx.execute("INSERT INTO alertes(date, niveau, noeud, texte) VALUES(?,?,?,?)",
+                             (now_iso(), niveau, noeud, texte))
+            self._cx.execute("DELETE FROM alertes WHERE id NOT IN (SELECT id FROM alertes ORDER BY id DESC LIMIT 500)")
+            self._cx.commit()
+        self._bump()
+
+    def list_alerts(self, limit: int = 50) -> list[dict]:
+        with self._lock:
+            rows = self._cx.execute("SELECT * FROM alertes ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def mark_alerts_seen(self):
+        with self._lock:
+            self._cx.execute("UPDATE alertes SET vue=1 WHERE vue=0")
+            self._cx.commit()
+        self._bump()
 
     def delete_journal(self, entry_id: int):
         with self._lock:

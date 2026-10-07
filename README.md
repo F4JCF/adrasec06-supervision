@@ -40,6 +40,17 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 - **Découverte** : avec « Ajouter les répéteurs entendus », chaque répéteur présent dans les contacts du nœud companion est ajouté comme voisin (marqué `auto`), avec sa position GPS s'il l'annonce.
 - **Historique** : bruit, erreurs RX et batterie sont conservés 90 jours. La fiche affiche les 7 derniers jours.
 
+### Nouveautés de la version 1.1
+
+- **Messagerie** (onglet Messagerie) : lire et envoyer sur les canaux MeshCore du nœud companion (Public, ADRASEC…) et en message direct. 150 octets par message, Entrée pour envoyer.
+- **Carte réelle** : fond OpenStreetMap France, OpenStreetMap ou relief OpenTopoMap (au choix dans Réglages ; « Schéma hors ligne » sans Internet).
+- **Chemin** : la fiche d'un répéteur montre par quels relais passe la liaison depuis le nœud companion ; le trajet s'affiche en pointillés sur la carte.
+- **Commandes à distance** (fiche du répéteur, mot de passe admin requis) : puissance TX, advert, économie d'énergie, redémarrage. Chaque commande est confirmée puis notée au journal.
+- **Alertes** : notification Windows et bip quand un répéteur passe hors ligne, qu'une batterie passe sous le seuil, ou qu'un message direct arrive.
+- **Main courante** : démarrer un exercice, une intervention ou une veille ; toutes les entrées du journal y sont rattachées ; export PDF avec les messages radio échangés.
+- **Rapports** : état du réseau en PDF ou Excel.
+- **Arrière-plan** : la croix réduit près de l'horloge, démarrage automatique avec Windows (Réglages) avec reconnexion au dernier nœud.
+
 ### Les données
 
 Tout est enregistré sur le PC dans `%APPDATA%\ADRASEC06-Supervision\supervision.db`, y compris les mots de passe des répéteurs et le PIN Bluetooth (en clair, dans ce fichier local uniquement). Le journal technique est dans `supervision.log` au même endroit.

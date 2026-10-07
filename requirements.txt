@@ -1,3 +1,7 @@
 pywebview==6.2.1
 meshcore==2.3.15
 pyserial==3.5
+openpyxl==3.1.5
+reportlab==5.0.1
+pystray==0.19.5
+pillow==12.3.0

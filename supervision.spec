@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 # Fichier de compilation PyInstaller : un seul .exe fenêtré.
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
 a = Analysis(
     ["run.py"],
@@ -8,9 +8,12 @@ a = Analysis(
     datas=[
         ("supervision/ui", "ui"),
         ("supervision/seed.json", "."),
-    ],
+        ("supervision/icone.png", "."),
+    ] + collect_data_files("reportlab"),
     hiddenimports=(collect_submodules("meshcore") + collect_submodules("bleak")
-                   + collect_submodules("winrt") + ["serial.tools.list_ports"]),
+                   + collect_submodules("winrt") + collect_submodules("pystray")
+                   + collect_submodules("reportlab") + collect_submodules("openpyxl")
+                   + ["serial.tools.list_ports", "PIL.Image"]),
     excludes=["tkinter"],
 )
 pyz = PYZ(a.pure)

@@ -46,8 +46,10 @@ def list_serial_ports() -> list[dict]:
 
 
 class Poller:
-    def __init__(self, store: Store):
+    def __init__(self, store: Store, alerte=None):
         self.store = store
+        self.alerte = alerte or (lambda niveau, noeud, texte: None)
+        self.canaux: list[dict] = []
         self.loop = asyncio.new_event_loop()
         self.thread = threading.Thread(target=self._run_loop, name="meshcore", daemon=True)
         self.thread.start()
@@ -95,6 +97,8 @@ class Poller:
             "intervalle": self.interval(),
             "decouverte": bool(self.store.get_config("decouverte", True)),
             "evenements": list(self.events)[:60],
+            "canaux": self.canaux if self.mc is not None else [],
+            "contactsMessagerie": self.contacts_messagerie() if self.mc is not None else [],
         }
 
     def interval(self) -> int:
@@ -188,7 +192,19 @@ class Poller:
         except Exception:
             pass
         try:
+            mc.subscribe(EventType.CHANNEL_MSG_RECV, self._on_channel_msg)
+            mc.subscribe(EventType.CONTACT_MSG_RECV, self._on_contact_msg)
+        except Exception as e:  # noqa: BLE001
+            log.warning("Abonnement aux messages impossible : %s", e)
+        try:
             await mc.start_auto_message_fetching()
+        except Exception:
+            pass
+        await self._load_channels()
+        try:
+            res = await mc.commands.get_contacts()
+            if res is not None and res.type != EventType.ERROR:
+                self._contacts = dict(res.payload or {})
         except Exception:
             pass
         self.store.set_config("dernier_mode", mode)
@@ -213,6 +229,7 @@ class Poller:
         self.port = None
         self.mode = None
         self.radio = {}
+        self.canaux = []
         self.busy = False
         self.next_cycle = None
         self.message = "Non connecté"
@@ -302,7 +319,7 @@ class Poller:
                 }, bump=False)
                 added += 1
             else:
-                fields = {"dernierAdvert": last_seen, "cle": c.get("public_key", "")[:12]}
+                fields = {"dernierAdvert": last_seen, "cle": c.get("public_key", "")[:12], "chemin": self._chemin(c)}
                 if has_pos and (node.get("lat") in ("", None) or node.get("lon") in ("", None)):
                     fields.update(lat=round(lat, 5), lon=round(lon, 5))
                 node.update(fields)
@@ -351,6 +368,8 @@ class Poller:
             "lecture": "Lecture automatique OK" + ("" if admin else " (sans droits admin : voisins et firmware non lus)"),
         }
         self.store.add_measure(node["id"], status)
+        fields["chemin"] = self._chemin(contact)
+        self._check_battery(node, fields.get("batterie"))
 
         if admin:
             try:
@@ -378,6 +397,8 @@ class Poller:
         if old in ("degrade", "hors-ligne"):
             fields["statut"] = "en-ligne"
             self.store.add_journal(name, "AUTO", f"{name} répond de nouveau (était {old}).", auto=True)
+            if old == "hors-ligne":
+                self.alerte("info", name, f"{name} répond de nouveau.")
         self.store.patch_node(node["id"], fields)
 
     async def _cli(self, contact, cmd: str, timeout: float = 20) -> str | None:
@@ -408,4 +429,176 @@ class Poller:
                 label = {"hors-ligne": "hors ligne", "degrade": "dégradé"}[new]
                 self.store.add_journal(node.get("nom", ""), "AUTO",
                                        f"{node.get('nom')} ne répond pas ({fails} essai(s)) : passé en {label}.", auto=True)
+                if new == "hors-ligne":
+                    self.alerte("critique", node.get("nom", ""), f"{node.get('nom')} est hors ligne ({fails} essais sans réponse).")
         self.store.patch_node(node["id"], fields)
+
+
+    # ---------- chemins ----------
+    def _chemin(self, contact: dict) -> dict:
+        """Chemin connu par le nœud companion pour joindre ce contact : direct, relais, ou inondation."""
+        n = contact.get("out_path_len", -1)
+        if n is None or n < 0:
+            return {"type": "inondation", "sauts": None, "relais": []}
+        if n == 0:
+            return {"type": "direct", "sauts": 0, "relais": []}
+        size = max(1, (contact.get("out_path_hash_mode") or 0) + 1)
+        hexpath = contact.get("out_path") or ""
+        hops = [hexpath[i:i + 2 * size] for i in range(0, len(hexpath), 2 * size)][:n]
+        relais = []
+        for h in hops:
+            noms = [c.get("adv_name") for c in self._contacts.values()
+                    if c.get("type") in (2, 3) and c.get("public_key", "").lower().startswith(h.lower())]
+            relais.append(noms[0] if len(noms) == 1 else (f"{noms[0]} (?)" if noms else f"? {h}"))
+        return {"type": "relais", "sauts": n, "relais": relais}
+
+    # ---------- alertes batterie ----------
+    def _check_battery(self, node: dict, volts):
+        try:
+            v = float(volts)
+        except (TypeError, ValueError):
+            return
+        if v <= 0:
+            return
+        seuil = float(self.store.get_config("seuil_batterie", 3.5) or 3.5)
+        flagged = bool(node.get("alerteBatterie"))
+        if v < seuil and not flagged:
+            self.alerte("attention", node.get("nom", ""), f"Batterie faible sur {node.get('nom')} : {v:.2f} V (seuil {seuil:.2f} V).")
+            self.store.add_journal(node.get("nom", ""), "AUTO", f"Batterie faible : {v:.2f} V.", auto=True)
+            self.store.patch_node(node["id"], {"alerteBatterie": True})
+        elif v >= seuil + 0.1 and flagged:
+            self.store.patch_node(node["id"], {"alerteBatterie": False})
+
+    # ---------- messagerie ----------
+    async def _load_channels(self):
+        out = []
+        for i in range(8):
+            try:
+                ev = await self.mc.commands.get_channel(i)
+            except Exception:
+                break
+            if ev is None or ev.type == EventType.ERROR:
+                break
+            name = ((ev.payload or {}).get("channel_name") or "").strip("\x00 ")
+            if name:
+                out.append({"index": i, "nom": name})
+        self.canaux = out or [{"index": 0, "nom": "Public"}]
+        self.store._bump()
+
+    def contacts_messagerie(self) -> list[dict]:
+        out = [{"cle": c.get("public_key", ""), "nom": c.get("adv_name", "")}
+               for c in self._contacts.values() if c.get("type") == 1 and c.get("adv_name")]
+        out.sort(key=lambda x: x["nom"].lower())
+        return out
+
+    def _canal_nom(self, idx) -> str:
+        for c in self.canaux:
+            if c["index"] == idx:
+                return c["nom"]
+        return f"Canal {idx}"
+
+    async def _on_channel_msg(self, event):
+        p = event.payload or {}
+        if p.get("txt_type") not in (0, None):
+            return
+        texte = p.get("text", "")
+        auteur, _, corps = texte.partition(": ")
+        if not corps:
+            auteur, corps = "", texte
+        self.store.add_message({"sens": "recu", "canal": p.get("channel_idx"), "canal_nom": self._canal_nom(p.get("channel_idx")),
+                                "auteur": auteur, "texte": corps, "snr": p.get("SNR"),
+                                "sauts": p.get("path_len") if p.get("path_len") not in (255, None) else None})
+
+    async def _on_contact_msg(self, event):
+        p = event.payload or {}
+        if p.get("txt_type", 0) != 0:  # les réponses aux commandes console sont ignorées ici
+            return
+        prefix = p.get("pubkey_prefix", "")
+        nom = next((c.get("adv_name") for c in self._contacts.values()
+                    if c.get("public_key", "").startswith(prefix)), prefix)
+        self.store.add_message({"sens": "recu", "contact": nom, "contact_cle": prefix, "auteur": nom,
+                                "texte": p.get("text", ""), "snr": p.get("SNR"),
+                                "sauts": p.get("path_len") if p.get("path_len") not in (255, None) else None})
+        self.alerte("message", nom, f"Message de {nom} : {p.get('text', '')[:120]}")
+
+    def envoyer_message(self, texte: str, canal=None, contact_cle=None) -> dict:
+        if self.mc is None:
+            return {"ok": False, "erreur": "Aucun nœud connecté."}
+        texte = (texte or "").strip()
+        if not texte:
+            return {"ok": False, "erreur": "Le message est vide."}
+        if len(texte.encode("utf-8")) > 150:
+            return {"ok": False, "erreur": "Message trop long (150 octets maximum)."}
+        try:
+            return self._submit(self._envoyer(texte, canal, contact_cle), timeout=30)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "erreur": f"Envoi impossible : {e}"}
+
+    async def _envoyer(self, texte, canal, contact_cle):
+        moi = self.local_name or "moi"
+        if contact_cle:
+            c = next((c for c in self._contacts.values() if c.get("public_key") == contact_cle), None)
+            if c is None:
+                return {"ok": False, "erreur": "Contact introuvable dans le nœud companion."}
+            ev = await self.mc.commands.send_msg(c, texte)
+            ok = ev is not None and ev.type != EventType.ERROR
+            self.store.add_message({"sens": "emis", "contact": c.get("adv_name"), "contact_cle": contact_cle[:12],
+                                    "auteur": moi, "texte": texte, "statut": "envoyé" if ok else "échec"})
+        else:
+            idx = int(canal or 0)
+            ev = await self.mc.commands.send_chan_msg(idx, texte)
+            ok = ev is not None and ev.type != EventType.ERROR
+            self.store.add_message({"sens": "emis", "canal": idx, "canal_nom": self._canal_nom(idx), "auteur": moi,
+                                    "texte": texte, "statut": "envoyé" if ok else "échec"})
+        return {"ok": ok} if ok else {"ok": False, "erreur": "Le nœud companion a refusé l'envoi."}
+
+    # ---------- commandes à distance ----------
+    COMMANDES = {
+        "advert": "advert",
+        "reboot": "reboot",
+        "powersaving on": "powersaving on",
+        "powersaving off": "powersaving off",
+    }
+
+    def commande(self, node_id: str, cmd: str, operateur: str = "") -> dict:
+        if self.mc is None:
+            return {"ok": False, "erreur": "Aucun nœud connecté."}
+        cmd = (cmd or "").strip().lower()
+        m = re.fullmatch(r"set tx (\d{1,2})", cmd)
+        if m:
+            if not 1 <= int(m.group(1)) <= 22:
+                return {"ok": False, "erreur": "Puissance hors limites (1 à 22 dBm)."}
+        elif cmd not in self.COMMANDES:
+            return {"ok": False, "erreur": "Commande non autorisée."}
+        node = self.store.get_node(node_id)
+        if node is None:
+            return {"ok": False, "erreur": "Nœud inconnu."}
+        if not self.store.password(node_id):
+            return {"ok": False, "erreur": "Saisissez d'abord le mot de passe admin de ce répéteur (Modifier)."}
+        if self.busy:
+            return {"ok": False, "erreur": "Une interrogation est en cours, réessayez dans un instant."}
+        try:
+            return self._submit(self._commande(node, cmd, operateur), timeout=90)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "erreur": f"Commande impossible : {e}"}
+
+    async def _commande(self, node: dict, cmd: str, operateur: str) -> dict:
+        name = node.get("nom", "")
+        contact = self._contact_for(name)
+        if contact is None:
+            res = await self.mc.commands.get_contacts()
+            if res is not None and res.type != EventType.ERROR:
+                self._contacts = dict(res.payload or {})
+            contact = self._contact_for(name)
+        if contact is None:
+            return {"ok": False, "erreur": f"{name} n'est pas dans les contacts du nœud companion."}
+        login = await self.mc.commands.send_login_sync(contact, self.store.password(node["id"]), min_timeout=8)
+        if not (login and login.type == EventType.LOGIN_SUCCESS):
+            return {"ok": False, "erreur": f"Connexion admin refusée par {name} (mot de passe ou portée)."}
+        reponse = await self._cli(contact, cmd, timeout=25)
+        texte = f"Commande « {cmd} » envoyée à {name}" + (f" — réponse : {reponse.strip()}" if reponse else " — pas de réponse")
+        self.store.add_journal(name, operateur or "AUTO", texte)
+        if reponse and cmd.startswith("set tx"):
+            self.store.patch_node(node["id"], {"tx": int(cmd.split()[-1])})
+        self._log(texte)
+        return {"ok": True, "reponse": reponse or ""}

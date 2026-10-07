@@ -8,10 +8,11 @@ from pathlib import Path
 
 import webview
 
+from . import rapports, systeme
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -26,6 +27,7 @@ class Api:
         self._store = store
         self._poller = poller
         self._window = None
+        self._quitter = None
 
     # ----- lecture -----
     def revision(self):
@@ -42,6 +44,17 @@ class Api:
             "liaison": self._poller.state(),
             "version": VERSION,
             "dossier": str(data_dir()),
+            "messages": self._store.list_messages(400),
+            "alertes": self._store.list_alerts(30),
+            "exercice": self._store.current_exercise(),
+            "exercices": self._store.list_exercises()[:30],
+            "reglages": {
+                "seuilBatterie": float(self._store.get_config("seuil_batterie", 3.5) or 3.5),
+                "demarrageAuto": systeme.demarrage_auto_actif(),
+                "reduireZone": bool(self._store.get_config("reduire_zone", True)),
+                "notifications": bool(self._store.get_config("notifications", True)),
+                "fondCarte": self._store.get_config("fond_carte", "osmfr"),
+            },
         }
 
     def historique(self, node_id, jours=7):
@@ -127,6 +140,92 @@ class Api:
     def dernier_port(self):
         return self._store.get_config("dernier_port", "")
 
+    # ----- messagerie -----
+    def envoyer_message(self, texte, canal=None, contact=None):
+        return self._poller.envoyer_message(texte, canal, contact)
+
+    # ----- commandes à distance -----
+    def commande(self, node_id, cmd):
+        return self._poller.commande(node_id, cmd, self._store.get_config("operateur", ""))
+
+    # ----- alertes et réglages -----
+    def alertes_vues(self):
+        self._store.mark_alerts_seen()
+        return {"ok": True}
+
+    def regler_options(self, options):
+        o = options or {}
+        if "seuilBatterie" in o:
+            try:
+                self._store.set_config("seuil_batterie", max(2.8, min(4.3, float(o["seuilBatterie"]))))
+            except (TypeError, ValueError):
+                pass
+        if "reduireZone" in o:
+            self._store.set_config("reduire_zone", bool(o["reduireZone"]))
+        if "notifications" in o:
+            self._store.set_config("notifications", bool(o["notifications"]))
+        if "fondCarte" in o:
+            self._store.set_config("fond_carte", str(o["fondCarte"]))
+        if "demarrageAuto" in o:
+            if not systeme.regler_demarrage_auto(bool(o["demarrageAuto"])):
+                self._store._bump()
+                return {"ok": False, "erreur": "Le démarrage automatique n'a pas pu être modifié."}
+        self._store._bump()
+        return {"ok": True}
+
+    # ----- exercices -----
+    def demarrer_exercice(self, nom, type_="exercice"):
+        nom = (nom or "").strip()
+        if not nom:
+            return {"ok": False, "erreur": "Donnez un nom à l'exercice ou à l'intervention."}
+        ex = self._store.start_exercise(nom, type_ or "exercice", self._store.get_config("operateur", ""))
+        return {"ok": True, "exercice": ex}
+
+    def terminer_exercice(self):
+        ex = self._store.stop_exercise()
+        return {"ok": bool(ex), "exercice": ex}
+
+    # ----- rapports -----
+    def _choisir(self, nom, filtre):
+        if not self._window:
+            return None
+        path = self._window.create_file_dialog(webview.FileDialog.SAVE, save_filename=nom, file_types=(filtre,))
+        if not path:
+            return None
+        return path if isinstance(path, str) else path[0]
+
+    def rapport(self, format_="pdf", voisins=False):
+        jour = now_iso()[:16].replace(":", "h").replace("T", "-")
+        try:
+            if format_ == "xlsx":
+                p = self._choisir(f"etat-reseau-adrasec06-{jour}.xlsx", "Classeur Excel (*.xlsx)")
+                if not p:
+                    return {"ok": False, "annule": True}
+                rapports.excel_etat(self._store, p, bool(voisins))
+            else:
+                p = self._choisir(f"etat-reseau-adrasec06-{jour}.pdf", "Document PDF (*.pdf)")
+                if not p:
+                    return {"ok": False, "annule": True}
+                rapports.pdf_etat(self._store, p, bool(voisins))
+        except Exception as e:  # noqa: BLE001
+            logging.exception("rapport")
+            return {"ok": False, "erreur": f"Rapport impossible : {e}"}
+        return {"ok": True, "chemin": p}
+
+    def main_courante(self, ex_id):
+        ex = self._store.get_exercise(int(ex_id))
+        if not ex:
+            return {"ok": False, "erreur": "Exercice introuvable."}
+        p = self._choisir(f"main-courante-{slug(ex['nom'])}.pdf", "Document PDF (*.pdf)")
+        if not p:
+            return {"ok": False, "annule": True}
+        try:
+            rapports.pdf_main_courante(self._store, ex["id"], p)
+        except Exception as e:  # noqa: BLE001
+            logging.exception("main courante")
+            return {"ok": False, "erreur": f"Main courante impossible : {e}"}
+        return {"ok": True, "chemin": p}
+
     # ----- fichiers -----
     def exporter(self):
         if not self._window:
@@ -156,20 +255,70 @@ class Api:
 
 def main():
     store = Store()
-    poller = Poller(store)
+    window_ref = {}
+    tray_ref = {}
+
+    def alerte(niveau, noeud, texte):
+        store.add_alert(niveau, noeud, texte)
+        if store.get_config("notifications", True):
+            titre = {"critique": "Répéteur hors ligne", "attention": "Alerte batterie",
+                     "message": "Message MeshCore", "info": "Supervision ADRASEC 06"}.get(niveau, "Supervision ADRASEC 06")
+            systeme.notifier(titre, texte)
+
+    poller = Poller(store, alerte=alerte)
     api = Api(store, poller)
     html = resource_path("ui/index.html")
+    reduit = "--reduit" in sys.argv
     window = webview.create_window(
         f"Supervision MeshCore ADRASEC 06 — v{VERSION}", url=str(html), js_api=api,
-        width=1360, height=900, min_size=(900, 640), background_color="#eef1f3",
+        width=1360, height=900, min_size=(900, 640), background_color="#0f161d", hidden=reduit,
     )
     api._window = window
+    window_ref["w"] = window
+    state = {"quitter": False}
+
+    def afficher():
+        try:
+            window.show()
+            window.restore()
+        except Exception:
+            pass
+
+    def quitter():
+        state["quitter"] = True
+        poller.disconnect()
+        if tray_ref.get("t"):
+            tray_ref["t"].arreter()
+        try:
+            window.destroy()
+        except Exception:
+            pass
+
+    api._quitter = quitter
 
     def on_closing():
+        tray = tray_ref.get("t")
+        if not state["quitter"] and tray and tray.active and store.get_config("reduire_zone", True):
+            window.hide()
+            systeme.notifier("Supervision ADRASEC 06", "La supervision continue en arrière-plan. "
+                             "Icône près de l'horloge pour la rouvrir ou quitter.")
+            return False
         poller.disconnect()
+        if tray:
+            tray.arreter()
+        return True
+
+    def on_start():
+        tray_ref["t"] = systeme.IconeZone(resource_path("icone.png"), afficher, poller.poll_now, quitter)
+        # reconnexion automatique au dernier nœud utilisé (utile au démarrage avec Windows)
+        if store.get_config("reconnexion_auto", True):
+            mode = store.get_config("dernier_mode", "")
+            cible = store.get_config("dernier_ble" if mode == "ble" else "dernier_port", "")
+            if mode and (cible or mode == "ble") and reduit:
+                poller.connect(cible, mode, store.get_config("pin_ble", "") or None)
 
     window.events.closing += on_closing
-    webview.start(debug="--debug" in sys.argv)
+    webview.start(on_start, debug="--debug" in sys.argv)
 
 
 if __name__ == "__main__":
