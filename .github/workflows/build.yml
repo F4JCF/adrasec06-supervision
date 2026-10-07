@@ -1,0 +1,39 @@
+name: Compilation Windows
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer les dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller==6.22.3
+
+      - name: Compiler l'exécutable
+        run: pyinstaller supervision.spec --noconfirm
+
+      - name: Publier l'exécutable (artefact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Supervision-ADRASEC06-Windows
+          path: dist/Supervision-ADRASEC06.exe
+
+      - name: Créer une release (sur tag v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Supervision-ADRASEC06.exe
