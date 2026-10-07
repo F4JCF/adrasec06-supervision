@@ -338,7 +338,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
         <span><i style="--c:var(--ok)"></i>SNR ≥ +5 dB</span>
         <span><i style="--c:var(--warn)"></i>−5 à +5 dB</span>
         <span><i style="--c:var(--crit)"></i>&lt; −5 dB</span>
-        <span class="legend-hot"><i></i>A écrit sur #ADRASEC 06 (15 min)</span>
+        <span class="legend-hot"><i></i>A écrit sur #ADRASEC 06 (6 h)</span>
       </div>
     </section>
     <section class="panel fiche" id="fiche" aria-live="polite"></section>
@@ -695,7 +695,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     const ch = liaison.canaux || [];
     return ch.find(c => normNom(c.nom) === "adrasec06") || ch.find(c => normNom(c.nom).includes("adrasec06")) || null;
   }
-  const HOT_MIN = 15;
+  const HOT_MIN = 360; // 6 heures
   function expediteursRecents(){
     const chan = canalAdrasec(), lim = Date.now() - HOT_MIN*60000, out = {};
     messages.forEach(m => {
