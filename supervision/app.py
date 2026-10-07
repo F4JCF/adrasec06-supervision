@@ -13,7 +13,7 @@ from . import rapports, systeme, taches
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.3.6"
+VERSION = "1.4.0"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -49,6 +49,8 @@ class Api:
             "messages": self._store.list_messages(400),
             "alertes": self._store.list_alerts(30),
             "exercice": self._store.current_exercise(),
+            "mc": ({"entrees": self._store.journal_of_exercise(cur_ex["id"]), "moyens": self._store.list_moyens(cur_ex["id"])}
+                   if (cur_ex := self._store.current_exercise()) else {"entrees": [], "moyens": []}),
             "exercices": self._store.list_exercises()[:30],
             "reglages": {
                 "seuilBatterie": float(self._store.get_config("seuil_batterie", 3.5) or 3.5),
@@ -186,16 +188,87 @@ class Api:
         return {"ok": True}
 
     # ----- exercices -----
-    def demarrer_exercice(self, nom, type_="exercice"):
+    def demarrer_exercice(self, nom, type_="exercice", lieu="", autorite="", description=""):
         nom = (nom or "").strip()
         if not nom:
             return {"ok": False, "erreur": "Donnez un nom à l'exercice ou à l'intervention."}
-        ex = self._store.start_exercise(nom, type_ or "exercice", self._store.get_config("operateur", ""))
+        ex = self._store.start_exercise(nom, type_ or "exercice", self._store.get_config("operateur", ""),
+                                        (lieu or "").strip(), (autorite or "").strip(), (description or "").strip())
         return {"ok": True, "exercice": ex}
 
-    def terminer_exercice(self):
-        ex = self._store.stop_exercise()
+    def terminer_exercice(self, bilan=None):
+        ex = self._store.stop_exercise((bilan or "").strip() if bilan is not None else None)
         return {"ok": bool(ex), "exercice": ex}
+
+    def modifier_exercice(self, ex_id, champs):
+        self._store.update_exercise(int(ex_id), champs or {})
+        return {"ok": True}
+
+    # ----- main courante : saisie -----
+    @staticmethod
+    def _heure_iso(heure):
+        """« 14:32 » (aujourd'hui) ou vide (maintenant) → date ISO locale."""
+        from datetime import datetime
+        h = (heure or "").strip()
+        if not h:
+            return now_iso()
+        try:
+            hh, mm = [int(x) for x in h.replace("h", ":").split(":")[:2]]
+            return datetime.now().astimezone().replace(hour=hh, minute=mm, second=0, microsecond=0).isoformat(timespec="seconds")
+        except (ValueError, TypeError):
+            return now_iso()
+
+    def mc_ajouter(self, heure, emetteur, destinataire, nature, texte, noeud=""):
+        texte = (texte or "").strip()
+        if not texte:
+            return {"ok": False, "erreur": "Le message est vide."}
+        ex = self._store.current_exercise()
+        if not ex:
+            return {"ok": False, "erreur": "Aucune main courante ouverte."}
+        op = self._store.get_config("operateur", "")
+        jid = self._store.add_journal(noeud or "", op or (emetteur or ""), texte, date=self._heure_iso(heure),
+                                      exercice=ex["id"], emetteur=(emetteur or "").strip(),
+                                      destinataire=(destinataire or "").strip(), nature=nature or "info")
+        return {"ok": True, "id": jid}
+
+    def mc_suite(self, jid, suite, clore=False):
+        f = {"suite": (suite or "").strip()}
+        if clore:
+            f["cloture"] = now_iso()
+        self._store.update_journal(int(jid), f)
+        return {"ok": True}
+
+    def mc_rouvrir(self, jid):
+        self._store.update_journal(int(jid), {"cloture": ""})
+        return {"ok": True}
+
+    # ----- main courante : moyens engagés -----
+    def moyen_ajouter(self, m):
+        ex = self._store.current_exercise()
+        if not ex:
+            return {"ok": False, "erreur": "Aucune main courante ouverte."}
+        if not (m or {}).get("indicatif") and not (m or {}).get("nom"):
+            return {"ok": False, "erreur": "Indiquez au moins l'indicatif ou le nom."}
+        mid = self._store.add_moyen(ex["id"], m)
+        if (m or {}).get("arrive"):
+            self._store.update_moyen(mid, {"arrivee": now_iso()})
+        return {"ok": True, "id": mid}
+
+    def moyen_modifier(self, mid, champs):
+        self._store.update_moyen(int(mid), champs or {}, journal=False)
+        return {"ok": True}
+
+    def moyen_arrivee(self, mid):
+        self._store.update_moyen(int(mid), {"arrivee": now_iso(), "depart": ""})
+        return {"ok": True}
+
+    def moyen_depart(self, mid):
+        self._store.update_moyen(int(mid), {"depart": now_iso()})
+        return {"ok": True}
+
+    def moyen_supprimer(self, mid):
+        self._store.delete_moyen(int(mid))
+        return {"ok": True}
 
     # ----- statistiques & couverture -----
     def statistiques(self, node_id):

@@ -223,6 +223,34 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
 .compose{border-top:1px solid var(--line);padding:10px 12px;display:flex;gap:8px;align-items:flex-end}
 .compose textarea{min-height:42px;flex:1}
 .compose .count{font-family:var(--f-mono);font-size:.72rem;color:var(--muted);white-space:nowrap}
+/* Main courante (format sécurité civile) */
+.mcgrid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:18px}
+@media (max-width:1000px){.mcgrid{grid-template-columns:minmax(0,1fr)}}
+.mcrow{display:grid;grid-template-columns:6.5em minmax(0,1fr) minmax(0,1fr) 10em;gap:10px}
+@media (max-width:640px){.mcrow{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+.reg{display:grid;gap:0;max-height:620px;overflow:auto;border-top:1px solid var(--line)}
+.reg article{display:grid;grid-template-columns:2.6em 3.4em minmax(0,1fr) auto;gap:4px 10px;padding:8px 4px;border-bottom:1px solid var(--line);align-items:start}
+.reg article.isauto{opacity:.72}
+.reg article.pending{background:color-mix(in srgb,var(--warn) 10%,transparent)}
+.reg .no{font-family:var(--f-mono);font-size:.8rem;color:var(--muted);text-align:right}
+.reg time{font-family:var(--f-mono);font-size:.85rem;font-weight:500}
+.reg .ft{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;font-size:.82rem}
+.reg .ft b{font-family:var(--f-mono);font-weight:500}
+.reg p{margin:2px 0 0;overflow-wrap:anywhere}
+.reg .suite{font-size:.85rem;color:var(--ok);margin-top:3px}
+.reg .suite.wait{color:var(--warn)}
+.reg .act{display:flex;gap:6px;align-items:center}
+.nat{font-size:.72rem;font-weight:600;padding:0 7px;border-radius:999px;border:1px solid var(--c);color:var(--c);white-space:nowrap}
+.reg .suiteform{grid-column:3/-1;display:flex;gap:6px;flex-wrap:wrap}
+.reg .suiteform input{flex:1;min-width:12em}
+.moy{display:grid;gap:8px}
+.moy article{border:1px solid var(--line);border-radius:6px;padding:8px 10px;display:grid;gap:3px;background:var(--bg)}
+.moy article.on{border-left:4px solid var(--ok)}
+.moy article.off{opacity:.65}
+.moy .top{display:flex;justify-content:space-between;gap:8px;align-items:baseline;flex-wrap:wrap}
+.moy .ind{font-family:var(--f-mono);font-weight:600}
+.moy .det{font-size:.85rem;color:var(--muted)}
+.moy .act{display:flex;gap:6px;flex-wrap:wrap}
 /* Main courante, rapports, réglages */
 .cols2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px}
 @media (max-width:900px){.cols2{grid-template-columns:minmax(0,1fr)}}
@@ -401,19 +429,83 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
   </div>
 
   <div class="tabpane" id="tab-courante" hidden>
-    <div class="cols2">
+    <!-- pas de main courante ouverte -->
+    <div class="cols2" id="mcStart">
       <section class="panel">
-        <div class="panel-head"><h2>Exercice ou intervention</h2></div>
-        <div id="exCurrent"></div>
-        <span class="reading">Pendant un exercice ou une intervention, chaque entrée du journal (y compris les événements automatiques) est rattachée à sa main courante. Les messages radio échangés pendant la période figurent aussi dans le PDF.</span>
+        <div class="panel-head"><h2>Ouvrir une main courante</h2></div>
+        <form class="edit" id="exForm"><div class="fgrid">
+          <label class="full">Opération<input id="exNom" placeholder="Ex. : Exercice SATER départemental" maxlength="100"></label>
+          <label>Type<select id="exType"><option value="exercice">Exercice</option><option value="intervention">Intervention réelle</option><option value="veille">Veille / astreinte</option></select></label>
+          <label>Lieu<input id="exLieu" placeholder="Ex. : Plateau de Caussols" maxlength="100"></label>
+          <label class="full">Autorité demandeuse<input id="exAutorite" placeholder="Ex. : SDIS 06 / CODIS, Préfecture, Mairie de …" maxlength="100"></label>
+          <label class="full">Cadre / mission<textarea id="exDesc" placeholder="Objet de l'activation, consignes reçues…"></textarea></label></div>
+          <div class="actions"><button class="btn primary" type="submit">Ouvrir la main courante</button></div>
+        </form>
       </section>
-      <section class="panel">
+      <section class="panel" id="repPanel">
         <div class="panel-head"><h2>Rapports d'état du réseau</h2></div>
         <p style="margin:0">État de tous les nœuds ADRASEC, actions en attente et dernières alertes, prêt à transmettre au SDIS ou à la préfecture.</p>
         <label style="display:flex;flex-direction:row;align-items:center;gap:8px;color:var(--fg)"><input type="checkbox" id="repVoisins" style="width:auto"> Inclure les répéteurs voisins</label>
         <div class="actions"><button class="btn primary" id="repPdf" type="button">Rapport PDF</button><button class="btn" id="repXlsx" type="button">Tableau Excel</button></div>
       </section>
     </div>
+
+    <!-- main courante ouverte -->
+    <div id="mcLive" hidden style="display:grid;gap:18px">
+      <section class="excard live" id="mcHead"></section>
+      <section class="panel" id="mcCadre" hidden>
+        <div class="panel-head"><h2>Cadre de l'opération</h2></div>
+        <form class="edit" id="cadreForm"><div class="fgrid">
+          <label class="full">Opération<input id="cdNom" maxlength="100"></label>
+          <label>Lieu<input id="cdLieu" maxlength="100"></label>
+          <label>Autorité demandeuse<input id="cdAutorite" maxlength="100"></label>
+          <label class="full">Cadre / mission<textarea id="cdDesc"></textarea></label>
+          <label class="full">Signataire du PDF (nom et indicatif)<input id="cdSign" maxlength="100" placeholder="Par défaut : le responsable"></label></div>
+          <div class="actions"><button class="btn primary" type="submit">Enregistrer</button><button class="btn" type="button" id="cdCancel">Annuler</button></div>
+        </form>
+      </section>
+      <section class="panel" id="mcClose" hidden>
+        <div class="panel-head"><h2>Clôturer la main courante</h2></div>
+        <label>Bilan et observations (figure dans le PDF)<textarea id="mcBilan" style="min-height:90px" placeholder="Déroulement, résultats, difficultés rencontrées, points à améliorer…"></textarea></label>
+        <div class="actions"><button class="btn danger" type="button" id="mcCloseOk">Clôturer définitivement</button><button class="btn" type="button" id="mcCloseNo">Annuler</button>
+          <span class="reading">Les moyens encore sur zone seront notés partis à l'heure de clôture.</span></div>
+      </section>
+      <div class="mcgrid">
+        <section class="panel">
+          <div class="panel-head"><h2>Saisie rapide</h2><span class="reading">Ctrl + Entrée pour inscrire</span></div>
+          <form class="edit" id="mcForm">
+            <div class="mcrow">
+              <label style="width:6.5em">Heure<input id="mcHeure" placeholder="maint." maxlength="5" inputmode="numeric"></label>
+              <label>De<input id="mcDe" list="mcQui" placeholder="Émetteur" value="PC"></label>
+              <label>À<input id="mcA" list="mcQui" placeholder="Destinataire"></label>
+              <label>Nature<select id="mcNature"><option value="info">Information</option><option value="demande">Demande</option><option value="ordre">Ordre</option><option value="compte-rendu">Compte rendu</option><option value="evenement">Événement</option></select></label>
+            </div>
+            <label>Message ou événement<textarea id="mcTexte" style="min-height:64px" placeholder="Ex. : Équipe 1 en position au point haut, écoute 121,5 MHz en cours."></textarea></label>
+            <div class="actions"><button class="btn primary" type="submit">Inscrire</button><span class="reading" id="mcMsg"></span></div>
+            <datalist id="mcQui"></datalist>
+          </form>
+          <div class="panel-head" style="margin-top:6px"><h2>Registre</h2><div class="seg" id="mcFiltre"><button type="button" data-f="tout" aria-pressed="true">Tout</button><button type="button" data-f="attente" aria-pressed="false">En attente</button><button type="button" data-f="radio" aria-pressed="false">Sans automatiques</button></div></div>
+          <div class="reg" id="mcReg"></div>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><h2>Moyens engagés</h2><span class="reading" id="mcMoyCount"></span></div>
+          <div class="moy" id="mcMoyens"></div>
+          <form class="edit" id="moyForm" style="border-top:1px solid var(--line);padding-top:10px">
+            <div class="fgrid">
+              <label>Indicatif<input id="myInd" maxlength="20" placeholder="F4XXX"></label>
+              <label>Nom<input id="myNom" maxlength="60"></label>
+              <label>Fonction<input id="myFct" maxlength="60" placeholder="Chef d'équipe, opérateur PC…"></label>
+              <label>Équipe<input id="myEq" maxlength="40" placeholder="Équipe 1"></label>
+              <label>Matériel<input id="myMat" maxlength="80" placeholder="T1000-E, portatif VHF…"></label>
+              <label>Lieu / secteur<input id="myLieu" maxlength="80"></label>
+              <label class="full" style="flex-direction:row;display:flex;align-items:center;gap:8px;color:var(--fg)"><input type="checkbox" id="myArr" style="width:auto" checked> Déjà sur zone (heure d'arrivée = maintenant)</label>
+            </div>
+            <div class="actions"><button class="btn" type="submit">Ajouter le moyen</button></div>
+          </form>
+        </section>
+      </div>
+    </div>
+
     <section class="panel">
       <div class="panel-head"><h2>Mains courantes</h2></div>
       <div class="exlist" id="exList"></div>
@@ -1059,16 +1151,68 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
   }
 
   /* ---------- main courante ---------- */
+  const NAT = {"info":["Information","var(--navy)"], "demande":["Demande","var(--test)"], "ordre":["Ordre","var(--accent)"],
+               "compte-rendu":["Compte rendu","var(--ok)"], "evenement":["Événement","var(--muted)"]};
+  let mc = {entrees:[], moyens:[]}, mcFiltre = "tout", suiteFor = null;
+  const hm = iso => { try { return new Date(iso).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}); } catch(e) { return ""; } };
+  const inside = sel => document.activeElement && document.activeElement.closest(sel);
   function renderCourante(){
     const e = exercice;
-    $("#exCurrent").innerHTML = e
-      ? `<div class="excard live"><span class="eyebrow" style="color:var(--crit)">${esc(e.type||"exercice")} en cours</span><span class="big">${esc(e.nom)}</span><span class="muted">Depuis ${fmtDate(e.debut)} · ${esc(e.responsable||"")}</span>
-         <div class="actions"><button class="btn danger" id="exStop">Terminer</button><button class="btn" data-mc="${e.id}">Main courante PDF</button></div></div>`
-      : `<form class="edit" id="exForm"><div class="fgrid"><label class="full">Nom<input id="exNom" placeholder="Ex. : Exercice SATER départemental" maxlength="80"></label>
-         <label>Type<select id="exType"><option value="exercice">Exercice</option><option value="intervention">Intervention réelle</option><option value="veille">Veille / astreinte</option></select></label></div>
-         <div class="actions"><button class="btn primary" type="submit">Démarrer la main courante</button></div></form>`;
-    $("#exList").innerHTML = exercices.length ? exercices.map(x => `<div><span><b>${esc(x.nom)}</b> <span class="muted">· ${esc(x.type||"")} · ${fmtDate(x.debut)} → ${x.fin ? fmtDate(x.fin) : "en cours"}</span></span><button class="btn small" data-mc="${x.id}">PDF</button></div>`).join("")
+    $("#mcStart").hidden = !!e; $("#mcLive").hidden = !e;
+    if (e) {
+      const typ = {exercice:"Exercice", intervention:"Intervention", veille:"Veille / astreinte"}[e.type] || e.type;
+      $("#mcHead").innerHTML = `<span class="eyebrow" style="color:var(--crit)">${esc(typ)} en cours · main courante ouverte</span>
+        <span class="big">${esc(e.nom)}</span>
+        <span class="muted">Depuis ${fmtDate(e.debut)} · responsable ${esc(e.responsable||"—")}${e.lieu?` · ${esc(e.lieu)}`:""}${e.autorite?` · à la demande de ${esc(e.autorite)}`:""}</span>
+        ${e.description ? `<span style="font-size:.92rem">${esc(e.description)}</span>` : ""}
+        <div class="actions"><button class="btn" id="mcEditCadre">Modifier le cadre</button><button class="btn" data-mc="${e.id}">Main courante PDF</button><button class="btn danger" id="mcCloseOpen">Clôturer…</button></div>`;
+      // qui : PC + moyens + autorités usuelles
+      const qui = new Set(["PC", "PC ADRASEC 06", "SDIS 06", "CODIS", "COS", "Préfecture", "Mairie"]);
+      mc.moyens.forEach(m => { if (m.indicatif) qui.add(m.indicatif); if (m.equipe) qui.add(m.equipe); });
+      if (e.autorite) qui.add(e.autorite);
+      $("#mcQui").innerHTML = [...qui].map(q => `<option value="${esc(q)}">`).join("");
+      if (!inside("#mcReg")) renderRegistre();
+      if (!inside("#mcMoyens")) renderMoyens();
+      document.querySelectorAll("#mcFiltre button").forEach(b => b.setAttribute("aria-pressed", b.dataset.f === mcFiltre));
+      // rapports : on déplace le panneau sous la main courante ouverte
+      const rp = $("#repPanel"); if (rp && rp.parentElement !== $("#mcLive")) $("#mcLive").appendChild(rp);
+    } else {
+      const rp = $("#repPanel"); if (rp && rp.parentElement !== $("#mcStart")) $("#mcStart").appendChild(rp);
+    }
+    $("#exList").innerHTML = exercices.length ? exercices.map(x => `<div><span><b>${esc(x.nom)}</b> <span class="muted">· ${esc(x.type||"")}${x.lieu?` · ${esc(x.lieu)}`:""} · ${fmtDate(x.debut)} → ${x.fin ? fmtDate(x.fin) : "en cours"}</span></span><button class="btn small" data-mc="${x.id}">PDF</button></div>`).join("")
       : `<div class="empty">Aucune main courante pour l'instant.</div>`;
+  }
+  function renderRegistre(){
+    let list = [...mc.entrees].reverse();
+    if (mcFiltre === "attente") list = list.filter(j => (j.nature === "ordre" || j.nature === "demande") && !j.cloture);
+    if (mcFiltre === "radio") list = list.filter(j => !j.auto);
+    $("#mcReg").innerHTML = list.length ? list.map(j => {
+      const [nt, nc] = NAT[j.nature] || [j.nature || "", "var(--muted)"];
+      const wait = (j.nature === "ordre" || j.nature === "demande") && !j.cloture;
+      return `<article class="${j.auto ? "isauto" : ""}${wait ? " pending" : ""}">
+        <span class="no">${j.numero ?? ""}</span><time>${hm(j.date)}</time>
+        <div><div class="ft"><span class="nat" style="--c:${nc}">${nt}</span>${j.emetteur||j.destinataire ? `<b>${esc(j.emetteur||"?")}</b> → <b>${esc(j.destinataire||"—")}</b>` : ""}${j.noeud?`<span class="muted mono">${esc(j.noeud)}</span>`:""}</div>
+          <p>${esc(j.texte)}</p>
+          ${j.suite || j.cloture ? `<div class="suite">${j.cloture ? "✓ Clos à " + hm(j.cloture) : ""}${j.suite ? (j.cloture ? " — " : "Suite : ") + esc(j.suite) : ""}</div>` : (wait ? `<div class="suite wait">En attente de suite</div>` : "")}</div>
+        <div class="act">${j.auto ? "" : (j.cloture ? `<button class="btn small" data-reopen="${j.id}">Rouvrir</button>` : `<button class="btn small" data-suite="${j.id}">Suite / clore</button>`)}</div>
+        ${suiteFor === j.id ? `<form class="suiteform" data-suiteform="${j.id}"><input id="suiteTxt" value="${esc(j.suite||"")}" placeholder="Suite donnée (ex. : transmis au COS à 10h50)"><button class="btn small" type="submit" data-clore="0">Enregistrer</button><button class="btn small primary" type="submit" data-clore="1">Enregistrer et clore</button><button class="btn small" type="button" data-suitecancel="1">Annuler</button></form>` : ""}
+      </article>`; }).join("")
+      : `<div class="empty">${mcFiltre === "attente" ? "Aucun ordre ni demande en attente." : "Aucune entrée pour l'instant."}</div>`;
+    const sf = $("#suiteTxt"); if (sf) sf.focus();
+  }
+  function renderMoyens(){
+    const eqs = liaison.equipes || [];
+    const sur = mc.moyens.filter(m => m.arrivee && !m.depart).length;
+    $("#mcMoyCount").textContent = mc.moyens.length ? `${sur} sur zone · ${mc.moyens.length} au total` : "";
+    $("#mcMoyens").innerHTML = mc.moyens.length ? mc.moyens.map(m => {
+      const on = m.arrivee && !m.depart, off = !!m.depart;
+      const g = eqs.find(t => normNom(t.nom).includes(normNom(m.indicatif || "§")) || (m.equipe && normNom(t.nom) === normNom(m.equipe)));
+      return `<article class="${on ? "on" : off ? "off" : ""}">
+        <div class="top"><span><span class="ind">${esc(m.indicatif || "—")}</span> ${esc(m.nom || "")}</span><span class="nat" style="--c:${on ? "var(--ok)" : off ? "var(--muted)" : "var(--warn)"}">${on ? "Sur zone" : off ? "Désengagé" : "Attendu"}</span></div>
+        <span class="det">${[m.fonction, m.equipe, m.materiel, m.lieu].filter(Boolean).map(esc).join(" · ") || "&nbsp;"}</span>
+        <span class="det">${m.arrivee ? "Arrivé " + hm(m.arrivee) : ""}${m.depart ? " · parti " + hm(m.depart) : ""}${g ? ` · <span style="color:var(--accent)">position GPS ${ago(g.vu)}</span>` : ""}</span>
+        <div class="act">${!on ? `<button class="btn small" data-moyarr="${m.id}">Arrivé</button>` : `<button class="btn small" data-moydep="${m.id}">Parti</button>`}<button class="btn small" data-moydel="${m.id}">Retirer</button></div>
+      </article>`; }).join("") : `<div class="empty">Aucun moyen engagé. Ajoutez les opérateurs et équipes ci-dessous.</div>`;
   }
 
   /* ---------- mise à jour ---------- */
@@ -1184,6 +1328,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     const st = await api.etat();
     rev = st.revision; allNodes = st.noeuds; nodes = allNodes.filter(actif); journal = st.journal; liaison = st.liaison; loaded = true;
     messages = st.messages || []; exercice = st.exercice; exercices = st.exercices || []; reglages = st.reglages || {};
+    mc = st.mc || {entrees:[], moyens:[]};
     alertes = st.alertes || []; traces = st.traces || {}; couvertures = st.couvertures || []; dispo = st.dispo || {}; maj = st.maj;
     const top = alertes.find(a => !a.vue);
     if (top && lastAlertId !== null && top.id !== lastAlertId && (top.niveau==="critique" || top.niveau==="attention" || top.niveau==="message")) bip();
@@ -1205,6 +1350,17 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     const t = e.target;
     const tb = t.closest(".tabs button");
     if (tb) { tab = tb.dataset.tab; editing = null; renderAll(); if (tab==="reseau" && lmap) setTimeout(()=>lmap.invalidateSize(),0); return; }
+    const sb = t.closest("[data-suite]");
+    if (sb) { suiteFor = +sb.dataset.suite; renderRegistre(); return; }
+    if (t.closest("[data-suitecancel]")) { suiteFor = null; renderRegistre(); return; }
+    const ro = t.closest("[data-reopen]");
+    if (ro) { await api.mc_rouvrir(+ro.dataset.reopen); refresh(true); return; }
+    const mf = t.closest("#mcFiltre button");
+    if (mf) { mcFiltre = mf.dataset.f; renderCourante(); return; }
+    const ma = t.closest("[data-moyarr]"), md = t.closest("[data-moydep]"), mx = t.closest("[data-moydel]");
+    if (ma) { await api.moyen_arrivee(+ma.dataset.moyarr); refresh(true); return; }
+    if (md) { await api.moyen_depart(+md.dataset.moydep); refresh(true); return; }
+    if (mx) { await api.moyen_supprimer(+mx.dataset.moydel); refresh(true); return; }
     const cd = t.closest("[data-covdel]");
     if (cd) { await api.supprimer_couverture(+cd.dataset.covdel); refresh(true); return; }
     const cv = t.closest("[data-conv]");
@@ -1276,7 +1432,11 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
       case "tplSave": { await api.enregistrer_modeles($("#tplEdit").value.split("\n")); toast("Modèles enregistrés"); refresh(true); return; }
       case "covPos": { const p = liaison.position; if (p) { $("#covLat").value = (+p.lat).toFixed(5); $("#covLon").value = (+p.lon).toFixed(5); } else toast("Le nœud companion n'a pas de position GPS. Saisissez-la à la main."); return; }
       case "alertsSeen": await api.alertes_vues(); refresh(true); return;
-      case "exStop": await api.terminer_exercice(); refresh(true); return;
+      case "mcEditCadre": { const e = exercice; $("#cdNom").value = e.nom||""; $("#cdLieu").value = e.lieu||""; $("#cdAutorite").value = e.autorite||""; $("#cdDesc").value = e.description||""; $("#cdSign").value = e.signataire||""; $("#mcCadre").hidden = false; $("#mcClose").hidden = true; $("#cdNom").focus(); return; }
+      case "cdCancel": $("#mcCadre").hidden = true; return;
+      case "mcCloseOpen": $("#mcClose").hidden = false; $("#mcCadre").hidden = true; $("#mcBilan").value = exercice.bilan || ""; $("#mcBilan").focus(); return;
+      case "mcCloseNo": $("#mcClose").hidden = true; return;
+      case "mcCloseOk": { await api.terminer_exercice($("#mcBilan").value); $("#mcClose").hidden = true; toast("Main courante clôturée"); refresh(true); return; }
       case "repPdf": { const r = await api.rapport("pdf", $("#repVoisins").checked); if (r.ok) toast("Rapport enregistré : " + r.chemin); else if (r.erreur) toast(r.erreur); return; }
       case "repXlsx": { const r = await api.rapport("xlsx", $("#repVoisins").checked); if (r.ok) toast("Tableau enregistré : " + r.chemin); else if (r.erreur) toast(r.erreur); return; }
       case "export": { const r = await api.exporter(); if (r.ok) toast("Export enregistré : " + r.chemin); return; }
@@ -1302,6 +1462,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
   });
   $("#q").addEventListener("input", e => { filter.q = e.target.value; renderTable(); });
   $("#msgText").addEventListener("input", e => { const n = new TextEncoder().encode(e.target.value).length; const c = $("#msgCount"); c.textContent = `${n} / 150`; c.style.color = n > 150 ? "var(--crit)" : ""; });
+  $("#mcTexte").addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); $("#mcForm").requestSubmit(); } });
   $("#msgText").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#compose").requestSubmit(); } });
 
   document.addEventListener("submit", async e => {
@@ -1343,8 +1504,30 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
       refresh(true); return;
     }
     if (e.target.id === "exForm") {
-      const r = await api.demarrer_exercice($("#exNom").value, $("#exType").value);
-      if (r.ok) { toast("Main courante démarrée"); refresh(true); } else toast(r.erreur);
+      const r = await api.demarrer_exercice($("#exNom").value, $("#exType").value, $("#exLieu").value, $("#exAutorite").value, $("#exDesc").value);
+      if (r.ok) { ["#exNom","#exLieu","#exAutorite","#exDesc"].forEach(k => $(k).value = ""); $("#mcDe").value = "PC"; toast("Main courante ouverte"); refresh(true); } else toast(r.erreur);
+      return;
+    }
+    if (e.target.id === "mcForm") {
+      const r = await api.mc_ajouter($("#mcHeure").value, $("#mcDe").value, $("#mcA").value, $("#mcNature").value, $("#mcTexte").value);
+      if (r.ok) { $("#mcTexte").value = ""; $("#mcHeure").value = ""; $("#mcMsg").textContent = "Inscrit"; setTimeout(() => $("#mcMsg").textContent = "", 2000); $("#mcTexte").focus(); refresh(true); }
+      else { $("#mcMsg").textContent = r.erreur; }
+      return;
+    }
+    if (e.target.matches("[data-suiteform]")) {
+      const clore = e.submitter && e.submitter.dataset.clore === "1";
+      await api.mc_suite(+e.target.dataset.suiteform, $("#suiteTxt").value, clore); suiteFor = null; refresh(true);
+      return;
+    }
+    if (e.target.id === "cadreForm") {
+      await api.modifier_exercice(exercice.id, {nom: $("#cdNom").value.trim() || exercice.nom, lieu: $("#cdLieu").value, autorite: $("#cdAutorite").value, description: $("#cdDesc").value, signataire: $("#cdSign").value});
+      $("#mcCadre").hidden = true; toast("Cadre enregistré"); refresh(true);
+      return;
+    }
+    if (e.target.id === "moyForm") {
+      const m = {indicatif: $("#myInd").value.trim().toUpperCase(), nom: $("#myNom").value, fonction: $("#myFct").value, equipe: $("#myEq").value, materiel: $("#myMat").value, lieu: $("#myLieu").value, arrive: $("#myArr").checked};
+      const r = await api.moyen_ajouter(m);
+      if (r.ok) { ["#myInd","#myNom","#myFct","#myEq","#myMat","#myLieu"].forEach(k => $(k).value = ""); $("#myInd").focus(); refresh(true); } else toast(r.erreur);
       return;
     }
     if (e.target.id === "logForm") {

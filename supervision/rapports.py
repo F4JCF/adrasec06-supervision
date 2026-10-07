@@ -182,34 +182,146 @@ def pdf_etat(store: Store, chemin: str, voisins: bool = False):
     doc.build(elems, onFirstPage=entete, onLaterPages=entete)
 
 
+NATURES = {"info": "Information", "demande": "Demande", "ordre": "Ordre", "compte-rendu": "Compte rendu",
+           "evenement": "Événement"}
+
+
+def _hm(iso) -> str:
+    try:
+        return datetime.fromisoformat(str(iso)).strftime("%H:%M")
+    except ValueError:
+        return ""
+
+
 def pdf_main_courante(store: Store, ex_id: int, chemin: str):
+    """Main courante au format sécurité civile : cadre, moyens, registre numéroté, annexe radio, bilan, signature."""
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.units import mm
-    from reportlab.platypus import Paragraph
-    st = _styles()
+    from reportlab.platypus import (BaseDocTemplate, Frame, PageTemplate, Paragraph, Spacer, Table, TableStyle,
+                                    KeepTogether)
+    from reportlab.lib.styles import ParagraphStyle
+
     ex = store.get_exercise(ex_id)
     if not ex:
-        raise ValueError("Exercice introuvable.")
-    titre = f"Main courante — {ex['nom']}"
-    doc, entete = _pdf_base(chemin, titre)
-    elems = [Paragraph(_x(f"ADRASEC 06 — {titre}"), st["titre"]),
-             Paragraph(f"{(ex.get('type') or 'exercice').capitalize()} · Début {_date(ex['debut'])} · "
-                       f"Fin {_date(ex['fin']) if ex.get('fin') else 'en cours'} · Responsable {ex.get('responsable') or '—'}",
-                       st["sous"])]
-    lignes = store.journal_of_exercise(ex_id)
-    data = [["Heure", "Opérateur", "Nœud", "Événement"]]
-    for j in lignes:
-        data.append([_date(j["date"]), j.get("auteur") or "", Paragraph(_x(j.get("noeud") or ""), st["cell"]),
-                     Paragraph(_x(j["texte"]), st["cell"])])
-    elems.append(_table(data, [30 * mm, 22 * mm, 55 * mm, 160 * mm]))
+        raise ValueError("Main courante introuvable.")
+    st = _styles()
+    small = ParagraphStyle("sm", parent=st["cell"], fontSize=7.5, leading=9.5)
+    lab = ParagraphStyle("lab", parent=st["cell"], fontSize=7, leading=9, textColor="#5a6876")
+    val = ParagraphStyle("val", parent=st["cell"], fontSize=9.5, leading=12)
+    ORANGE, NAVY, GRID = colors.HexColor("#C4520F"), colors.HexColor("#1D3A57"), colors.HexColor("#C9D1D9")
+    W, H = landscape(A4)
+    edite = datetime.now().strftime("%d/%m/%Y à %H:%M")
+    typ = {"exercice": "EXERCICE", "intervention": "INTERVENTION", "veille": "VEILLE / ASTREINTE"}.get(ex.get("type") or "", (ex.get("type") or "").upper())
 
-    t0, t1 = ex["debut"], ex.get("fin") or "9999"
-    msgs = [m for m in store.list_messages(5000) if t0 <= m["date"] <= t1]
-    if msgs:
-        elems.append(Paragraph("Messages radio échangés", st["h2"]))
-        data = [["Heure", "Sens", "Canal / contact", "Message"]]
-        for m in msgs:
-            ou = m.get("canal_nom") or m.get("contact") or ""
-            data.append([_date(m["date"]), "Reçu" if m["sens"] == "recu" else "Émis", Paragraph(_x(ou), st["cell"]),
-                         Paragraph(_x((m.get("auteur") + " : " if m.get("auteur") and m["sens"] == "recu" else "") + m["texte"]), st["cell"])])
-        elems.append(_table(data, [30 * mm, 14 * mm, 50 * mm, 173 * mm]))
-    doc.build(elems, onFirstPage=entete, onLaterPages=entete)
+    class Doc(BaseDocTemplate):
+        def __init__(self, *a, **k):
+            super().__init__(*a, **k)
+            self.total = 0
+
+    def entete(canvas, doc):
+        canvas.saveState()
+        canvas.setFillColor(NAVY)
+        canvas.setFont("Helvetica-Bold", 13)
+        canvas.drawString(15 * mm, H - 13 * mm, "ADRASEC 06")
+        canvas.setFont("Helvetica", 7.5)
+        canvas.setFillColor(colors.HexColor("#5a6876"))
+        canvas.drawString(15 * mm, H - 17 * mm, "Association Départementale des Radioamateurs au service de la Sécurité Civile — Alpes-Maritimes")
+        canvas.setFillColor(ORANGE)
+        canvas.setFont("Helvetica-Bold", 15)
+        canvas.drawRightString(W - 15 * mm, H - 13 * mm, "MAIN COURANTE")
+        canvas.setFont("Helvetica-Bold", 8)
+        canvas.drawRightString(W - 15 * mm, H - 17.5 * mm, f"{typ} — {ex['nom'][:70]}")
+        canvas.setStrokeColor(ORANGE)
+        canvas.setLineWidth(1.6)
+        canvas.line(15 * mm, H - 20 * mm, W - 15 * mm, H - 20 * mm)
+        canvas.setFont("Helvetica", 7)
+        canvas.setFillColor(colors.HexColor("#5a6876"))
+        canvas.drawString(15 * mm, 8 * mm, f"Document édité le {edite} par le logiciel de supervision MeshCore ADRASEC 06")
+        canvas.drawRightString(W - 15 * mm, 8 * mm, f"Page {doc.page} / {doc.total or '…'}")
+        canvas.restoreState()
+
+    def build(total):
+        doc = Doc(chemin, pagesize=(W, H), leftMargin=15 * mm, rightMargin=15 * mm, topMargin=25 * mm, bottomMargin=15 * mm,
+                  title=f"Main courante — {ex['nom']}", author="ADRASEC 06")
+        doc.total = total
+        doc.addPageTemplates([PageTemplate(id="p", frames=[Frame(15 * mm, 15 * mm, W - 30 * mm, H - 40 * mm, id="f")],
+                                           onPage=entete)])
+        P = lambda t, sty=st["cell"]: Paragraph(_x(str(t or "")), sty)
+        el = []
+
+        # --- cadre de l'opération
+        cadre = [
+            [P("Opération", lab), P(ex["nom"], val), P("Type", lab), P(typ, val)],
+            [P("Lieu", lab), P(ex.get("lieu") or "—", val), P("Autorité demandeuse", lab), P(ex.get("autorite") or "—", val)],
+            [P("Ouverture", lab), P(_date(ex["debut"]), val), P("Clôture", lab), P(_date(ex["fin"]) if ex.get("fin") else "en cours", val)],
+            [P("Responsable", lab), P(ex.get("responsable") or "—", val), P("Moyens engagés", lab), P(str(len(store.list_moyens(ex_id))), val)],
+        ]
+        if ex.get("description"):
+            cadre.append([P("Cadre / mission", lab), P(ex["description"], val), "", ""])
+        t = Table(cadre, colWidths=[32 * mm, 103 * mm, 38 * mm, 94 * mm])
+        sty = [("BOX", (0, 0), (-1, -1), 0.8, NAVY), ("INNERGRID", (0, 0), (-1, -1), 0.3, GRID),
+               ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#F3F6F8")), ("BACKGROUND", (2, 0), (2, 3), colors.HexColor("#F3F6F8")),
+               ("VALIGN", (0, 0), (-1, -1), "MIDDLE")]
+        if ex.get("description"):
+            sty.append(("SPAN", (1, len(cadre) - 1), (3, len(cadre) - 1)))
+        t.setStyle(TableStyle(sty))
+        el += [t, Spacer(1, 8)]
+
+        # --- moyens engagés
+        moyens = store.list_moyens(ex_id)
+        if moyens:
+            el.append(Paragraph("Moyens engagés", st["h2"]))
+            data = [["Indicatif", "Nom", "Fonction", "Équipe", "Matériel", "Lieu / secteur", "Arrivée", "Départ"]]
+            for m in moyens:
+                data.append([P(m["indicatif"]), P(m["nom"]), P(m["fonction"]), P(m["equipe"]), P(m["materiel"]),
+                             P(m["lieu"]), _date(m["arrivee"]) if m.get("arrivee") else "", _date(m["depart"]) if m.get("depart") else ""])
+            el.append(_table(data, [x * mm for x in (24, 38, 32, 24, 40, 45, 32, 32)]))
+            el.append(Spacer(1, 8))
+
+        # --- registre
+        el.append(Paragraph("Registre des événements et messages", st["h2"]))
+        data = [["N°", "Heure", "De", "À", "Nature", "Message / événement", "Suite donnée", "Clos"]]
+        marks = []
+        for j in store.journal_of_exercise(ex_id):
+            nat = NATURES.get(j.get("nature") or "", j.get("nature") or "")
+            data.append([str(j.get("numero") or ""), _hm(j["date"]), P(j.get("emetteur") or j.get("auteur")),
+                         P(j.get("destinataire")), P(nat, small),
+                         P((f"[{j['noeud']}] " if j.get("noeud") else "") + j["texte"]), P(j.get("suite"), small),
+                         _hm(j["cloture"]) if j.get("cloture") else ""])
+            if j.get("nature") in ("ordre", "demande") and not j.get("cloture"):
+                marks.append((len(data) - 1, 7, "#FCEBC7"))
+        el.append(_table(data, [x * mm for x in (10, 13, 26, 22, 22, 112, 48, 14)], marks))
+
+        # --- annexe messages radio
+        t0, t1 = ex["debut"], ex.get("fin") or "9999"
+        msgs = [m for m in store.list_messages(5000) if t0 <= m["date"] <= t1]
+        if msgs:
+            el.append(Paragraph("Annexe — messages radio MeshCore échangés", st["h2"]))
+            data = [["Heure", "Sens", "Canal / contact", "Message"]]
+            for m in msgs:
+                ou = ("#" + m["canal_nom"]) if m.get("canal_nom") else (m.get("contact") or "")
+                data.append([_hm(m["date"]), "Reçu" if m["sens"] == "recu" else "Émis", P(ou),
+                             P((m.get("auteur") + " : " if m.get("auteur") and m["sens"] == "recu" else "") + m["texte"])])
+            el.append(_table(data, [16 * mm, 14 * mm, 45 * mm, 192 * mm]))
+
+        # --- bilan et signature
+        bloc = [Paragraph("Bilan et observations", st["h2"]),
+                Table([[P(ex.get("bilan") or " ", val)]], colWidths=[W - 30 * mm], rowHeights=None,
+                      style=TableStyle([("BOX", (0, 0), (-1, -1), 0.6, GRID), ("TOPPADDING", (0, 0), (-1, -1), 6),
+                                        ("BOTTOMPADDING", (0, 0), (-1, -1), 18 if not ex.get("bilan") else 6)])),
+                Spacer(1, 10)]
+        sig = Table([[P("Le responsable de l'opération", lab), P("Visa de l'autorité", lab)],
+                     [Paragraph(_x(ex.get('signataire') or ex.get('responsable') or '') + "<br/>Date : "
+                                + (_date(ex['fin']) if ex.get('fin') else '……/……/…………') + "<br/><br/>Signature :", val),
+                      Paragraph("Nom, qualité :<br/><br/><br/>Signature et cachet :", val)]],
+                    colWidths=[(W - 30 * mm) / 2] * 2, rowHeights=[12, 30 * mm])
+        sig.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 0.8, NAVY), ("INNERGRID", (0, 0), (-1, -1), 0.4, GRID),
+                                 ("VALIGN", (0, 0), (-1, -1), "TOP")]))
+        bloc.append(sig)
+        el.append(KeepTogether(bloc))
+        doc.build(el)
+        return doc.page
+
+    pages = build(0)
+    build(pages)  # second passage pour « page x / y »

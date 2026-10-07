@@ -80,6 +80,25 @@ class Store:
             cols = {r[1] for r in self._cx.execute("PRAGMA table_info(journal)")}
             if "exercice" not in cols:
                 self._cx.execute("ALTER TABLE journal ADD COLUMN exercice INTEGER")
+            # main courante au format sécurité civile
+            for col, typ in (("numero", "INTEGER"), ("emetteur", "TEXT"), ("destinataire", "TEXT"), ("nature", "TEXT"),
+                             ("suite", "TEXT"), ("cloture", "TEXT")):
+                if col not in cols:
+                    self._cx.execute(f"ALTER TABLE journal ADD COLUMN {col} {typ}")
+            if "numero" not in cols:  # numérotation des mains courantes existantes
+                for (ex_id,) in self._cx.execute("SELECT DISTINCT exercice FROM journal WHERE exercice IS NOT NULL").fetchall():
+                    ids = [r[0] for r in self._cx.execute("SELECT id FROM journal WHERE exercice=? ORDER BY date, id", (ex_id,))]
+                    for i, jid in enumerate(ids, 1):
+                        self._cx.execute("UPDATE journal SET numero=?, emetteur=COALESCE(emetteur, auteur),"
+                                         " nature=COALESCE(nature, CASE WHEN auto=1 OR UPPER(auteur)='AUTO' THEN 'evenement' ELSE 'info' END)"
+                                         " WHERE id=?", (i, jid))
+            ecols = {r[1] for r in self._cx.execute("PRAGMA table_info(exercices)")}
+            for col in ("lieu", "autorite", "description", "bilan", "signataire"):
+                if col not in ecols:
+                    self._cx.execute(f"ALTER TABLE exercices ADD COLUMN {col} TEXT")
+            self._cx.execute("""CREATE TABLE IF NOT EXISTS moyens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, exercice INTEGER NOT NULL, indicatif TEXT, nom TEXT,
+                fonction TEXT, equipe TEXT, materiel TEXT, lieu TEXT, contact TEXT, arrivee TEXT, depart TEXT)""")
             self._cx.commit()
         if not self.list_nodes():
             self._seed()
@@ -156,18 +175,38 @@ class Store:
 
     # ---------- journal ----------
     def add_journal(self, noeud: str, auteur: str, texte: str, date: str | None = None, auto: bool = False,
-                    bump: bool = True, exercice: int | None = -1):
+                    bump: bool = True, exercice: int | None = -1, emetteur: str | None = None,
+                    destinataire: str | None = None, nature: str | None = None) -> int:
         if exercice == -1:  # par défaut : rattachée à l'exercice en cours, s'il y en a un
             ex = self.current_exercise()
             exercice = ex["id"] if ex else None
+        if nature is None:
+            nature = "evenement" if auto or (auteur or "").upper() == "AUTO" else "info"
         with self._lock:
-            self._cx.execute(
-                "INSERT INTO journal(date, noeud, auteur, texte, auto, exercice) VALUES(?,?,?,?,?,?)",
-                (date or now_iso(), noeud or "", auteur or "", texte, 1 if auto else 0, exercice),
+            numero = None
+            if exercice:
+                r = self._cx.execute("SELECT COALESCE(MAX(numero), 0) FROM journal WHERE exercice=?", (exercice,)).fetchone()
+                numero = (r[0] or 0) + 1
+            c = self._cx.execute(
+                "INSERT INTO journal(date, noeud, auteur, texte, auto, exercice, numero, emetteur, destinataire, nature)"
+                " VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (date or now_iso(), noeud or "", auteur or "", texte, 1 if auto else 0, exercice, numero,
+                 emetteur if emetteur is not None else (auteur or ""), destinataire or "", nature),
             )
             self._cx.commit()
+            jid = c.lastrowid
         if bump:
             self._bump()
+        return jid
+
+    def update_journal(self, jid: int, fields: dict):
+        allowed = {k: v for k, v in fields.items() if k in ("suite", "cloture", "texte", "emetteur", "destinataire", "nature", "date")}
+        if not allowed:
+            return
+        with self._lock:
+            self._cx.execute(f"UPDATE journal SET {', '.join(k + '=?' for k in allowed)} WHERE id=?", (*allowed.values(), jid))
+            self._cx.commit()
+        self._bump()
 
     def list_journal(self, limit: int = 300) -> list[dict]:
         with self._lock:
@@ -179,7 +218,8 @@ class Store:
     def journal_of_exercise(self, ex_id: int) -> list[dict]:
         with self._lock:
             rows = self._cx.execute(
-                "SELECT id, date, noeud, auteur, texte, auto FROM journal WHERE exercice=? ORDER BY date, id", (ex_id,)
+                "SELECT id, date, noeud, auteur, texte, auto, numero, emetteur, destinataire, nature, suite, cloture"
+                " FROM journal WHERE exercice=? ORDER BY numero, date, id", (ex_id,)
             ).fetchall()
         return [dict(r) for r in rows]
 
@@ -189,24 +229,44 @@ class Store:
             r = self._cx.execute("SELECT * FROM exercices WHERE fin IS NULL ORDER BY id DESC LIMIT 1").fetchone()
         return dict(r) if r else None
 
-    def start_exercise(self, nom: str, type_: str, responsable: str) -> dict:
+    def start_exercise(self, nom: str, type_: str, responsable: str, lieu: str = "", autorite: str = "",
+                       description: str = "") -> dict:
         cur = self.current_exercise()
         if cur:
             self.stop_exercise()
         with self._lock:
-            c = self._cx.execute("INSERT INTO exercices(nom, type, debut, responsable) VALUES(?,?,?,?)",
-                                 (nom, type_, now_iso(), responsable))
+            c = self._cx.execute("INSERT INTO exercices(nom, type, debut, responsable, lieu, autorite, description)"
+                                 " VALUES(?,?,?,?,?,?,?)", (nom, type_, now_iso(), responsable, lieu, autorite, description))
             self._cx.commit()
             ex_id = c.lastrowid
-        self.add_journal("", responsable or "AUTO", f"Début {type_ or 'exercice'} : {nom}", exercice=ex_id)
+        self.add_journal("", responsable or "PC", f"Ouverture de la main courante : {type_ or 'exercice'} « {nom} »"
+                         + (f", {lieu}" if lieu else "") + (f", à la demande de {autorite}" if autorite else "") + ".",
+                         exercice=ex_id, nature="evenement")
         return self.get_exercise(ex_id)
 
-    def stop_exercise(self) -> dict | None:
+    def update_exercise(self, ex_id: int, fields: dict):
+        allowed = {k: v for k, v in fields.items()
+                   if k in ("nom", "type", "lieu", "autorite", "description", "bilan", "responsable", "signataire")}
+        if not allowed:
+            return
+        with self._lock:
+            self._cx.execute(f"UPDATE exercices SET {', '.join(k + '=?' for k in allowed)} WHERE id=?",
+                             (*allowed.values(), ex_id))
+            self._cx.commit()
+        self._bump()
+
+    def stop_exercise(self, bilan: str | None = None) -> dict | None:
         cur = self.current_exercise()
         if not cur:
             return None
-        self.add_journal("", cur.get("responsable") or "AUTO", f"Fin {cur.get('type') or 'exercice'} : {cur['nom']}",
-                         exercice=cur["id"])
+        if bilan is not None:
+            self.update_exercise(cur["id"], {"bilan": bilan})
+        # les moyens encore présents sont notés partis à la clôture
+        for m in self.list_moyens(cur["id"]):
+            if m.get("arrivee") and not m.get("depart"):
+                self.update_moyen(m["id"], {"depart": now_iso()}, journal=False)
+        self.add_journal("", cur.get("responsable") or "PC", f"Clôture de la main courante : {cur['nom']}.",
+                         exercice=cur["id"], nature="evenement")
         with self._lock:
             self._cx.execute("UPDATE exercices SET fin=? WHERE id=?", (now_iso(), cur["id"]))
             self._cx.commit()
@@ -459,3 +519,53 @@ def _attach():
 
 
 _attach()
+
+
+# ---------- moyens engagés ----------
+def _attach_moyens():
+    def list_moyens(self, ex_id: int) -> list[dict]:
+        with self._lock:
+            rows = self._cx.execute("SELECT * FROM moyens WHERE exercice=? ORDER BY id", (ex_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def add_moyen(self, ex_id: int, m: dict) -> int:
+        keys = ("indicatif", "nom", "fonction", "equipe", "materiel", "lieu", "contact")
+        with self._lock:
+            c = self._cx.execute(f"INSERT INTO moyens(exercice, {', '.join(keys)}) VALUES(?{', ?' * len(keys)})",
+                                 (ex_id, *[str(m.get(k) or "").strip() for k in keys]))
+            self._cx.commit()
+            mid = c.lastrowid
+        self._bump()
+        return mid
+
+    def update_moyen(self, mid: int, fields: dict, journal: bool = True):
+        allowed = {k: v for k, v in fields.items()
+                   if k in ("indicatif", "nom", "fonction", "equipe", "materiel", "lieu", "contact", "arrivee", "depart")}
+        if not allowed:
+            return
+        with self._lock:
+            row = self._cx.execute("SELECT * FROM moyens WHERE id=?", (mid,)).fetchone()
+            self._cx.execute(f"UPDATE moyens SET {', '.join(k + '=?' for k in allowed)} WHERE id=?", (*allowed.values(), mid))
+            self._cx.commit()
+        if row and journal:
+            qui = row["indicatif"] or row["nom"] or "Moyen"
+            if allowed.get("arrivee"):
+                self.add_journal("", qui, f"{qui}{' (' + row['equipe'] + ')' if row['equipe'] else ''} arrivé"
+                                 + (f" : {row['lieu']}" if row["lieu"] else "") + ".",
+                                 exercice=row["exercice"], emetteur=qui, destinataire="PC", nature="compte-rendu")
+            if allowed.get("depart"):
+                self.add_journal("", qui, f"{qui} quitte la zone / désengagé.", exercice=row["exercice"],
+                                 emetteur=qui, destinataire="PC", nature="compte-rendu")
+        self._bump()
+
+    def delete_moyen(self, mid: int):
+        with self._lock:
+            self._cx.execute("DELETE FROM moyens WHERE id=?", (mid,))
+            self._cx.commit()
+        self._bump()
+
+    for f in (list_moyens, add_moyen, update_moyen, delete_moyen):
+        setattr(Store, f.__name__, f)
+
+
+_attach_moyens()

@@ -67,6 +67,14 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 
 - **Mise à jour du firmware des répéteurs** (fiche du répéteur, mot de passe admin requis) : « Préparer la mise à jour » envoie `start ota` par le réseau ; le répéteur ouvre le Wi-Fi **MeshCore-OTA**. Sur place, à portée Wi-Fi, ouvrir `http://192.168.4.1/update` et envoyer le fichier `.bin` Repeater (pas le « merged »). « Vérifier la version » confirme la mise à jour et la note au journal ; « Remettre l'heure » envoie `clock sync`. Cartes ESP32 uniquement (Heltec V3, T096, Xiao…) ; les cartes nRF52 se mettent à jour en Bluetooth sur place.
 
+### Nouveautés de la version 1.4 — main courante
+
+- **Ouverture** : opération, type, lieu, autorité demandeuse, cadre / mission.
+- **Saisie rapide** dans l'onglet : heure (vide = maintenant), de, à, nature (information, demande, ordre, compte rendu, événement), message ; Ctrl + Entrée pour inscrire. Entrées numérotées.
+- **Suite et clôture** de chaque entrée ; ordres et demandes sans suite signalés « en attente » (filtre dédié).
+- **Moyens engagés** : indicatif, nom, fonction, équipe, matériel, secteur ; boutons Arrivé / Parti inscrits au registre ; position GPS affichée si l'équipe la partage.
+- **Clôture** avec bilan ; **PDF officiel** : en-tête ADRASEC 06, cadre, moyens, registre numéroté, annexe des messages radio, bilan, signatures, page x / y.
+
 ### Les données
 
 Tout est enregistré sur le PC dans `%APPDATA%\ADRASEC06-Supervision\supervision.db`, y compris les mots de passe des répéteurs et le PIN Bluetooth (en clair, dans ce fichier local uniquement). Le journal technique est dans `supervision.log` au même endroit.
