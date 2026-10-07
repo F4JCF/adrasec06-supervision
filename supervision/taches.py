@@ -101,7 +101,11 @@ def installer_maj(url: str, quitter) -> dict:
         si = subprocess.STARTUPINFO()
         si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         si.wShowWindow = 0
-    subprocess.Popen(["cmd", "/c", str(bat)], creationflags=flags, startupinfo=si, close_fds=True,
+    # environnement propre : sinon le nouvel exécutable croit être le « fils » de l'ancien et cherche
+    # ses fichiers temporaires (_MEI…) déjà effacés → « Failed to load Python DLL »
+    env = {k: v for k, v in os.environ.items() if not k.upper().startswith(("_PYI_", "_MEI"))}
+    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    subprocess.Popen(["cmd", "/c", str(bat)], creationflags=flags, startupinfo=si, close_fds=True, env=env,
                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     threading.Timer(1.0, quitter).start()
     return {"ok": True}
