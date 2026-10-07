@@ -267,6 +267,9 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
 .cr-msgs .meta{font-family:var(--f-mono);font-size:.8rem;color:var(--muted)}
 .cr-alert{font-size:1.05rem;color:var(--crit);font-weight:600}
 a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
+.convs button.unread{color:var(--accent);font-weight:700;background:color-mix(in srgb,var(--accent) 12%,transparent);border-left-color:var(--accent)}
+.convs button.unread .n{background:var(--accent);color:var(--accent-ink);border-radius:999px;padding:0 7px;font-weight:700}
+.convs button.unread span:first-child::before{content:"● ";font-size:.8em}
 </style>
 </head>
 <body>
@@ -491,6 +494,12 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
   let api = null, nodes = [], allNodes = [], journal = [], liaison = {}, rev = -1, loaded = false;
   let messages = [], alertes = [], exercice = null, exercices = [], reglages = {}, tab = "reseau";
   let traces = {}, couvertures = [], dispo = {}, maj = null, showTeams = true, showCov = false, crise = false, crMap = null, crLayer = null;
+  let vus = {};
+  try { vus = JSON.parse(localStorage.getItem("vus") || "{}") || {}; } catch(e) { vus = {}; }
+  const saveVus = () => { try { localStorage.setItem("vus", JSON.stringify(vus)); } catch(e) {} };
+  const recus = k => messages.filter(m => m.sens==="recu" && convKey(m)===k).length;
+  const nonLus = k => Math.max(0, recus(k) - (vus[k] || 0));
+  const totalNonLus = () => { const keys = new Set(messages.filter(m => m.sens==="recu").map(convKey)); let t = 0; keys.forEach(k => { if (!(tab==="messages" && k===conv)) t += nonLus(k); }); return t; };
   let conv = null, lastMsgCount = -1, seenMsgs = 0, msgInit = false, lastAlertId = null, son = true;
   try { son = localStorage.getItem("son") !== "0"; } catch(e) {}
   let sel = null, editing = null, filter = {scope:"tous", q:"", statut:null}, confirmDel = false, histFor = null, hist = [];
@@ -968,8 +977,8 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
   function renderTabs(){
     document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", b.dataset.tab===tab));
     ["reseau","messages","courante","stats","reglages"].forEach(k => $("#tab-"+k).hidden = k !== tab);
-    const unread = messages.filter(m => m.sens==="recu").length - seenMsgs;
-    const b = $("#msgBadge"); b.hidden = !(unread > 0 && tab !== "messages" && seenMsgs >= 0); b.textContent = unread;
+    const unread = totalNonLus();
+    const b = $("#msgBadge"); b.hidden = !(unread > 0); b.textContent = unread;
     $("#exBadge").hidden = !exercice;
   }
 
@@ -1000,8 +1009,12 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     contacts.forEach(c => { const k = c.cle.slice(0,12); dms[k] = Object.assign(dms[k] || {n:0}, {cle:k, full:c.cle, nom:c.nom}); });
     if (!conv) conv = "c:" + chans[0].index;
     const cnt = k => messages.filter(m => convKey(m)===k).length;
-    $("#convs").innerHTML = `<h3>Canaux</h3>` + chans.map(c => `<button data-conv="c:${c.index}" aria-pressed="${conv==="c:"+c.index}"><span>#${esc(c.nom)}</span><span class="n">${cnt("c:"+c.index)||""}</span></button>`).join("") +
-      `<h3>Messages directs</h3>` + (Object.values(dms).sort((a,b)=>(b.n-a.n)||a.nom.localeCompare(b.nom)).map(d => `<button data-conv="d:${esc(d.cle)}" aria-pressed="${conv==="d:"+d.cle}"><span>${esc(d.nom)}</span><span class="n">${d.n||""}</span></button>`).join("") || `<span class="reading" style="padding:4px 14px">Aucun contact. Connectez le nœud companion.</span>`);
+    // la conversation ouverte est lue : on mémorise le nombre de messages reçus
+    vus[conv] = recus(conv); saveVus();
+    const item = (k, label) => { const u = k === conv ? 0 : nonLus(k);
+      return `<button data-conv="${esc(k)}" aria-pressed="${conv===k}" class="${u ? "unread" : ""}" title="${u ? u + " message(s) non lu(s)" : ""}"><span>${esc(label)}</span><span class="n">${u ? u : (cnt(k) || "")}</span></button>`; };
+    $("#convs").innerHTML = `<h3>Canaux</h3>` + chans.map(c => item("c:"+c.index, "#"+c.nom)).join("") +
+      `<h3>Messages directs</h3>` + (Object.values(dms).sort((a,b)=>(nonLus("d:"+b.cle)-nonLus("d:"+a.cle))||(b.n-a.n)||a.nom.localeCompare(b.nom)).map(d => item("d:"+d.cle, d.nom)).join("") || `<span class="reading" style="padding:4px 14px">Aucun contact. Connectez le nœud companion.</span>`);
     const list = messages.filter(m => convKey(m)===conv);
     const isChan = conv.startsWith("c:");
     const title = isChan ? "#" + (chans.find(c => "c:"+c.index===conv)||{nom:"Canal"}).nom : (dms[conv.slice(2)]||{nom:"Contact"}).nom;
@@ -1141,7 +1154,10 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     const top = alertes.find(a => !a.vue);
     if (top && lastAlertId !== null && top.id !== lastAlertId && (top.niveau==="critique" || top.niveau==="attention" || top.niveau==="message")) bip();
     lastAlertId = top ? top.id : (alertes[0] ? alertes[0].id : 0);
-    if (!msgInit) { seenMsgs = messages.filter(m => m.sens==="recu").length; msgInit = true; }
+    if (!msgInit) {
+      seenMsgs = messages.filter(m => m.sens==="recu").length; msgInit = true;
+      if (!Object.keys(vus).length) { messages.filter(m => m.sens==="recu").forEach(m => { const k = convKey(m); vus[k] = recus(k); }); saveVus(); }
+    }
     $("#footInfo").textContent = `Données enregistrées sur ce PC (${st.dossier}) · version ${st.version}`;
     window._ver = st.version;
     if (sel && !allNodes.some(n => n.id===sel)) sel = null;
