@@ -27,6 +27,32 @@ except Exception:  # pragma: no cover
     EventType = None
 
 ROLE_BY_TYPE = {2: "repeteur", 3: "room"}
+# Secteur retenu pour la découverte automatique : autour de Mougins
+CENTRE = (43.60, 7.00)
+RAYON_KM = 80
+PREFIXES_LOCAUX = ("FR06", "06")
+
+
+def _distance_km(lat1, lon1, lat2, lon2) -> float:
+    import math
+    r = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = p2 - p1, math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def dans_le_secteur(name: str, lat, lon) -> bool:
+    """Vrai si le répéteur appartient au secteur : nom en FR06/06, ou position à moins de RAYON_KM."""
+    if (name or "").strip().upper().startswith(PREFIXES_LOCAUX):
+        return True
+    try:
+        lat, lon = float(lat), float(lon)
+    except (TypeError, ValueError):
+        return False
+    if abs(lat) < 0.01 and abs(lon) < 0.01:
+        return False
+    return _distance_km(lat, lon, *CENTRE) <= RAYON_KM
 FAILS_DEGRADE = 1
 FAILS_OFFLINE = 3
 
@@ -280,8 +306,10 @@ class Poller:
         return f"? {prefix}"
 
     def _discover(self):
-        """Ajoute ou complète les répéteurs entendus par le nœud companion."""
-        added = 0
+        """Ajoute ou complète les répéteurs entendus, limités au secteur (FR06 ou < 80 km de Mougins).
+
+        Les nœuds ajoutés automatiquement qui sont hors secteur sont retirés."""
+        added = removed = 0
         for c in self._contacts.values():
             t = c.get("type")
             name = (c.get("adv_name") or "").strip()
@@ -294,6 +322,8 @@ class Poller:
             if c.get("last_advert"):
                 last_seen = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(c["last_advert"]))
             if node is None:
+                if not dans_le_secteur(name, lat, lon):
+                    continue
                 self.store.save_node({
                     "nom": name, "proprio": "externe", "statut": "en-ligne", "role": ROLE_BY_TYPE[t],
                     "lat": round(lat, 5) if has_pos else "", "lon": round(lon, 5) if has_pos else "",
@@ -307,8 +337,15 @@ class Poller:
                     fields.update(lat=round(lat, 5), lon=round(lon, 5))
                 node.update(fields)
                 self.store.save_node(node, bump=False)
+        # nettoyage des nœuds découverts automatiquement hors secteur
+        for n in self.store.list_nodes():
+            if n.get("decouvert") and n.get("proprio") == "externe" and not dans_le_secteur(n.get("nom"), n.get("lat"), n.get("lon")):
+                self.store.delete_node(n["id"])
+                removed += 1
         if added:
-            self._log(f"{added} nouveau(x) répéteur(s) découvert(s) via les annonces")
+            self._log(f"{added} nouveau(x) répéteur(s) du secteur découvert(s) via les annonces")
+        if removed:
+            self._log(f"{removed} répéteur(s) hors secteur retiré(s) de la liste")
         self.store._bump()
 
     async def _poll_node(self, node: dict):
