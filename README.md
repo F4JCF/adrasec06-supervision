@@ -51,6 +51,18 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 - **Rapports** : état du réseau en PDF ou Excel.
 - **Arrière-plan** : la croix réduit près de l'horloge, démarrage automatique avec Windows (Réglages) avec reconnexion au dernier nœud.
 
+### Nouveautés de la version 1.2
+
+- **Équipes sur la carte** : les mobiles et companions qui partagent leur position GPS apparaissent (losange violet) avec leur trace des 6 dernières heures.
+- **Messages types** : liste de modèles au-dessus de la zone de saisie ; [heure] et [indicatif] remplis automatiquement ; modèles modifiables dans Réglages.
+- **Salle de crise** : bouton en haut à droite, plein écran avec carte, état des répéteurs, alertes et derniers messages (Échap pour sortir).
+- **Télémétrie** : tension, température, charge… affichées dans la fiche des répéteurs qui les transmettent.
+- **Statistiques** : disponibilité sur 7 et 30 jours et dernière coupure de chaque répéteur ; la disponibilité figure aussi dans le rapport PDF/Excel.
+- **Test de couverture** : depuis un point de mesure, SNR aller/retour vers les répéteurs voisins directs et nombre de relais pour les autres ; mesures visibles sur la carte.
+- **Maintenance** : dates d'installation, de changement de batterie, de visite, accès au site ; rappel 7 jours avant la prochaine visite.
+- **Sauvegarde automatique** quotidienne dans le dossier de votre choix (14 copies gardées).
+- **Mise à jour automatique** : le logiciel vérifie les nouvelles versions publiées sur GitHub (dépôt public) et s'installe en un clic.
+
 ### Les données
 
 Tout est enregistré sur le PC dans `%APPDATA%\ADRASEC06-Supervision\supervision.db`, y compris les mots de passe des répéteurs et le PIN Bluetooth (en clair, dans ce fichier local uniquement). Le journal technique est dans `supervision.log` au même endroit.

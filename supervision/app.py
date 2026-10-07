@@ -8,11 +8,11 @@ from pathlib import Path
 
 import webview
 
-from . import rapports, systeme
+from . import rapports, systeme, taches
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -28,6 +28,7 @@ class Api:
         self._poller = poller
         self._window = None
         self._quitter = None
+        self._taches = None
 
     # ----- lecture -----
     def revision(self):
@@ -54,7 +55,17 @@ class Api:
                 "reduireZone": bool(self._store.get_config("reduire_zone", True)),
                 "notifications": bool(self._store.get_config("notifications", True)),
                 "fondCarte": self._store.get_config("fond_carte", "osmfr"),
+                "dossierSauvegarde": self._store.get_config("dossier_sauvegarde", ""),
+                "derniereSauvegarde": self._store.get_config("derniere_sauvegarde", ""),
+                "majAuto": bool(self._store.get_config("maj_auto", True)),
+                "modeles": self.modeles(),
             },
+            "maj": self._taches.maj if self._taches else None,
+            "traces": self._store.tracks(6),
+            "couvertures": self._store.list_coverage(),
+            "dispo": {n["id"]: {"j7": self._store.availability(n["id"], 7)["pct"],
+                                "j30": self._store.availability(n["id"], 30)["pct"]}
+                      for n in nodes if n.get("proprio") != "externe" and n.get("statut") != "prevu"},
         }
 
     def historique(self, node_id, jours=7):
@@ -185,6 +196,88 @@ class Api:
         ex = self._store.stop_exercise()
         return {"ok": bool(ex), "exercice": ex}
 
+    # ----- statistiques & couverture -----
+    def statistiques(self, node_id):
+        return {"j7": self._store.availability(node_id, 7), "j30": self._store.availability(node_id, 30)}
+
+    def test_couverture(self, lat, lon, lieu=""):
+        return self._poller.test_couverture(lat, lon, lieu)
+
+    def supprimer_couverture(self, cid):
+        self._store.delete_coverage(int(cid))
+        return {"ok": True}
+
+    # ----- salle de crise -----
+    def plein_ecran(self, actif):
+        if not self._window:
+            return {"ok": False}
+        try:
+            if bool(actif) != bool(getattr(self._window, "fullscreen", False)):
+                self._window.toggle_fullscreen()
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "erreur": str(e)}
+        return {"ok": True}
+
+    # ----- messages types -----
+    MODELES_DEFAUT = [
+        "[heure] [indicatif] arrivé sur zone, opérationnel.",
+        "[heure] Point de situation : RAS, réseau opérationnel.",
+        "[heure] [indicatif] demande renfort / moyens : ",
+        "[heure] [indicatif] quitte la zone, fin de mission.",
+        "[heure] Test réseau ADRASEC 06, merci d'accuser réception.",
+        "[heure] Bien reçu, [indicatif].",
+    ]
+
+    def modeles(self):
+        m = self._store.get_config("modeles", None)
+        return m if isinstance(m, list) and m else list(self.MODELES_DEFAUT)
+
+    def enregistrer_modeles(self, lignes):
+        m = [str(x).strip() for x in (lignes or []) if str(x).strip()][:30]
+        self._store.set_config("modeles", m or list(self.MODELES_DEFAUT))
+        self._store._bump()
+        return {"ok": True}
+
+    # ----- sauvegarde -----
+    def choisir_dossier_sauvegarde(self):
+        if not self._window:
+            return {"ok": False}
+        r = self._window.create_file_dialog(webview.FileDialog.FOLDER)
+        if not r:
+            return {"ok": False, "annule": True}
+        d = r if isinstance(r, str) else r[0]
+        self._store.set_config("dossier_sauvegarde", d)
+        self._store._bump()
+        return self.sauvegarder_maintenant()
+
+    def sauvegarder_maintenant(self):
+        d = self._store.get_config("dossier_sauvegarde", "")
+        if not d:
+            return {"ok": False, "erreur": "Choisissez d'abord un dossier de sauvegarde."}
+        try:
+            return {"ok": True, "chemin": self._store.backup(d)}
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "erreur": f"Sauvegarde impossible : {e}"}
+
+    # ----- mises à jour -----
+    def verifier_maj(self):
+        r = taches.verifier_maj(VERSION)
+        if self._taches and r.get("ok"):
+            self._taches.maj = r
+        self._store._bump()
+        return r
+
+    def installer_maj(self):
+        r = (self._taches.maj if self._taches else None) or taches.verifier_maj(VERSION)
+        if not r.get("ok") or not r.get("disponible"):
+            return {"ok": False, "erreur": "Aucune nouvelle version à installer."}
+        return taches.installer_maj(r["url"], self._quitter or (lambda: None))
+
+    def regler_maj_auto(self, actif):
+        self._store.set_config("maj_auto", bool(actif))
+        self._store._bump()
+        return {"ok": True}
+
     # ----- rapports -----
     def _choisir(self, nom, filtre):
         if not self._window:
@@ -267,6 +360,7 @@ def main():
 
     poller = Poller(store, alerte=alerte)
     api = Api(store, poller)
+    api._taches = taches.Taches(store, alerte, VERSION)
     html = resource_path("ui/index.html")
     reduit = "--reduit" in sys.argv
     window = webview.create_window(

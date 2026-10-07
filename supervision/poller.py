@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import re
 import threading
 import time
@@ -50,6 +51,10 @@ class Poller:
         self.store = store
         self.alerte = alerte or (lambda niveau, noeud, texte: None)
         self.canaux: list[dict] = []
+        self.equipes: list[dict] = []
+        self.position = None
+        self._eq_task = None
+        self.couverture_en_cours = False
         self.loop = asyncio.new_event_loop()
         self.thread = threading.Thread(target=self._run_loop, name="meshcore", daemon=True)
         self.thread.start()
@@ -98,6 +103,9 @@ class Poller:
             "decouverte": bool(self.store.get_config("decouverte", True)),
             "evenements": list(self.events)[:60],
             "canaux": self.canaux if self.mc is not None else [],
+            "equipes": self.equipes,
+            "position": self.position,
+            "couvertureEnCours": self.couverture_en_cours,
             "contactsMessagerie": self.contacts_messagerie() if self.mc is not None else [],
         }
 
@@ -189,6 +197,8 @@ class Poller:
                 p = ev.payload or {}
                 self.local_name = (p.get("name") or "").strip("\x00 ")
                 self.radio = {k: p.get(k) for k in ("radio_freq", "radio_bw", "radio_sf", "radio_cr", "tx_power")}
+                if abs(p.get("adv_lat") or 0) > 0.01 and abs(p.get("adv_lon") or 0) > 0.01:
+                    self.position = {"lat": p["adv_lat"], "lon": p["adv_lon"]}
         except Exception:
             pass
         try:
@@ -213,12 +223,16 @@ class Poller:
         self._log(f"Connexion au nœud {self.local_name or ''} par {'Bluetooth' if ble else 'USB sur ' + cible}")
         self._wake = asyncio.Event()
         self._task = asyncio.ensure_future(self._cycle_loop())
+        self._eq_task = asyncio.ensure_future(self._equipes_loop())
         return {"ok": True}
 
     async def _disconnect(self):
         if self._task:
             self._task.cancel()
             self._task = None
+        if self._eq_task:
+            self._eq_task.cancel()
+            self._eq_task = None
         if self.mc is not None:
             try:
                 await self.mc.disconnect()
@@ -256,6 +270,8 @@ class Poller:
     # ---------- un cycle d'interrogation ----------
     async def _cycle(self):
         mc = self.mc
+        while self.couverture_en_cours:
+            await asyncio.sleep(2)
         self.busy = True
         self.message = "Lecture des contacts du nœud companion…"
         self.store._bump()
@@ -264,6 +280,7 @@ class Poller:
         if res is None or res.type == EventType.ERROR:
             raise RuntimeError("le nœud companion ne renvoie pas sa liste de contacts")
         self._contacts = dict(res.payload or {})
+        self._update_equipes()
 
         if self.store.get_config("decouverte", True):
             self._discover()
@@ -353,8 +370,10 @@ class Poller:
             status = None
 
         if not status:
+            self.store.add_attempt(node["id"], False)
             await self._mark_failure(node)
             return
+        self.store.add_attempt(node["id"], True)
 
         fields = {
             "bruit": status.get("noise_floor"),
@@ -369,6 +388,14 @@ class Poller:
         }
         self.store.add_measure(node["id"], status)
         fields["chemin"] = self._chemin(contact)
+        try:
+            lpp = await mc.commands.req_telemetry_sync(contact, min_timeout=8)
+            if isinstance(lpp, list) and lpp:
+                fields["telemetrie"] = [{"canal": x.get("channel"), "type": x.get("type"), "valeur": x.get("value")}
+                                        for x in lpp if isinstance(x, dict)]
+                fields["telemetrieDate"] = now_iso()
+        except Exception as e:  # noqa: BLE001
+            log.debug("télémétrie %s : %s", name, e)
         self._check_battery(node, fields.get("batterie"))
 
         if admin:
@@ -602,3 +629,120 @@ class Poller:
             self.store.patch_node(node["id"], {"tx": int(cmd.split()[-1])})
         self._log(texte)
         return {"ok": True, "reponse": reponse or ""}
+
+
+    # ---------- équipes (companions qui partagent leur position) ----------
+    def _update_equipes(self):
+        out = []
+        for c in self._contacts.values():
+            if c.get("type") != 1:
+                continue
+            lat, lon = c.get("adv_lat") or 0, c.get("adv_lon") or 0
+            if abs(lat) < 0.01 or abs(lon) < 0.01:
+                continue
+            cle = c.get("public_key", "")[:12]
+            ts = c.get("last_advert") or time.time()
+            self.store.add_position(cle, c.get("adv_name", ""), lat, lon, ts)
+            out.append({"cle": cle, "nom": c.get("adv_name", ""), "lat": lat, "lon": lon,
+                        "vu": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(ts))})
+        out.sort(key=lambda x: x["nom"].lower())
+        self.equipes = out
+
+    async def _equipes_loop(self):
+        """Relit les contacts toutes les 60 s pour suivre les positions des équipes."""
+        while self.mc is not None:
+            await asyncio.sleep(60)
+            if self.busy or self.couverture_en_cours or self.mc is None:
+                continue
+            try:
+                res = await self.mc.commands.get_contacts()
+                if res is not None and res.type != EventType.ERROR:
+                    self._contacts = dict(res.payload or {})
+                    self._update_equipes()
+                    self.store._bump()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # noqa: BLE001
+                log.debug("équipes : %s", e)
+
+    # ---------- test de couverture ----------
+    def test_couverture(self, lat, lon, lieu: str) -> dict:
+        if self.mc is None:
+            return {"ok": False, "erreur": "Aucun nœud connecté."}
+        if self.busy or self.couverture_en_cours:
+            return {"ok": False, "erreur": "Une interrogation est en cours, réessayez dans un instant."}
+        try:
+            lat, lon = float(lat), float(lon)
+        except (TypeError, ValueError):
+            return {"ok": False, "erreur": "Position invalide : indiquez la latitude et la longitude du point de mesure."}
+        try:
+            return self._submit(self._couverture(lat, lon, lieu), timeout=900)
+        except Exception as e:  # noqa: BLE001
+            self.couverture_en_cours = False
+            return {"ok": False, "erreur": f"Test impossible : {e}"}
+
+    async def _trace(self, contact) -> dict | None:
+        """Trace vers un répéteur voisin direct : SNR reçu par le répéteur (aller) et par nous (retour)."""
+        mc = self.mc
+        h = contact.get("public_key", "")[:2]
+        tag = random.randint(1, 0xFFFFFFFF)
+        waiter = asyncio.ensure_future(mc.dispatcher.wait_for_event(EventType.TRACE_DATA, attribute_filters={"tag": tag}, timeout=15))
+        await asyncio.sleep(0)
+        sent = await mc.commands.send_trace(tag=tag, path=h)
+        if sent is None or sent.type == EventType.ERROR:
+            waiter.cancel()
+            return None
+        ev = await waiter
+        if not ev:
+            return None
+        path = (ev.payload or {}).get("path") or []
+        if len(path) >= 2:
+            return {"aller": path[0].get("snr"), "retour": path[-1].get("snr")}
+        return None
+
+    async def _couverture(self, lat, lon, lieu):
+        self.couverture_en_cours = True
+        self.message = "Test de couverture en cours…"
+        self.store._bump()
+        try:
+            res = await self.mc.commands.get_contacts()
+            if res is not None and res.type != EventType.ERROR:
+                self._contacts = dict(res.payload or {})
+            cibles = [n for n in self.store.list_nodes() if n.get("proprio") != "externe" and n.get("statut") != "prevu"]
+            resultats = []
+            for i, node in enumerate(cibles, 1):
+                self.message = f"Test de couverture {i}/{len(cibles)} : {node.get('nom')}"
+                self.store._bump()
+                c = self._contact_for(node.get("nom", ""))
+                r = {"nom": node.get("nom"), "joignable": False, "sauts": None, "aller": None, "retour": None, "delai": None}
+                if c is None:
+                    r["remarque"] = "absent des contacts"
+                    resultats.append(r)
+                    continue
+                t0 = time.time()
+                tr = None
+                try:
+                    tr = await self._trace(c)
+                except Exception as e:  # noqa: BLE001
+                    log.debug("trace %s : %s", node.get("nom"), e)
+                if tr:
+                    r.update(joignable=True, sauts=0, aller=tr["aller"], retour=tr["retour"], delai=round(time.time() - t0, 1))
+                else:
+                    try:
+                        st = await self.mc.commands.req_status_sync(c, min_timeout=10)
+                    except Exception:
+                        st = None
+                    if st:
+                        ch = self._chemin(c)
+                        r.update(joignable=True, sauts=ch.get("sauts"), delai=round(time.time() - t0, 1),
+                                 remarque="via le réseau" if ch.get("sauts") else "joignable")
+                resultats.append(r)
+            cid = self.store.add_coverage(lat, lon, lieu or "", resultats)
+            ok = sum(1 for r in resultats if r["joignable"])
+            self.store.add_journal("", "AUTO", f"Test de couverture « {lieu or 'sans nom'} » : {ok}/{len(resultats)} répéteurs joignables.")
+            self._log(f"Test de couverture terminé : {ok}/{len(resultats)} joignables")
+            return {"ok": True, "id": cid, "resultats": resultats}
+        finally:
+            self.couverture_en_cours = False
+            self.message = "Test de couverture terminé"
+            self.store._bump()

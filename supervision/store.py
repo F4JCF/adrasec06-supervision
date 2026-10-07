@@ -66,6 +66,12 @@ class Store:
                 CREATE TABLE IF NOT EXISTS exercices (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     nom TEXT NOT NULL, type TEXT, debut TEXT NOT NULL, fin TEXT, responsable TEXT);
+                CREATE TABLE IF NOT EXISTS essais (noeud TEXT NOT NULL, ts REAL NOT NULL, ok INTEGER NOT NULL);
+                CREATE INDEX IF NOT EXISTS essais_noeud ON essais(noeud, ts);
+                CREATE TABLE IF NOT EXISTS positions (cle TEXT NOT NULL, nom TEXT, ts REAL NOT NULL, lat REAL, lon REAL);
+                CREATE INDEX IF NOT EXISTS positions_cle ON positions(cle, ts);
+                CREATE TABLE IF NOT EXISTS couverture (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL, lat REAL, lon REAL, lieu TEXT, resultats TEXT);
                 CREATE TABLE IF NOT EXISTS alertes (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     date TEXT NOT NULL, niveau TEXT NOT NULL, noeud TEXT, texte TEXT NOT NULL, vue INTEGER DEFAULT 0);
@@ -350,3 +356,106 @@ def slug(s: str) -> str:
     s = "".join(c for c in s if unicodedata.category(c) != "Mn")
     s = re.sub(r"[^A-Za-z0-9_-]+", "-", s).strip("-")[:120]
     return s or f"n-{int(time.time() * 1000)}"
+
+
+# ---------- disponibilité, positions, couverture, sauvegarde ----------
+def _attach():
+    def add_attempt(self, noeud: str, ok: bool):
+        with self._lock:
+            self._cx.execute("INSERT INTO essais(noeud, ts, ok) VALUES(?,?,?)", (noeud, time.time(), 1 if ok else 0))
+            self._cx.execute("DELETE FROM essais WHERE ts < ?", (time.time() - 180 * 86400,))
+            self._cx.commit()
+
+    def availability(self, noeud: str, days: int = 30) -> dict:
+        since = time.time() - days * 86400
+        with self._lock:
+            rows = self._cx.execute("SELECT ts, ok FROM essais WHERE noeud=? AND ts>=? ORDER BY ts", (noeud, since)).fetchall()
+        total = len(rows)
+        ok = sum(r["ok"] for r in rows)
+        coupures, debut, n_fail = [], None, 0
+        for r in rows:
+            if not r["ok"]:
+                if debut is None:
+                    debut, n_fail = r["ts"], 0
+                n_fail += 1
+            elif debut is not None:
+                coupures.append({"debut": debut, "fin": r["ts"], "essais": n_fail})
+                debut = None
+        if debut is not None:
+            coupures.append({"debut": debut, "fin": None, "essais": n_fail})
+        return {"pct": round(100 * ok / total, 1) if total else None, "essais": total,
+                "coupures": coupures[-20:][::-1]}
+
+    def add_position(self, cle: str, nom: str, lat: float, lon: float, ts: float | None = None) -> bool:
+        ts = ts or time.time()
+        with self._lock:
+            last = self._cx.execute("SELECT ts, lat, lon FROM positions WHERE cle=? ORDER BY ts DESC LIMIT 1", (cle,)).fetchone()
+            if last and abs(last["lat"] - lat) < 0.0002 and abs(last["lon"] - lon) < 0.0002:
+                return False
+            self._cx.execute("INSERT INTO positions(cle, nom, ts, lat, lon) VALUES(?,?,?,?,?)", (cle, nom, ts, lat, lon))
+            self._cx.execute("DELETE FROM positions WHERE ts < ?", (time.time() - 30 * 86400,))
+            self._cx.commit()
+        return True
+
+    def tracks(self, hours: float = 6) -> dict:
+        with self._lock:
+            rows = self._cx.execute("SELECT cle, ts, lat, lon FROM positions WHERE ts>=? ORDER BY ts",
+                                    (time.time() - hours * 3600,)).fetchall()
+        out: dict = {}
+        for r in rows:
+            out.setdefault(r["cle"], []).append([r["lat"], r["lon"], r["ts"]])
+        return out
+
+    def add_coverage(self, lat, lon, lieu: str, resultats: list) -> int:
+        with self._lock:
+            c = self._cx.execute("INSERT INTO couverture(date, lat, lon, lieu, resultats) VALUES(?,?,?,?,?)",
+                                 (now_iso(), lat, lon, lieu, json.dumps(resultats, ensure_ascii=False)))
+            self._cx.commit()
+            cid = c.lastrowid
+        self._bump()
+        return cid
+
+    def list_coverage(self) -> list[dict]:
+        with self._lock:
+            rows = self._cx.execute("SELECT * FROM couverture ORDER BY id DESC LIMIT 500").fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["resultats"] = json.loads(d["resultats"] or "[]")
+            out.append(d)
+        return out
+
+    def delete_coverage(self, cid: int):
+        with self._lock:
+            self._cx.execute("DELETE FROM couverture WHERE id=?", (cid,))
+            self._cx.commit()
+        self._bump()
+
+    def backup(self, dossier: str, garder: int = 14) -> str:
+        """Copie cohérente de la base + export JSON dans le dossier choisi ; garde les `garder` plus récentes."""
+        d = Path(dossier)
+        d.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y-%m-%d_%H%M")
+        dest = d / f"supervision-adrasec06_{stamp}.db"
+        with self._lock:
+            out = sqlite3.connect(dest)
+            self._cx.backup(out)
+            out.close()
+        (d / f"supervision-adrasec06_{stamp}.json").write_text(
+            json.dumps(self.export_data(), ensure_ascii=False, indent=1), encoding="utf-8")
+        for ext in ("db", "json"):
+            olds = sorted(d.glob(f"supervision-adrasec06_*.{ext}"))
+            for o in olds[:-garder]:
+                try:
+                    o.unlink()
+                except OSError:
+                    pass
+        self.set_config("derniere_sauvegarde", now_iso())
+        self._bump()
+        return str(dest)
+
+    for f in (add_attempt, availability, add_position, tracks, add_coverage, list_coverage, delete_coverage, backup):
+        setattr(Store, f.__name__, f)
+
+
+_attach()

@@ -9,7 +9,7 @@ from .store import Store
 STATUTS = {"en-ligne": "En ligne", "degrade": "Dégradé", "hors-ligne": "Hors ligne", "test": "En test", "prevu": "Prévu"}
 COLONNES = [("nom", "Nœud"), ("etat", "État"), ("site", "Site"), ("materiel", "Matériel"), ("firmware", "Firmware"),
             ("tx", "TX dBm"), ("bruit", "Bruit dBm"), ("erreursRx", "Erreurs RX"), ("batterie", "Batterie V"),
-            ("maj", "Dernière lecture")]
+            ("dispo", "Dispo 30 j"), ("maj", "Dernière lecture")]
 
 
 def _date(iso) -> str:
@@ -37,6 +37,8 @@ def _lignes(store: Store, voisins: bool) -> list[dict]:
             "materiel": n.get("materiel", ""), "firmware": n.get("firmware", ""),
             "tx": n.get("tx", ""), "bruit": n.get("bruit", ""), "erreursRx": n.get("erreursRx", ""),
             "batterie": n.get("batterie", ""), "maj": _date(n.get("maj")),
+            "dispo": (f"{store.availability(n['id'], 30)['pct']} %" if store.availability(n['id'], 30)['pct'] is not None else "")
+                     if n.get("proprio") != "externe" and n.get("statut") != "prevu" else "",
             "aFaire": n.get("aFaire", ""),
         })
     return out
@@ -75,7 +77,7 @@ def excel_etat(store: Store, chemin: str, voisins: bool = False):
         f = fills.get(row["etat"])
         if f:
             ws.cell(ws.max_row, 2).fill = PatternFill("solid", fgColor=f)
-    widths = [30, 12, 34, 16, 11, 9, 11, 11, 11, 18, 50]
+    widths = [30, 12, 34, 16, 11, 9, 11, 11, 11, 11, 18, 50]
     for i, w in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(i)].width = w
     ws.freeze_panes = "A5"
@@ -162,7 +164,7 @@ def pdf_etat(store: Store, chemin: str, voisins: bool = False):
         data.append([Paragraph(_x(str(r[k] if r[k] is not None else "")), st["cell"]) for k, _ in COLONNES])
         if r["etat"] in cols:
             marks.append((i, 1, cols[r["etat"]]))
-    w = [52, 20, 50, 26, 18, 13, 16, 17, 16, 27]
+    w = [48, 19, 46, 24, 17, 13, 16, 17, 16, 17, 27]
     elems.append(_table(data, [x * mm for x in w], marks))
 
     todo = [r for r in lignes if r["aFaire"]]
