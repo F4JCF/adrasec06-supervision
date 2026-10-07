@@ -270,6 +270,11 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
 @keyframes hotpulse{50%{box-shadow:0 0 0 2px #ff5f00,0 0 26px 12px rgba(255,95,0,.35)}}
 @media (prefers-reduced-motion:reduce){.team-icon.hot{animation:none}}
 .map-label.hot{color:#b33c00;font-weight:700;font-size:11px}
+.aprs-icon{width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-bottom:16px solid #1f6fd1;filter:drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1px #fff)}
+.aprs-icon.hot{border-bottom-color:#ff5f00;filter:drop-shadow(0 0 6px rgba(255,95,0,.9)) drop-shadow(0 0 1px #fff2a0)}
+.map-label.aprs{color:#123f7a}
+.legend-aprs{display:inline-flex;align-items:center;gap:6px}
+.legend-aprs i{width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:10px solid #1f6fd1}
 .legend-hot{display:inline-flex;align-items:center;gap:6px}
 .legend-hot i{width:10px;height:10px;background:#ff5f00;transform:rotate(45deg);box-shadow:0 0 6px 2px rgba(255,95,0,.7);border:0}
 .map-tools{display:flex;gap:12px;flex-wrap:wrap;font-size:.82rem;color:var(--muted)}
@@ -359,13 +364,14 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     <section class="panel">
       <div class="panel-head">
         <h2>Carte du réseau</h2>
-        <div class="map-tools"><label><input type="checkbox" id="showTeams" checked> Équipes</label><label><input type="checkbox" id="showCov"> Couverture</label><span id="mapHint">Cliquez un nœud pour sa fiche</span></div>
+        <div class="map-tools"><label><input type="checkbox" id="showTeams" checked> Équipes</label><label><input type="checkbox" id="showAprs" checked> APRS</label><label><input type="checkbox" id="showCov"> Couverture</label><span id="mapHint">Cliquez un nœud pour sa fiche</span></div>
       </div>
       <div class="map-box"><div id="lmap" hidden></div><svg id="map" viewBox="0 0 560 560" role="img" aria-label="Carte schématique des nœuds MeshCore des Alpes-Maritimes"></svg></div>
       <div class="legend">
         <span><i style="--c:var(--ok)"></i>SNR ≥ +5 dB</span>
         <span><i style="--c:var(--warn)"></i>−5 à +5 dB</span>
         <span><i style="--c:var(--crit)"></i>&lt; −5 dB</span>
+        <span class="legend-aprs"><i></i>Station APRS</span>
         <span class="legend-hot"><i></i>A écrit sur #ADRASEC 06 (6 h)</span>
       </div>
     </section>
@@ -553,6 +559,12 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
       <div class="actions"><span id="majInfo">Version installée : —</span></div>
       <label class="line"><input type="checkbox" id="optMaj"> Vérifier automatiquement les nouvelles versions</label>
       <div class="actions"><button class="btn" id="majCheck" type="button">Vérifier maintenant</button><button class="btn primary" id="majInstall" type="button" hidden>Mettre à jour</button></div>
+      <div class="panel-head" style="margin-top:6px"><h2>APRS (positions par Internet)</h2></div>
+      <p style="margin:0">Réception seule par APRS-IS, sans émission ni code d'accès. Les positions des opérateurs sans MeshCore apparaissent sur la carte (triangle bleu).</p>
+      <label class="line"><input type="checkbox" id="aprsOn"> Recevoir les positions APRS</label>
+      <label>Indicatifs suivis (séparés par des espaces ou des virgules ; sans SSID = toutes les variantes, F1ABC suit F1ABC-9, F1ABC-7…)<textarea id="aprsCalls" style="min-height:60px" placeholder="F1ABC F5XYZ-9 F4AAA"></textarea></label>
+      <label class="line">Et toutes les stations dans un rayon de <input id="aprsRayon" type="number" min="0" max="500" step="5" style="width:6em"> km autour de Mougins (0 = non)</label>
+      <div class="actions"><button class="btn" id="aprsSave" type="button">Enregistrer les réglages APRS</button><span class="reading" id="aprsState"></span></div>
       <div class="panel-head" style="margin-top:6px"><h2>Messages types</h2></div>
       <p style="margin:0">Un modèle par ligne. [heure] et [indicatif] sont remplacés à l'envoi.</p>
       <textarea id="tplEdit" style="min-height:140px"></textarea>
@@ -593,6 +605,8 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
 
   let api = null, nodes = [], allNodes = [], journal = [], liaison = {}, rev = -1, loaded = false;
   let messages = [], alertes = [], exercice = null, exercices = [], reglages = {}, tab = "reseau";
+  let aprsDirty = false;
+  let aprsData = {etat:{}, reglages:{}, stations:[], traces:{}}, showAprs = true;
   let traces = {}, couvertures = [], dispo = {}, maj = null, showTeams = true, showCov = false, crise = false, crMap = null, crLayer = null;
   let vus = {};
   // vus[conversation] = identifiant du dernier message reçu déjà lu
@@ -807,6 +821,16 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
       L.marker([t.lat, t.lon], {zIndexOffset: h ? 1000 : 0, icon: L.divIcon({className:"", html:`<div class="team-icon${h ? " hot" : ""}"></div>`, iconSize: h ? [22,22] : [16,16], iconAnchor: h ? [11,11] : [8,8]})})
         .bindTooltip(h ? `${esc(t.nom)} · message ${ago(h.date)} : « ${esc(h.texte.slice(0,60))}${h.texte.length>60?"…":""} »` : `${esc(t.nom)} · ${ago(t.vu)}`, {permanent:true, direction:"right", offset:[h ? 13 : 10, 0], className: "map-label" + (h ? " hot" : "")})
         .bindPopup(`<b>${esc(t.nom)}</b><br>Équipe / mobile<br>Position ${ago(t.vu)}<br>${(+t.lat).toFixed(5)}, ${(+t.lon).toFixed(5)}`).addTo(layer);
+    });
+    if (showAprs) (aprsData.stations || []).forEach(a => {
+      const tr = (aprsData.traces || {})[a.call];
+      if (tr && tr.length > 1) L.polyline(tr.map(p => [p[0], p[1]]), {color:"#1f6fd1", weight:2.5, opacity:.75, dashArray:"6 5"}).addTo(layer);
+      const base = normNom(a.call.split("-")[0]);
+      const h = Object.entries(hot).find(([k]) => base && k.startsWith(base));
+      const vit = a.vitesse ? ` · ${Math.round(a.vitesse)} km/h` : "";
+      L.marker([a.lat, a.lon], {zIndexOffset: h ? 900 : 100, icon: L.divIcon({className:"", html:`<div class="aprs-icon${h ? " hot" : ""}"></div>`, iconSize:[18,16], iconAnchor:[9,12]})})
+        .bindTooltip(`${esc(a.call)} · ${ago(a.vu)}${vit}${h ? ` · message ${ago(h[1].date)}` : ""}`, {permanent:true, direction:"right", offset:[10,-4], className:"map-label " + (h ? "hot" : "aprs")})
+        .bindPopup(`<b>${esc(a.call)}</b> (APRS)<br>Position ${ago(a.vu)}${vit}${a.cap!=null && a.vitesse ? ` · cap ${Math.round(a.cap)}°` : ""}${a.altitude ? ` · ${Math.round(a.altitude)} m` : ""}${a.commentaire ? `<br>${esc(a.commentaire)}` : ""}<br>${(+a.lat).toFixed(5)}, ${(+a.lon).toFixed(5)}<br><a href="https://aprs.fi/#!call=a%2F${encodeURIComponent(a.call)}" target="_blank" rel="noopener">Voir sur aprs.fi</a>`).addTo(layer);
     });
     if (showCov) couvertures.forEach(c => {
       if (c.lat == null || c.lon == null) return;
@@ -1207,10 +1231,11 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     $("#mcMoyens").innerHTML = mc.moyens.length ? mc.moyens.map(m => {
       const on = m.arrivee && !m.depart, off = !!m.depart;
       const g = eqs.find(t => normNom(t.nom).includes(normNom(m.indicatif || "§")) || (m.equipe && normNom(t.nom) === normNom(m.equipe)));
+      const ap = m.indicatif ? (aprsData.stations || []).filter(a => a.call.split("-")[0].toUpperCase() === m.indicatif.split("-")[0].toUpperCase()).sort((x,y) => y.ts - x.ts)[0] : null;
       return `<article class="${on ? "on" : off ? "off" : ""}">
         <div class="top"><span><span class="ind">${esc(m.indicatif || "—")}</span> ${esc(m.nom || "")}</span><span class="nat" style="--c:${on ? "var(--ok)" : off ? "var(--muted)" : "var(--warn)"}">${on ? "Sur zone" : off ? "Désengagé" : "Attendu"}</span></div>
         <span class="det">${[m.fonction, m.equipe, m.materiel, m.lieu].filter(Boolean).map(esc).join(" · ") || "&nbsp;"}</span>
-        <span class="det">${m.arrivee ? "Arrivé " + hm(m.arrivee) : ""}${m.depart ? " · parti " + hm(m.depart) : ""}${g ? ` · <span style="color:var(--accent)">position GPS ${ago(g.vu)}</span>` : ""}</span>
+        <span class="det">${m.arrivee ? "Arrivé " + hm(m.arrivee) : ""}${m.depart ? " · parti " + hm(m.depart) : ""}${g ? ` · <span style="color:var(--accent)">position GPS ${ago(g.vu)}</span>` : ""}${ap ? ` · <span style="color:#1f6fd1">position APRS ${ago(ap.vu)}</span>` : ""}</span>
         <div class="act">${!on ? `<button class="btn small" data-moyarr="${m.id}">Arrivé</button>` : `<button class="btn small" data-moydep="${m.id}">Parti</button>`}<button class="btn small" data-moydel="${m.id}">Retirer</button></div>
       </article>`; }).join("") : `<div class="empty">Aucun moyen engagé. Ajoutez les opérateurs et équipes ci-dessous.</div>`;
   }
@@ -1317,6 +1342,9 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     $("#optMaj").checked = !!r.majAuto;
     $("#majInfo").textContent = `Version installée : ${rev >= 0 ? (window._ver || "") : ""}` + (maj && maj.ok ? (maj.disponible ? ` · nouvelle version ${maj.derniere} disponible` : " · à jour") : (maj && maj.erreur ? ` · ${maj.erreur}` : ""));
     $("#majInstall").hidden = !(maj && maj.disponible);
+    const ar = aprsData.reglages || {}, ae = aprsData.etat || {};
+    if (!inside("#aprsCalls") && !inside("#aprsRayon") && !aprsDirty) { $("#aprsOn").checked = !!ar.actif; $("#aprsCalls").value = (ar.indicatifs || []).join(" "); $("#aprsRayon").value = ar.rayon || 0; }
+    $("#aprsState").textContent = (ae.message || "") + (ae.paquets ? ` · ${ae.paquets} position(s) reçue(s)` : "") + ((aprsData.stations||[]).length ? ` · ${aprsData.stations.length} station(s) sur 12 h` : "");
     if (document.activeElement !== $("#tplEdit")) $("#tplEdit").value = (r.modeles || []).join("\n");
   }
 
@@ -1329,6 +1357,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     rev = st.revision; allNodes = st.noeuds; nodes = allNodes.filter(actif); journal = st.journal; liaison = st.liaison; loaded = true;
     messages = st.messages || []; exercice = st.exercice; exercices = st.exercices || []; reglages = st.reglages || {};
     mc = st.mc || {entrees:[], moyens:[]};
+    aprsData = st.aprs || aprsData;
     alertes = st.alertes || []; traces = st.traces || {}; couvertures = st.couvertures || []; dispo = st.dispo || {}; maj = st.maj;
     const top = alertes.find(a => !a.vue);
     if (top && lastAlertId !== null && top.id !== lastAlertId && (top.niveau==="critique" || top.niveau==="attention" || top.niveau==="message")) bip();
@@ -1429,6 +1458,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
       case "bkNow": { const r = await api.sauvegarder_maintenant(); toast(r.ok ? "Sauvegarde faite : " + r.chemin : r.erreur); refresh(true); return; }
       case "majCheck": { t.disabled = true; const r = await api.verifier_maj(); t.disabled = false; toast(r.ok ? (r.disponible ? `Version ${r.derniere} disponible` : "Le logiciel est à jour") : r.erreur); refresh(true); return; }
       case "majInstall": case "majInstall2": { toast("Téléchargement de la nouvelle version… le logiciel va redémarrer."); const r = await api.installer_maj(); if (!r.ok) toast(r.erreur); return; }
+      case "aprsSave": { const r = await api.regler_aprs($("#aprsOn").checked, $("#aprsCalls").value, +$("#aprsRayon").value || 0); aprsDirty = false; toast(r.ok ? "Réglages APRS enregistrés" : r.erreur); refresh(true); return; }
       case "tplSave": { await api.enregistrer_modeles($("#tplEdit").value.split("\n")); toast("Modèles enregistrés"); refresh(true); return; }
       case "covPos": { const p = liaison.position; if (p) { $("#covLat").value = (+p.lat).toFixed(5); $("#covLon").value = (+p.lon).toFixed(5); } else toast("Le nœud companion n'a pas de position GPS. Saisissez-la à la main."); return; }
       case "alertsSeen": await api.alertes_vues(); refresh(true); return;
@@ -1448,6 +1478,8 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     if (e.target.id === "discover") { await api.regler(null, e.target.checked); }
     if (e.target.id === "showTeams") { showTeams = e.target.checked; renderMap(); }
     if (e.target.id === "showCov") { showCov = e.target.checked; renderMap(); }
+    if (e.target.id === "showAprs") { showAprs = e.target.checked; renderMap(); }
+    if (["aprsOn","aprsCalls","aprsRayon"].includes(e.target.id)) aprsDirty = true;
     if (e.target.id === "optMaj") await api.regler_maj_auto(e.target.checked);
     if (e.target.id === "tplSel" && e.target.value !== "") { const m = (reglages.modeles||[])[+e.target.value]; if (m) { const ta = $("#msgText"); ta.value = fillTemplate(m); ta.dispatchEvent(new Event("input")); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } e.target.value = ""; }
     if (e.target.id === "optNotif") await api.regler_options({notifications: e.target.checked});

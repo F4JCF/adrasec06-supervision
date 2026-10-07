@@ -9,11 +9,11 @@ from pathlib import Path
 
 import webview
 
-from . import rapports, systeme, taches
+from . import aprs, rapports, systeme, taches
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -30,6 +30,7 @@ class Api:
         self._window = None
         self._quitter = None
         self._taches = None
+        self._aprs = None
 
     # ----- lecture -----
     def revision(self):
@@ -65,6 +66,8 @@ class Api:
             },
             "maj": self._taches.maj if self._taches else None,
             "traces": self._store.tracks(6),
+            "aprs": {"etat": self._aprs.etat if self._aprs else {}, "reglages": self._aprs.reglages() if self._aprs else {},
+                     "stations": self._store.aprs_stations(12), "traces": self._store.aprs_traces(6)},
             "couvertures": self._store.list_coverage(),
             "dispo": {n["id"]: {"j7": self._store.availability(n["id"], 7)["pct"],
                                 "j30": self._store.availability(n["id"], 30)["pct"]}
@@ -270,6 +273,12 @@ class Api:
         self._store.delete_moyen(int(mid))
         return {"ok": True}
 
+    # ----- APRS -----
+    def regler_aprs(self, actif=None, liste=None, rayon=None):
+        if not self._aprs:
+            return {"ok": False, "erreur": "APRS indisponible."}
+        return self._aprs.regler(actif, liste, rayon)
+
     # ----- statistiques & couverture -----
     def statistiques(self, node_id):
         return {"j7": self._store.availability(node_id, 7), "j30": self._store.availability(node_id, 30)}
@@ -435,6 +444,7 @@ def main():
     poller = Poller(store, alerte=alerte)
     api = Api(store, poller)
     api._taches = taches.Taches(store, alerte, VERSION)
+    api._aprs = aprs.AprsIS(store, VERSION)
     html = resource_path("ui/index.html")
     reduit = "--reduit" in sys.argv
     window = webview.create_window(

@@ -75,6 +75,14 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 - **Moyens engagés** : indicatif, nom, fonction, équipe, matériel, secteur ; boutons Arrivé / Parti inscrits au registre ; position GPS affichée si l'équipe la partage.
 - **Clôture** avec bilan ; **PDF officiel** : en-tête ADRASEC 06, cadre, moyens, registre numéroté, annexe des messages radio, bilan, signatures, page x / y.
 
+### Nouveautés de la version 1.5 — APRS
+
+- **Positions APRS par Internet (APRS-IS)**, en réception seule (aucune émission, code -1) : Réglages → APRS, liste d'indicatifs suivis (sans SSID = toutes les variantes) et/ou rayon autour de Mougins.
+- Triangle bleu sur la carte (et en salle de crise) avec indicatif, âge de la position, vitesse, cap, altitude, commentaire et trace sur 6 h ; case « APRS » pour afficher ou masquer ; lien vers aprs.fi.
+- Moyens engagés : « position APRS il y a … » quand l'indicatif est reçu.
+- Un opérateur repéré en APRS qui écrit sur #ADRASEC 06 passe aussi en orange fluo.
+- Il faut Internet ; seules les stations reçues par une iGate sont visibles.
+
 ### Les données
 
 Tout est enregistré sur le PC dans `%APPDATA%\ADRASEC06-Supervision\supervision.db`, y compris les mots de passe des répéteurs et le PIN Bluetooth (en clair, dans ce fichier local uniquement). Le journal technique est dans `supervision.log` au même endroit.

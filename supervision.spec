@@ -13,7 +13,7 @@ a = Analysis(
     hiddenimports=(collect_submodules("meshcore") + collect_submodules("bleak")
                    + collect_submodules("winrt") + collect_submodules("pystray")
                    + collect_submodules("reportlab") + collect_submodules("openpyxl")
-                   + ["serial.tools.list_ports", "PIL.Image"]),
+                   + collect_submodules("aprslib") + ["serial.tools.list_ports", "PIL.Image"]),
     excludes=["tkinter"],
 )
 pyz = PYZ(a.pure)

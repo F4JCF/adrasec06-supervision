@@ -96,6 +96,10 @@ class Store:
             for col in ("lieu", "autorite", "description", "bilan", "signataire"):
                 if col not in ecols:
                     self._cx.execute(f"ALTER TABLE exercices ADD COLUMN {col} TEXT")
+            self._cx.execute("""CREATE TABLE IF NOT EXISTS aprs (
+                call TEXT NOT NULL, ts REAL NOT NULL, lat REAL, lon REAL, vitesse REAL, cap REAL, altitude REAL,
+                commentaire TEXT, symbole TEXT)""")
+            self._cx.execute("CREATE INDEX IF NOT EXISTS aprs_call ON aprs(call, ts)")
             self._cx.execute("""CREATE TABLE IF NOT EXISTS moyens (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, exercice INTEGER NOT NULL, indicatif TEXT, nom TEXT,
                 fonction TEXT, equipe TEXT, materiel TEXT, lieu TEXT, contact TEXT, arrivee TEXT, depart TEXT)""")
@@ -569,3 +573,48 @@ def _attach_moyens():
 
 
 _attach_moyens()
+
+
+# ---------- positions APRS ----------
+def _attach_aprs():
+    def add_aprs(self, p: dict):
+        now = time.time()
+        with self._lock:
+            last = self._cx.execute("SELECT ts, lat, lon FROM aprs WHERE call=? ORDER BY ts DESC LIMIT 1", (p["call"],)).fetchone()
+            if last and abs(last["lat"] - p["lat"]) < 0.00005 and abs(last["lon"] - p["lon"]) < 0.00005 and now - last["ts"] < 600:
+                return  # même position, envoyée de nouveau
+            self._cx.execute("INSERT INTO aprs(call, ts, lat, lon, vitesse, cap, altitude, commentaire, symbole)"
+                             " VALUES(?,?,?,?,?,?,?,?,?)",
+                             (p["call"], now, p["lat"], p["lon"], p.get("vitesse"), p.get("cap"), p.get("altitude"),
+                              p.get("commentaire"), p.get("symbole")))
+            if int(now) % 50 == 0:
+                self._cx.execute("DELETE FROM aprs WHERE ts < ?", (now - 7 * 86400,))
+            self._cx.commit()
+        self._bump()
+
+    def aprs_stations(self, hours: float = 12) -> list[dict]:
+        with self._lock:
+            rows = self._cx.execute(
+                "SELECT a.* FROM aprs a JOIN (SELECT call, MAX(ts) m FROM aprs WHERE ts>=? GROUP BY call) b"
+                " ON a.call=b.call AND a.ts=b.m ORDER BY a.call", (time.time() - hours * 3600,)).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["vu"] = datetime.fromtimestamp(d["ts"]).astimezone().isoformat(timespec="seconds")
+            out.append(d)
+        return out
+
+    def aprs_traces(self, hours: float = 6) -> dict:
+        with self._lock:
+            rows = self._cx.execute("SELECT call, ts, lat, lon FROM aprs WHERE ts>=? ORDER BY ts",
+                                    (time.time() - hours * 3600,)).fetchall()
+        out: dict = {}
+        for r in rows:
+            out.setdefault(r["call"], []).append([r["lat"], r["lon"], r["ts"]])
+        return {k: v for k, v in out.items() if len(v) > 1}
+
+    for f in (add_aprs, aprs_stations, aprs_traces):
+        setattr(Store, f.__name__, f)
+
+
+_attach_aprs()
