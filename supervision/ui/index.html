@@ -472,7 +472,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
   <div class="cr-body"><div id="crMap"></div>
     <div class="cr-side"><div class="cr-box"><h2>Répéteurs ADRASEC</h2><div class="cr-nodes" id="crNodes"></div></div>
       <div class="cr-box" id="crAlertsBox"><h2>Alertes</h2><div id="crAlerts"></div></div>
-      <div class="cr-box"><h2>Derniers messages</h2><div class="cr-msgs" id="crMsgs"></div></div></div></div>
+      <div class="cr-box"><h2 id="crMsgTitle">Canal ADRASEC 06</h2><div class="cr-msgs" id="crMsgs"></div></div></div></div>
 </div>
 <div class="toast" id="toast" hidden></div>
 
@@ -495,10 +495,11 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
   let messages = [], alertes = [], exercice = null, exercices = [], reglages = {}, tab = "reseau";
   let traces = {}, couvertures = [], dispo = {}, maj = null, showTeams = true, showCov = false, crise = false, crMap = null, crLayer = null;
   let vus = {};
-  try { vus = JSON.parse(localStorage.getItem("vus") || "{}") || {}; } catch(e) { vus = {}; }
-  const saveVus = () => { try { localStorage.setItem("vus", JSON.stringify(vus)); } catch(e) {} };
-  const recus = k => messages.filter(m => m.sens==="recu" && convKey(m)===k).length;
-  const nonLus = k => Math.max(0, recus(k) - (vus[k] || 0));
+  // vus[conversation] = identifiant du dernier message reçu déjà lu
+  try { vus = JSON.parse(localStorage.getItem("vusId") || "{}") || {}; } catch(e) { vus = {}; }
+  const saveVus = () => { try { localStorage.setItem("vusId", JSON.stringify(vus)); } catch(e) {} };
+  const dernierRecu = k => messages.reduce((mx, m) => (m.sens==="recu" && convKey(m)===k && m.id > mx) ? m.id : mx, 0);
+  const nonLus = k => messages.filter(m => m.sens==="recu" && convKey(m)===k && m.id > (vus[k] || 0)).length;
   const totalNonLus = () => { const keys = new Set(messages.filter(m => m.sens==="recu").map(convKey)); let t = 0; keys.forEach(k => { if (!(tab==="messages" && k===conv)) t += nonLus(k); }); return t; };
   let conv = null, lastMsgCount = -1, seenMsgs = 0, msgInit = false, lastAlertId = null, son = true;
   try { son = localStorage.getItem("son") !== "0"; } catch(e) {}
@@ -1010,7 +1011,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     if (!conv) conv = "c:" + chans[0].index;
     const cnt = k => messages.filter(m => convKey(m)===k).length;
     // la conversation ouverte est lue : on mémorise le nombre de messages reçus
-    vus[conv] = recus(conv); saveVus();
+    vus[conv] = Math.max(vus[conv] || 0, dernierRecu(conv)); saveVus();
     const item = (k, label) => { const u = k === conv ? 0 : nonLus(k);
       return `<button data-conv="${esc(k)}" aria-pressed="${conv===k}" class="${u ? "unread" : ""}" title="${u ? u + " message(s) non lu(s)" : ""}"><span>${esc(label)}</span><span class="n">${u ? u : (cnt(k) || "")}</span></button>`; };
     $("#convs").innerHTML = `<h3>Canaux</h3>` + chans.map(c => item("c:"+c.index, "#"+c.nom)).join("") +
@@ -1102,7 +1103,13 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     const neuves = alertes.filter(a => !a.vue);
     $("#crAlertsBox").hidden = !neuves.length;
     $("#crAlerts").innerHTML = neuves.slice(0,5).map(a => `<div class="cr-alert">${fmtDate(a.date).slice(-5)} · ${esc(a.texte)}</div>`).join("");
-    $("#crMsgs").innerHTML = messages.slice(-8).reverse().map(m => `<div><span class="meta">${fmtDate(m.date)} · ${esc(m.canal_nom ? "#"+m.canal_nom : m.contact || "")}</span><div>${m.sens==="recu" && m.auteur ? `<b>${esc(m.auteur)}</b> : ` : (m.sens==="emis" ? "<b>Nous</b> : " : "")}${esc(m.texte)}</div></div>`).join("") || `<span class="muted">Aucun message.</span>`;
+    // salle de crise : uniquement le canal ADRASEC 06 (nom comparé sans espaces, tirets ni majuscules)
+    const norm = x => String(x || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const chan = (liaison.canaux || []).find(c => norm(c.nom) === "adrasec06") || (liaison.canaux || []).find(c => norm(c.nom).includes("adrasec06"));
+    const adr = messages.filter(m => m.canal != null && (chan ? m.canal === chan.index : norm(m.canal_nom).includes("adrasec06")));
+    $("#crMsgTitle").textContent = "#" + (chan ? chan.nom : "ADRASEC 06");
+    $("#crMsgs").innerHTML = adr.slice(-10).reverse().map(m => `<div><span class="meta">${fmtDate(m.date)}</span><div>${m.sens==="recu" && m.auteur ? `<b>${esc(m.auteur)}</b> : ` : (m.sens==="emis" ? "<b>Nous</b> : " : "")}${esc(m.texte)}</div></div>`).join("")
+      || `<span class="muted">${chan || adr.length ? "Aucun message sur ce canal pour l'instant." : "Le canal ADRASEC 06 n'est pas configuré sur le nœud companion (ajoutez-le dans l'application MeshCore)."}</span>`;
     if (crMap) {
       crLayer.clearLayers();
       nodes.filter(hasPos).forEach(n => {
@@ -1156,7 +1163,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     lastAlertId = top ? top.id : (alertes[0] ? alertes[0].id : 0);
     if (!msgInit) {
       seenMsgs = messages.filter(m => m.sens==="recu").length; msgInit = true;
-      if (!Object.keys(vus).length) { messages.filter(m => m.sens==="recu").forEach(m => { const k = convKey(m); vus[k] = recus(k); }); saveVus(); }
+      if (!Object.keys(vus).length) { messages.forEach(m => { if (m.sens==="recu") { const k = convKey(m); vus[k] = Math.max(vus[k] || 0, m.id); } }); saveVus(); }
     }
     $("#footInfo").textContent = `Données enregistrées sur ce PC (${st.dossier}) · version ${st.version}`;
     window._ver = st.version;
