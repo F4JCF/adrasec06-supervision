@@ -66,15 +66,28 @@ def installer_maj(url: str, quitter) -> dict:
         return {"ok": False, "erreur": f"Téléchargement impossible : {e}"}
     if neuf.stat().st_size < 1_000_000:
         return {"ok": False, "erreur": "Le fichier téléchargé est incomplet. Réessayez plus tard."}
-    pid = os.getpid()
+    # l'exécutable PyInstaller « un seul fichier » tourne en deux processus : on attend les deux
+    pids = {os.getpid(), os.getppid()}
+    attente = "".join(
+        f':attente{i}\r\ntasklist /FI "PID eq {p}" 2>nul | find "{p}" >nul && (timeout /t 1 /nobreak >nul & goto attente{i})\r\n'
+        for i, p in enumerate(sorted(pids)))
+    journal = dossier / "installation.log"
     bat = dossier / "installer.bat"
     bat.write_text(
         "@echo off\r\n"
-        ":attente\r\n"
-        f'tasklist /FI "PID eq {pid}" | find "{pid}" >nul && (timeout /t 1 /nobreak >nul & goto attente)\r\n'
+        f'echo %date% %time% attente fermeture >> "{journal}"\r\n'
+        + attente +
         "timeout /t 2 /nobreak >nul\r\n"
-        f'copy /Y "{neuf}" "{exe}" >nul\r\n'
+        "set n=0\r\n"
+        ":copie\r\n"
+        f'copy /Y "{neuf}" "{exe}" >nul && (echo %date% %time% copie OK >> "{journal}" & goto lance)\r\n'
+        "set /a n+=1\r\n"
+        f'if %n% geq 30 (echo %date% %time% copie impossible >> "{journal}" & goto lance)\r\n'
+        "timeout /t 1 /nobreak >nul\r\n"
+        "goto copie\r\n"
+        ":lance\r\n"
         f'start "" "{exe}"\r\n'
+        f'echo %date% %time% relance >> "{journal}"\r\n'
         'del "%~f0"\r\n', encoding="mbcs" if sys.platform.startswith("win") else "utf-8")
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
     subprocess.Popen(["cmd", "/c", str(bat)], creationflags=flags, close_fds=True)

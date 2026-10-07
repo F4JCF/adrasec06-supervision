@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -12,7 +13,7 @@ from . import rapports, systeme, taches
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.2.1"
+VERSION = "1.2.2"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -413,6 +414,15 @@ def main():
 
     window.events.closing += on_closing
     webview.start(on_start, debug="--debug" in sys.argv)
+    # fermeture complète : l'icône près de l'horloge et les tâches de fond ne doivent pas garder le processus en vie
+    try:
+        poller.disconnect()
+    except Exception:
+        pass
+    if tray_ref.get("t"):
+        tray_ref["t"].arreter()
+    logging.shutdown()
+    os._exit(0)
 
 
 if __name__ == "__main__":
