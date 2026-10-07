@@ -414,6 +414,9 @@ class Poller:
                 m = re.search(r"v?(\d+\.\d+(?:\.\d+)?)", ver)
                 if m:
                     fields["firmware"] = "v" + m.group(1)
+                    if node.get("otaDebut"):
+                        self._confirmer_ota(node, fields["firmware"], "AUTO")
+                        fields["otaDebut"] = ""
             tx = await self._cli(contact, "get tx")
             if tx:
                 m = re.search(r"(-?\d+)", tx)
@@ -585,6 +588,9 @@ class Poller:
         "reboot": "reboot",
         "powersaving on": "powersaving on",
         "powersaving off": "powersaving off",
+        "start ota": "start ota",
+        "ver": "ver",
+        "clock sync": "clock sync",
     }
 
     def commande(self, node_id: str, cmd: str, operateur: str = "") -> dict:
@@ -627,6 +633,13 @@ class Poller:
         self.store.add_journal(name, operateur or "AUTO", texte)
         if reponse and cmd.startswith("set tx"):
             self.store.patch_node(node["id"], {"tx": int(cmd.split()[-1])})
+        if cmd == "start ota":
+            self.store.patch_node(node["id"], {"otaDebut": now_iso(), "otaFirmwareAvant": node.get("firmware", ""),
+                                               "otaReponse": (reponse or "").strip()})
+        if cmd == "ver" and reponse:
+            m = re.search(r"v?(\d+\.\d+(?:\.\d+)?)", reponse)
+            if m:
+                self._confirmer_ota(self.store.get_node(node["id"]) or node, "v" + m.group(1), operateur)
         self._log(texte)
         return {"ok": True, "reponse": reponse or ""}
 
@@ -746,3 +759,16 @@ class Poller:
             self.couverture_en_cours = False
             self.message = "Test de couverture terminé"
             self.store._bump()
+
+
+    # ---------- mise à jour du firmware (OTA Wi-Fi) ----------
+    def _confirmer_ota(self, node: dict, nouvelle: str, operateur: str):
+        """Après un « start ota », note la nouvelle version quand elle change."""
+        avant = node.get("otaFirmwareAvant") or node.get("firmware") or "?"
+        fields = {"firmware": nouvelle}
+        if node.get("otaDebut") and nouvelle != avant:
+            self.store.add_journal(node.get("nom", ""), operateur or "AUTO",
+                                   f"Mise à jour du firmware confirmée : {avant} → {nouvelle}.")
+            self.alerte("info", node.get("nom", ""), f"{node.get('nom')} : firmware mis à jour en {nouvelle}.")
+            fields.update(otaDebut="", otaReponse="")
+        self.store.patch_node(node["id"], fields)

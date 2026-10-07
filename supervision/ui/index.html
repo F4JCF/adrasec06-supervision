@@ -266,6 +266,7 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
 .cr-msgs{display:grid;gap:8px;font-size:1.05rem}
 .cr-msgs .meta{font-family:var(--f-mono);font-size:.8rem;color:var(--muted)}
 .cr-alert{font-size:1.05rem;color:var(--crit);font-weight:600}
+a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
 </style>
 </head>
 <body>
@@ -822,8 +823,35 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
     return `<div class="cmds"><strong style="font-size:.9rem">Commandes à distance</strong>
       <div class="row"><label style="flex-direction:row;display:flex;align-items:center;gap:6px;color:var(--fg)">Puissance <input id="cmdTx" type="number" min="1" max="22" value="${esc(n.tx||"")}"> dBm</label><button class="btn small" data-cmd="tx">Appliquer</button></div>
       <div class="row"><button class="btn small" data-cmd="advert">Envoyer un advert</button><button class="btn small" data-cmd="powersaving on">Économie d'énergie : activer</button><button class="btn small" data-cmd="powersaving off">désactiver</button><button class="btn small danger" data-cmd="reboot">Redémarrer</button></div>
+      ${renderOta(n)}
       ${conf ? `<div class="confirm">Confirmer « ${esc(conf)} » sur ${esc(n.nom)} ? <button class="btn danger small" data-cmdok="1">Oui, envoyer</button><button class="btn small" data-cmdno="1">Annuler</button></div>` : ""}
       <span class="msg" id="cmdMsg"></span></div>`;
+  }
+
+  function renderOta(n){
+    const esp = /heltec|t096|xiao|esp32|lilygo|t-beam|station/i.test(n.materiel || "") || !n.materiel;
+    const ref = refFw();
+    const en = n.otaDebut;
+    return `<div class="cmds" style="border-top:1px dashed var(--line)"><strong style="font-size:.9rem">Mise à jour du firmware</strong>
+      <span class="reading">Version actuelle : <b class="mono">${esc(n.firmware || "inconnue")}</b>${ref && fwOld(n) ? ` · la plus récente du réseau : <b class="mono">${esc(ref)}</b>` : ""}${n.materiel ? ` · carte ${esc(n.materiel)}` : ""}</span>
+      ${!esp ? `<span class="reading" style="color:var(--warn)">Carte nRF52 probable : la mise à jour se fait en Bluetooth, sur place, avec le Web Flasher ou l'application de l'association.</span>` : ""}
+      ${en ? `<div class="todo"><strong>Mode mise à jour lancé ${ago(en)}.</strong>${n.otaReponse ? ` Réponse : <span class="mono">${esc(n.otaReponse)}</span>` : ""}
+        <ol style="margin:6px 0 0;padding-left:20px;display:grid;gap:3px">
+          <li>Approchez-vous du répéteur (portée Wi-Fi : quelques dizaines de mètres).</li>
+          <li>Connectez le PC ou le téléphone au Wi-Fi <b class="mono">MeshCore-OTA</b>.</li>
+          <li>Ouvrez <b class="mono">http://192.168.4.1/update</b> dans le navigateur et vérifiez le nom du nœud affiché.</li>
+          <li>Choisissez le fichier <b>.bin</b> du firmware <b>Repeater</b> de cette carte (le second fichier, <b>pas</b> le « merged »), puis attendez la fin de la barre de progression.</li>
+          <li>Le répéteur redémarre. Reconnectez le PC au réseau habituel, puis cliquez « Vérifier la version » et « Remettre l'heure ».</li>
+        </ol>
+        <span class="reading">Si la barre se bloque : envoyez « Redémarrer », puis recommencez.</span></div>` : ""}
+      <div class="row">
+        ${esp ? `<button class="btn small" data-cmd="start ota">Préparer la mise à jour (start ota)</button>` : ""}
+        <button class="btn small" data-cmd="ver">Vérifier la version</button>
+        <button class="btn small" data-cmd="clock sync">Remettre l'heure</button>
+      </div>
+      <span class="reading">Firmware : <span class="mono">flasher.meshcore.co.uk</span> (onglet du firmware Repeater de votre carte) ou la page GitHub des versions MeshCore.</span>
+      <div class="row"><a class="btn small" href="https://flasher.meshcore.co.uk" target="_blank" rel="noopener">Ouvrir le Web Flasher</a><a class="btn small" href="https://github.com/meshcore-dev/MeshCore/releases" target="_blank" rel="noopener">Versions MeshCore (GitHub)</a></div>
+    </div>`;
   }
 
   function renderForm(f){
@@ -1137,6 +1165,12 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
     if (cb) {
       let cmd = cb.dataset.cmd;
       if (cmd === "tx") { const v = +$("#cmdTx").value; if (!(v>=1 && v<=22)) { toast("Puissance entre 1 et 22 dBm."); return; } cmd = "set tx " + v; }
+      if (cmd === "ver" || cmd === "clock sync") {
+        toast("Commande envoyée, réponse attendue…");
+        const r = await api.commande(sel, cmd);
+        toast(r.ok ? (r.reponse ? `Réponse : ${r.reponse}` : "Pas de réponse du répéteur") : r.erreur);
+        refresh(true); return;
+      }
       cmdConfirm = {id: sel, cmd}; renderFiche(); return;
     }
     if (t.closest("[data-cmdno]")) { cmdConfirm = null; renderFiche(); return; }

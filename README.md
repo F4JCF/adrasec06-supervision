@@ -63,6 +63,10 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 - **Sauvegarde automatique** quotidienne dans le dossier de votre choix (14 copies gardées).
 - **Mise à jour automatique** : le logiciel vérifie les nouvelles versions publiées sur GitHub (dépôt public) et s'installe en un clic.
 
+### Nouveautés de la version 1.3
+
+- **Mise à jour du firmware des répéteurs** (fiche du répéteur, mot de passe admin requis) : « Préparer la mise à jour » envoie `start ota` par le réseau ; le répéteur ouvre le Wi-Fi **MeshCore-OTA**. Sur place, à portée Wi-Fi, ouvrir `http://192.168.4.1/update` et envoyer le fichier `.bin` Repeater (pas le « merged »). « Vérifier la version » confirme la mise à jour et la note au journal ; « Remettre l'heure » envoie `clock sync`. Cartes ESP32 uniquement (Heltec V3, T096, Xiao…) ; les cartes nRF52 se mettent à jour en Bluetooth sur place.
+
 ### Les données
 
 Tout est enregistré sur le PC dans `%APPDATA%\ADRASEC06-Supervision\supervision.db`, y compris les mots de passe des répéteurs et le PIN Bluetooth (en clair, dans ce fichier local uniquement). Le journal technique est dans `supervision.log` au même endroit.
