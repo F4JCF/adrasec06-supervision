@@ -3,7 +3,6 @@ name: Compilation Windows
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   workflow_dispatch:
 
 jobs:
@@ -26,14 +25,25 @@ jobs:
       - name: Compiler l'exécutable
         run: pyinstaller supervision.spec --noconfirm
 
+      - name: Lire le numéro de version
+        id: ver
+        shell: bash
+        run: echo "v=$(grep -oP '^VERSION = \"\K[^\"]+' supervision/app.py)" >> "$GITHUB_OUTPUT"
+
       - name: Publier l'exécutable (artefact)
         uses: actions/upload-artifact@v4
         with:
           name: Supervision-ADRASEC06-Windows
           path: dist/Supervision-ADRASEC06.exe
 
-      - name: Créer une release (sur tag v*)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Publier la version (release)
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.ver.outputs.v }}
+          name: Supervision ADRASEC 06 v${{ steps.ver.outputs.v }}
+          target_commitish: ${{ github.sha }}
           files: dist/Supervision-ADRASEC06.exe
+          make_latest: true
+          body: |
+            Téléchargez **Supervision-ADRASEC06.exe** ci-dessous et lancez-le.
+            Les données restent dans %APPDATA%\ADRASEC06-Supervision.
