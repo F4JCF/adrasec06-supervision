@@ -90,6 +90,11 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 - **Redémarrer** : la reprise est vérifiée (temps de fonctionnement) et notée au journal.
 - **Éteindre à distance** (`poweroff`) avec double confirmation : le répéteur ne peut être rallumé que sur place ; l'extinction est vérifiée, la surveillance suspendue (pas d'alertes) jusqu'au bouton « Rallumé : reprendre la surveillance ».
 
+### Nouveautés de la version 1.7
+
+- **Liste des nœuds** : case à cocher par ligne et « tout cocher » (liste affichée) ; barre d'actions : **Supprimer la sélection** (état Supprimé, réversible avec « Rétablir » dans le filtre Supprimés) ou **Effacer définitivement** (avec confirmation). Un voisin effacé n'est plus ajouté par la découverte automatique.
+- **Messagerie** : croix au survol d'un message pour le supprimer, bouton **Vider la conversation** (avec confirmation). La suppression ne concerne que l'historique du PC.
+
 ### Les données
 
 Tout est enregistré sur le PC dans `%APPDATA%\ADRASEC06-Supervision\supervision.db`, y compris les mots de passe des répéteurs et le PIN Bluetooth (en clair, dans ce fichier local uniquement). Le journal technique est dans `supervision.log` au même endroit.

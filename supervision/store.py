@@ -171,6 +171,12 @@ class Store:
         return self.save_node(n)
 
     def delete_node(self, node_id: str):
+        n = self.get_node(node_id)
+        if n and n.get("proprio") == "externe" and n.get("nom"):
+            # un voisin effacé ne doit pas revenir avec la découverte automatique
+            ign = self.get_config("ignores", []) or []
+            if n["nom"] not in ign:
+                self.set_config("ignores", ign + [n["nom"]])
         with self._lock:
             self._cx.execute("DELETE FROM noeuds WHERE id=?", (node_id,))
             self._cx.execute("DELETE FROM config WHERE cle=?", ("mdp:" + node_id,))
@@ -307,6 +313,24 @@ class Store:
             self._cx.execute("UPDATE messages SET statut=? WHERE id=?", (statut, mid))
             self._cx.commit()
         self._bump()
+
+    def delete_message(self, mid: int):
+        with self._lock:
+            self._cx.execute("DELETE FROM messages WHERE id=?", (mid,))
+            self._cx.commit()
+        self._bump()
+
+    def clear_conversation(self, canal=None, contact_cle: str | None = None) -> int:
+        with self._lock:
+            if canal is not None:
+                c = self._cx.execute("DELETE FROM messages WHERE canal=?", (int(canal),))
+            else:
+                c = self._cx.execute("DELETE FROM messages WHERE canal IS NULL AND substr(contact_cle,1,12)=?",
+                                     ((contact_cle or "")[:12],))
+            self._cx.commit()
+            n = c.rowcount
+        self._bump()
+        return n
 
     def list_messages(self, limit: int = 500) -> list[dict]:
         with self._lock:

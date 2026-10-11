@@ -13,7 +13,7 @@ from . import aprs, rapports, systeme, taches
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.6.1"
+VERSION = "1.7.0"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -104,6 +104,39 @@ class Api:
     def supprimer_noeud(self, node_id):
         self._store.delete_node(node_id)
         return {"ok": True}
+
+    def supprimer_selection(self, ids, definitif=False):
+        n = 0
+        for nid in ids or []:
+            node = self._store.get_node(str(nid))
+            if not node:
+                continue
+            if definitif:
+                self._store.delete_node(node["id"])
+            else:
+                node["statut"] = "supprime"
+                self._store.save_node(node)
+            n += 1
+        op = self._store.get_config("operateur", "") or "PC"
+        self._store.add_journal("", op, f"{n} nœud(s) {'effacé(s) définitivement' if definitif else 'passé(s) à l’état Supprimé'} depuis la liste.")
+        return {"ok": True, "n": n}
+
+    def restaurer_selection(self, ids):
+        n = 0
+        for nid in ids or []:
+            node = self._store.get_node(str(nid))
+            if node and node.get("statut") == "supprime":
+                node["statut"] = "en-ligne"
+                self._store.save_node(node)
+                n += 1
+        return {"ok": True, "n": n}
+
+    def supprimer_message(self, mid):
+        self._store.delete_message(int(mid))
+        return {"ok": True}
+
+    def vider_conversation(self, canal=None, contact=None):
+        return {"ok": True, "n": self._store.clear_conversation(canal, contact)}
 
     def marquer_verifie(self, node_id):
         self._store.patch_node(node_id, {"maj": now_iso()})

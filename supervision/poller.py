@@ -369,6 +369,8 @@ class Poller:
             last_seen = None
             if c.get("last_advert"):
                 last_seen = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(c["last_advert"]))
+            if node is None and name in (self.store.get_config("ignores", []) or []):
+                continue
             if node is None:
                 self.store.save_node({
                     "nom": name, "proprio": "externe", "statut": "en-ligne", "role": ROLE_BY_TYPE[t],

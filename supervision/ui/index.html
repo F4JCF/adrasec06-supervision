@@ -300,6 +300,16 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
 .ecard .warn label{display:flex;flex-direction:row;gap:6px;align-items:flex-start;color:var(--fg);font-size:.85rem}
 .ecard .warn input{width:16px;height:16px;flex:none;margin-top:2px}
 .ecard .off{font-size:.85rem;color:var(--muted)}
+.selbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 10px;border:1px solid var(--accent);border-radius:6px;background:color-mix(in srgb,var(--accent) 10%,var(--panel))}
+.selbar .confirm{width:100%}
+td.ck, th.ck{width:30px;padding-right:0}
+td.ck input, th.ck input{width:16px;height:16px;cursor:pointer}
+tbody tr.checked{background:color-mix(in srgb,var(--accent) 9%,transparent)}
+.msgs .msg{position:relative}
+.msgs .msg .del{position:absolute;top:2px;right:4px;border:0;background:none;color:var(--muted);font-size:1rem;line-height:1;padding:2px 4px;cursor:pointer;opacity:0}
+.msgs .msg:hover .del, .msgs .msg .del:focus{opacity:1}
+.msgs .msg .del:hover{color:var(--crit)}
+.thread-head .acts{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .legend-hot{display:inline-flex;align-items:center;gap:6px}
 .legend-hot i{width:10px;height:10px;background:#ff5f00;transform:rotate(45deg);box-shadow:0 0 6px 2px rgba(255,95,0,.7);border:0}
 .map-tools{display:flex;gap:12px;flex-wrap:wrap;font-size:.82rem;color:var(--muted)}
@@ -425,8 +435,9 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
         </div>
       </div>
     </div>
+    <div class="selbar" id="selbar" hidden></div>
     <div class="table-wrap"><table>
-      <thead><tr><th>Nœud</th><th>État</th><th>Site</th><th>Matériel</th><th>Firmware</th><th class="r">TX dBm</th><th class="r">Bruit dBm</th><th class="r">Err. RX</th><th class="r">Batt. V</th><th>Vérifié</th></tr></thead>
+      <thead><tr><th class="ck"><input type="checkbox" id="selAll" title="Tout cocher (liste affichée)" aria-label="Tout cocher"></th><th>Nœud</th><th>État</th><th>Site</th><th>Matériel</th><th>Firmware</th><th class="r">TX dBm</th><th class="r">Bruit dBm</th><th class="r">Err. RX</th><th class="r">Batt. V</th><th>Vérifié</th></tr></thead>
       <tbody id="rows"></tbody>
     </table></div>
   </section>
@@ -456,9 +467,9 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     <div class="chat">
       <div class="convs" id="convs"></div>
       <div class="thread">
-        <div class="thread-head"><h2 id="threadTitle">Messagerie</h2><span class="muted" style="font-size:.82rem" id="threadSub"></span></div>
+        <div class="thread-head"><div><h2 id="threadTitle">Messagerie</h2><span class="muted" style="font-size:.82rem" id="threadSub"></span></div><div class="acts" id="threadActs"></div></div>
         <div class="msgs" id="msgs"></div>
-        <div style="padding:8px 12px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><select id="tplSel" style="width:auto;max-width:100%"><option value="">Message type…</option></select><span class="reading">[heure] et [indicatif] sont remplis automatiquement</span></div>
+        <div style="padding:8px 12px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><select id="tplSel" style="width:auto;max-width:100%"><option value="">Message type…</option></select><span class="reading">[heure] et [indicatif] sont remplis automatiquement · la suppression d'un message ne concerne que ce PC</span></div>
         <form class="compose" id="compose">
           <textarea id="msgText" placeholder="Votre message (150 octets max.)" aria-label="Message"></textarea>
           <div style="display:grid;gap:4px;justify-items:end"><span class="count" id="msgCount">0 / 150</span><button class="btn primary" type="submit" id="msgSend">Envoyer</button></div>
@@ -648,6 +659,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
   const dernierRecu = k => messages.reduce((mx, m) => (m.sens==="recu" && convKey(m)===k && m.id > mx) ? m.id : mx, 0);
   const nonLus = k => messages.filter(m => m.sens==="recu" && convKey(m)===k && m.id > (vus[k] || 0)).length;
   const totalNonLus = () => { const keys = new Set(messages.filter(m => m.sens==="recu").map(convKey)); let t = 0; keys.forEach(k => { if (!(tab==="messages" && k===conv)) t += nonLus(k); }); return t; };
+  let convConfirm = false;
   let conv = null, lastMsgCount = -1, seenMsgs = 0, msgInit = false, lastAlertId = null, son = true;
   try { son = localStorage.getItem("son") !== "0"; } catch(e) {}
   let sel = null, editing = null, filter = {scope:"tous", q:"", statut:null}, confirmDel = false, histFor = null, hist = [];
@@ -1162,7 +1174,8 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
   function renderTable(){
     const list = visibleNodes();
     $("#rows").innerHTML = list.length ? list.map(n => `
-      <tr data-id="${esc(n.id)}" class="${n.id===sel?"sel":""}" tabindex="0">
+      <tr data-id="${esc(n.id)}" class="${n.id===sel?"sel":""}${coches.has(n.id)?" checked":""}" tabindex="0">
+        <td class="ck"><input type="checkbox" data-ck="${esc(n.id)}" ${coches.has(n.id)?"checked":""} aria-label="Cocher ${esc(n.nom)}"></td>
         <td class="name">${esc(n.nom)}${n.decouvert?'<span class="auto">auto</span>':""}</td><td>${pill(n)}</td>
         <td>${esc([n.site,n.commune].filter(Boolean).join(" · ")) || "—"}</td>
         <td>${esc(n.materiel) || "—"}</td>
@@ -1171,8 +1184,27 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
         <td class="r num">${fmtNum(n.batterie,2)}</td>
         <td class="muted" style="white-space:nowrap">${ago(n.maj)}</td>
       </tr>`).join("")
-      : `<tr><td colspan="10"><div class="empty">${loaded ? (filter.scope==="supprimes" ? "Aucun nœud supprimé. Pour retirer un nœud sans l'effacer : Modifier, puis État « Supprimé »." : nodes.length ? "Aucun nœud ne correspond au filtre." : "Aucun nœud enregistré. Ajoutez le premier avec « Nouveau nœud ».") : "Chargement…"}</div></td></tr>`;
+      : `<tr><td colspan="11"><div class="empty">${loaded ? (filter.scope==="supprimes" ? "Aucun nœud supprimé. Pour retirer un nœud sans l'effacer : Modifier, puis État « Supprimé »." : nodes.length ? "Aucun nœud ne correspond au filtre." : "Aucun nœud enregistré. Ajoutez le premier avec « Nouveau nœud ».") : "Chargement…"}</div></td></tr>`;
     document.querySelectorAll("#scope button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v===filter.scope));
+    // nettoyage de la sélection (nœuds disparus) et case « tout cocher »
+    [...coches].forEach(id => { if (!allNodes.some(n => n.id === id)) coches.delete(id); });
+    const vis = list.map(n => n.id), nb = vis.filter(id => coches.has(id)).length;
+    const sa = $("#selAll"); sa.checked = vis.length > 0 && nb === vis.length; sa.indeterminate = nb > 0 && nb < vis.length;
+    renderSelbar();
+  }
+  let coches = new Set(), selConfirm = false;
+  function renderSelbar(){
+    const bar = $("#selbar"), n = coches.size;
+    bar.hidden = n === 0;
+    if (!n) { selConfirm = false; return; }
+    const dansSupprimes = [...coches].every(id => (allNodes.find(x => x.id === id) || {}).statut === "supprime");
+    const adr = [...coches].filter(id => { const x = allNodes.find(y => y.id === id); return x && x.proprio !== "externe"; }).length;
+    bar.innerHTML = `<strong>${n} nœud(s) sélectionné(s)</strong>
+      ${dansSupprimes ? `<button class="btn small" id="selRestore">Rétablir</button>` : `<button class="btn small" id="selHide">Supprimer la sélection</button>`}
+      <button class="btn small danger" id="selDel">Effacer définitivement…</button>
+      <button class="btn small" id="selNone">Désélectionner</button>
+      <span class="reading">« Supprimer » masque les nœuds (état Supprimé, réversible) ; ils ne reviennent pas avec la découverte automatique.</span>
+      ${selConfirm ? `<div class="confirm">Effacer définitivement ${n} nœud(s)${adr ? `, dont ${adr} répéteur(s) ADRASEC` : ""} ? Fiches, historiques et mots de passe seront perdus. <button class="btn danger small" id="selDelYes">Oui, effacer</button><button class="btn small" id="selDelNo">Non</button></div>` : ""}`;
   }
 
   /* ---------- actions & journal ---------- */
@@ -1254,7 +1286,10 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     $("#threadTitle").textContent = title;
     $("#threadSub").textContent = isChan ? "Canal partagé : tous les nœuds du canal reçoivent le message" : "Message direct chiffré";
     const box = $("#msgs"), atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
-    box.innerHTML = list.length ? list.map(m => `<div class="msg${m.sens==="emis"?" out":""}">${m.sens==="recu" && m.auteur ? `<span class="who">${esc(m.auteur)}</span>` : ""}<span>${esc(m.texte)}</span>
+    $("#threadActs").innerHTML = list.length ? (convConfirm
+      ? `<span class="reading" style="color:var(--crit)">Supprimer les ${list.length} message(s) de cette conversation sur ce PC ?</span><button class="btn small danger" id="convClearYes">Oui, supprimer</button><button class="btn small" id="convClearNo">Non</button>`
+      : `<button class="btn small" id="convClear">Vider la conversation</button>`) : "";
+    box.innerHTML = list.length ? list.map(m => `<div class="msg${m.sens==="emis"?" out":""}"><button class="del" data-msgdel="${m.id}" title="Supprimer ce message" aria-label="Supprimer ce message">×</button>${m.sens==="recu" && m.auteur ? `<span class="who">${esc(m.auteur)}</span>` : ""}<span>${esc(m.texte)}</span>
       <span class="meta"><span>${fmtDate(m.date)}</span>${m.snr!=null?`<span>SNR ${fmtSnr(+m.snr)}</span>`:""}${m.sauts!=null?`<span>${m.sauts} saut(s)</span>`:""}${m.statut?`<span>${esc(m.statut)}</span>`:""}</span></div>`).join("")
       : `<div class="empty">${liaison.connecte ? "Aucun message pour l'instant." : "Connectez le nœud companion pour recevoir et envoyer des messages."}</div>`;
     if (atBottom || lastMsgCount !== messages.length) box.scrollTop = box.scrollHeight;
@@ -1503,7 +1538,9 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     const cd = t.closest("[data-covdel]");
     if (cd) { await api.supprimer_couverture(+cd.dataset.covdel); refresh(true); return; }
     const cv = t.closest("[data-conv]");
-    if (cv) { conv = cv.dataset.conv; lastMsgCount = -2; renderChat(); return; }
+    if (cv) { conv = cv.dataset.conv; convConfirm = false; lastMsgCount = -2; renderChat(); return; }
+    const mdel = t.closest("[data-msgdel]");
+    if (mdel) { await api.supprimer_message(+mdel.dataset.msgdel); refresh(true); return; }
     const mc = t.closest("[data-mc]");
     if (mc) { const r = await api.main_courante(+mc.dataset.mc); if (r.ok) toast("Main courante enregistrée : " + r.chemin); else if (r.erreur) toast(r.erreur); return; }
     const cb = t.closest("[data-cmd]");
@@ -1526,6 +1563,10 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
       toast(r.ok ? (r.reponse ? `Réponse : ${r.reponse}` : "Commande envoyée (pas de réponse du répéteur)") : r.erreur);
       refresh(true); return;
     }
+    const ck = t.closest("[data-ck]");
+    if (ck) { if (ck.checked) coches.add(ck.dataset.ck); else coches.delete(ck.dataset.ck); ck.closest("tr").classList.toggle("checked", ck.checked); renderTable(); return; }
+    if (t.closest("td.ck")) return;
+    if (t.id === "selAll") { const ids = visibleNodes().map(n => n.id); if (t.checked) ids.forEach(id => coches.add(id)); else ids.forEach(id => coches.delete(id)); renderTable(); return; }
     const dr = t.closest("#dispoRows tr[data-id]");
     if (dr) { tab = "reseau"; pick(dr.dataset.id); return; }
     const node = t.closest("#map .node, #rows tr[data-id], #todos button[data-id]");
@@ -1580,6 +1621,15 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
         const h = $("#heures").value;
         if (!/\d{1,2}\s*[:hH]\s*\d{2}/.test(h)) { toast("Indiquez au moins une heure, par exemple 08:00, 20:00"); return; }
         await api.regler(0, null, h); heuresEdit = false; toast("Collecte à heures fixes enregistrée"); refresh(true); return; }
+      case "selNone": coches.clear(); selConfirm = false; renderTable(); return;
+      case "selHide": { const r = await api.supprimer_selection([...coches], false); coches.clear(); toast(`${r.n} nœud(s) passé(s) en Supprimé (filtre « Supprimés » pour les retrouver)`); refresh(true); return; }
+      case "selRestore": { const r = await api.restaurer_selection([...coches]); coches.clear(); toast(`${r.n} nœud(s) rétabli(s)`); refresh(true); return; }
+      case "selDel": selConfirm = true; renderSelbar(); return;
+      case "selDelNo": selConfirm = false; renderSelbar(); return;
+      case "selDelYes": { const ids = [...coches]; const r = await api.supprimer_selection(ids, true); if (ids.includes(sel)) sel = null; coches.clear(); selConfirm = false; toast(`${r.n} nœud(s) effacé(s) définitivement`); refresh(true); return; }
+      case "convClear": convConfirm = true; renderChat(); return;
+      case "convClearNo": convConfirm = false; renderChat(); return;
+      case "convClearYes": { const isC = conv.startsWith("c:"); const r = await api.vider_conversation(isC ? +conv.slice(2) : null, isC ? null : conv.slice(2)); convConfirm = false; toast(`${r.n} message(s) supprimé(s)`); refresh(true); return; }
       case "alertsSeen": await api.alertes_vues(); refresh(true); return;
       case "mcEditCadre": { const e = exercice; $("#cdNom").value = e.nom||""; $("#cdLieu").value = e.lieu||""; $("#cdAutorite").value = e.autorite||""; $("#cdDesc").value = e.description||""; $("#cdSign").value = e.signataire||""; $("#mcCadre").hidden = false; $("#mcClose").hidden = true; $("#cdNom").focus(); return; }
       case "cdCancel": $("#mcCadre").hidden = true; return;
@@ -1612,7 +1662,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     if (e.target.id === "optAuto") { const r = await api.regler_options({demarrageAuto: e.target.checked}); if (!r.ok) toast(r.erreur); refresh(true); }
   });
   document.addEventListener("keydown", e => {
-    if ((e.key==="Enter"||e.key===" ") && e.target.matches("#map .node, #rows tr[data-id]")) { e.preventDefault(); pick(e.target.dataset.id); }
+    if ((e.key==="Enter"||e.key===" ") && e.target.matches("#map .node, #rows tr[data-id]") && !e.target.matches("input")) { e.preventDefault(); pick(e.target.dataset.id); }
   });
   $("#q").addEventListener("input", e => { filter.q = e.target.value; renderTable(); });
   $("#msgText").addEventListener("input", e => { const n = new TextEncoder().encode(e.target.value).length; const c = $("#msgCount"); c.textContent = `${n} / 150`; c.style.color = n > 150 ? "var(--crit)" : ""; });
