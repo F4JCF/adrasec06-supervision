@@ -55,7 +55,8 @@ class Poller:
         self.position = None
         self._eq_task = None
         self.couverture_en_cours = False
-        self.prioritaire = 0  # demandes de l'opérateur (test, commande) en attente : l'interrogation leur cède la place
+        self.prioritaire = 0
+        self._recalcul = False  # demandes de l'opérateur (test, commande) en attente : l'interrogation leur cède la place
         self.loop = asyncio.new_event_loop()
         self.thread = threading.Thread(target=self._run_loop, name="meshcore", daemon=True)
         self.thread.start()
@@ -101,6 +102,7 @@ class Poller:
             "prochainCycle": self.next_cycle,
             "message": self.message,
             "intervalle": self.interval(),
+            "heures": self.heures_fixes(),
             "decouverte": bool(self.store.get_config("decouverte", True)),
             "evenements": list(self.events)[:60],
             "canaux": self.canaux if self.mc is not None else [],
@@ -111,7 +113,29 @@ class Poller:
         }
 
     def interval(self) -> int:
-        return int(self.store.get_config("intervalle_min", 15) or 15)
+        """Intervalle en minutes ; 0 = collecte à heures fixes."""
+        v = self.store.get_config("intervalle_min", 15)
+        return 0 if v in (0, "0") else int(v or 15)
+
+    def heures_fixes(self) -> list[str]:
+        return [h for h in (self.store.get_config("heures_collecte", []) or []) if re.fullmatch(r"\d{2}:\d{2}", str(h))]
+
+    def _attente(self) -> float:
+        """Secondes jusqu'à la prochaine collecte."""
+        m = self.interval()
+        heures = self.heures_fixes()
+        if m == 0 and heures:
+            from datetime import datetime, timedelta
+            now = datetime.now()
+            cands = []
+            for h in heures:
+                hh, mm = int(h[:2]), int(h[3:])
+                t = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
+                if t <= now + timedelta(seconds=20):
+                    t += timedelta(days=1)
+                cands.append(t)
+            return max(30.0, (min(cands) - now).total_seconds())
+        return max(1, m or 60) * 60
 
     def connect(self, cible: str, mode: str = "usb", pin: str | None = None) -> dict:
         if MeshCore is None:
@@ -166,10 +190,15 @@ class Poller:
             self.loop.call_soon_threadsafe(self._wake.set)
         return {"ok": True}
 
-    def set_interval(self, minutes: int):
-        self.store.set_config("intervalle_min", max(1, int(minutes)))
-        if self.mc is not None:
-            self.poll_now()
+    def set_interval(self, minutes: int, heures=None):
+        self.store.set_config("intervalle_min", 0 if int(minutes) == 0 else max(1, int(minutes)))
+        if heures is not None:
+            propres = sorted({f"{int(h):02d}:{m}" for h, m in re.findall(r"\b([01]?\d|2[0-3])\s*[:hH]\s*([0-5]\d)\b", str(heures))})
+            self.store.set_config("heures_collecte", propres)
+        if self.mc is not None and self._wake is not None:
+            # recalcule la prochaine échéance sans lancer de collecte immédiate
+            self._recalcul = True
+            self.loop.call_soon_threadsafe(self._wake.set)
 
     # ---------- connexion ----------
     async def _connect(self, cible: str, mode: str = "usb", pin: str | None = None) -> dict:
@@ -260,14 +289,18 @@ class Poller:
             except Exception as e:  # noqa: BLE001
                 self.busy = False
                 self._log(f"Erreur pendant l'interrogation : {e}")
-            wait = self.interval() * 60
-            self.next_cycle = time.time() + wait
-            self.store._bump()
-            self._wake.clear()
-            try:
-                await asyncio.wait_for(self._wake.wait(), timeout=wait)
-            except asyncio.TimeoutError:
-                pass
+            while True:
+                wait = self._attente()
+                self.next_cycle = time.time() + wait
+                self.store._bump()
+                self._wake.clear()
+                self._recalcul = False
+                try:
+                    await asyncio.wait_for(self._wake.wait(), timeout=wait)
+                except asyncio.TimeoutError:
+                    break
+                if not self._recalcul:  # « Interroger maintenant »
+                    break
 
     # ---------- un cycle d'interrogation ----------
     async def _cycle(self):
@@ -288,7 +321,8 @@ class Poller:
             self._discover()
 
         targets = [n for n in self.store.list_nodes()
-                   if n.get("proprio") != "externe" and n.get("statut") not in ("prevu", "supprime")]
+                   if (n.get("proprio") != "externe" or re.sub(r"[^a-z0-9]", "", (n.get("nom") or "").lower()) == "fr06mouginsf4jcf")
+                   and n.get("statut") not in ("prevu", "supprime") and not n.get("eteint")]
         for i, node in enumerate(targets, 1):
             if self.mc is None:
                 return
@@ -594,6 +628,7 @@ class Poller:
     COMMANDES = {
         "advert": "advert",
         "reboot": "reboot",
+        "poweroff": "poweroff",
         "powersaving on": "powersaving on",
         "powersaving off": "powersaving off",
         "start ota": "start ota",
@@ -642,6 +677,8 @@ class Poller:
         login = await self.mc.commands.send_login_sync(contact, self.store.password(node["id"]), min_timeout=8)
         if not (login and login.type == EventType.LOGIN_SUCCESS):
             return {"ok": False, "erreur": f"Connexion admin refusée par {name} (mot de passe ou portée)."}
+        if cmd in ("reboot", "poweroff"):
+            return await self._arret(node, contact, cmd, operateur)
         reponse = await self._cli(contact, cmd, timeout=25)
         texte = f"Commande « {cmd} » envoyée à {name}" + (f" — réponse : {reponse.strip()}" if reponse else " — pas de réponse")
         self.store.add_journal(name, operateur or "AUTO", texte)
@@ -843,3 +880,66 @@ class Poller:
         elif self.position:
             self.position["perimee"] = True
         self.store._bump()
+
+
+    # ---------- redémarrage et extinction à distance ----------
+    async def _arret(self, node: dict, contact: dict, cmd: str, operateur: str) -> dict:
+        """reboot / poweroff : le répéteur n'envoie aucune réponse ; on vérifie ensuite son état."""
+        name = node.get("nom", "")
+        sent = await self.mc.commands.send_cmd(contact, cmd)
+        if sent is None or sent.type == EventType.ERROR:
+            return {"ok": False, "erreur": "Le nœud companion n'a pas pu envoyer la commande."}
+        if cmd == "poweroff":
+            self.store.patch_node(node["id"], {"eteint": now_iso()})
+            self.store.add_journal(name, operateur or "AUTO",
+                                   f"Extinction à distance de {name} demandée (poweroff). Rallumage uniquement sur place.")
+            await asyncio.sleep(20)
+            try:
+                st = await self.mc.commands.req_status_sync(contact, min_timeout=10)
+            except Exception:
+                st = None
+            if st:
+                msg = f"{name} répond encore après la demande d'extinction : commande non prise en compte."
+                self.store.patch_node(node["id"], {"eteint": ""})
+                self.store.add_journal(name, "AUTO", msg, auto=True)
+                self._log(msg)
+                return {"ok": False, "erreur": msg}
+            msg = f"Extinction de {name} confirmée : il ne répond plus. Surveillance suspendue jusqu'à son rallumage."
+            self.store.add_journal(name, "AUTO", msg, auto=True)
+            self._log(msg)
+            return {"ok": True, "reponse": "extinction confirmée"}
+        # reboot : on attend le redémarrage puis on lit le temps de fonctionnement
+        self.store.add_journal(name, operateur or "AUTO", f"Redémarrage à distance de {name} demandé.")
+        await asyncio.sleep(25)
+        st = None
+        for _ in range(2):
+            try:
+                st = await self.mc.commands.req_status_sync(contact, min_timeout=10)
+            except Exception:
+                st = None
+            if st:
+                break
+            await asyncio.sleep(10)
+        if st and st.get("uptime") is not None and st["uptime"] < 300:
+            msg = f"Redémarrage de {name} confirmé (en service depuis {st['uptime']} s)."
+            self.store.patch_node(node["id"], {"uptime": st["uptime"], "maj": now_iso()})
+            ok = True
+        elif st:
+            msg = f"{name} répond mais n'a pas redémarré (en service depuis {st.get('uptime')} s)."
+            ok = False
+        else:
+            msg = f"{name} ne répond pas encore après le redémarrage ; nouvelle vérification au prochain cycle."
+            ok = True
+        self.store.add_journal(name, "AUTO", msg, auto=True)
+        self._log(msg)
+        return {"ok": ok, "reponse": msg} if ok else {"ok": False, "erreur": msg}
+
+    def reprendre(self, node_id: str) -> dict:
+        n = self.store.get_node(node_id)
+        if not n:
+            return {"ok": False, "erreur": "Nœud inconnu."}
+        self.store.patch_node(node_id, {"eteint": "", "echecs": 0})
+        self.store.add_journal(n.get("nom", ""), self.store.get_config("operateur", "") or "AUTO",
+                               f"{n.get('nom')} rallumé : reprise de la surveillance.")
+        self.poll_now()
+        return {"ok": True}

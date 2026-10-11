@@ -13,7 +13,7 @@ from . import aprs, rapports, systeme, taches
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.5.3"
+VERSION = "1.6.0"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -143,12 +143,15 @@ class Api:
     def deconnecter(self):
         return self._poller.disconnect()
 
+    def reprendre_surveillance(self, node_id):
+        return self._poller.reprendre(node_id)
+
     def interroger(self):
         return self._poller.poll_now()
 
-    def regler(self, intervalle=None, decouverte=None):
+    def regler(self, intervalle=None, decouverte=None, heures=None):
         if intervalle is not None:
-            self._poller.set_interval(int(intervalle))
+            self._poller.set_interval(int(intervalle), heures)
         if decouverte is not None:
             self._store.set_config("decouverte", bool(decouverte))
         self._store._bump()

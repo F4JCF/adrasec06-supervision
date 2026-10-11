@@ -282,6 +282,20 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
 .pylone.prevu{opacity:.45}
 .legend-pyl{display:inline-flex;align-items:center;gap:5px}
 .moi-icon{width:18px;height:18px;border-radius:50%;background:#18a058;border:3px solid #fff;box-shadow:0 0 0 2px #18a058,0 0 10px 3px rgba(24,160,88,.55)}
+.ecards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;align-items:start}
+.ecard{border:1px solid var(--line);border-left:5px solid var(--c);border-radius:6px;padding:10px 12px;display:grid;gap:6px;background:var(--bg);min-width:0}
+.ecard.sel{box-shadow:0 0 0 2px var(--accent)}
+.ecard .hd{display:flex;align-items:center;gap:8px;justify-content:space-between}
+.ecard .nm{display:flex;align-items:center;gap:8px;min-width:0}
+.ecard .nm b{font-family:var(--f-mono);font-size:.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ecard .kv{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 8px}
+.ecard .kv span{display:grid;font-size:.72rem;color:var(--muted)}
+.ecard .kv b{font-family:var(--f-mono);font-size:.88rem;color:var(--fg);font-weight:500;font-variant-numeric:tabular-nums}
+.ecard .acts{display:flex;flex-wrap:wrap;gap:6px}
+.ecard .warn{border:1px solid var(--crit);border-radius:4px;padding:8px;display:grid;gap:6px;font-size:.85rem;color:var(--crit)}
+.ecard .warn label{display:flex;flex-direction:row;gap:6px;align-items:flex-start;color:var(--fg);font-size:.85rem}
+.ecard .warn input{width:16px;height:16px;flex:none;margin-top:2px}
+.ecard .off{font-size:.85rem;color:var(--muted)}
 .legend-hot{display:inline-flex;align-items:center;gap:6px}
 .legend-hot i{width:10px;height:10px;background:#ff5f00;transform:rotate(45deg);box-shadow:0 0 6px 2px rgba(255,95,0,.7);border:0}
 .map-tools{display:flex;gap:12px;flex-wrap:wrap;font-size:.82rem;color:var(--muted)}
@@ -347,7 +361,8 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
         <button class="btn primary" id="connect" type="button">Connecter</button>
         <button class="btn" id="disconnect" type="button" hidden>Déconnecter</button>
         <button class="btn" id="pollNow" type="button" disabled>Interroger maintenant</button>
-        <label>Toutes les <select id="interval"><option value="5">5 min</option><option value="10">10 min</option><option value="15">15 min</option><option value="30">30 min</option><option value="60">1 h</option></select></label>
+        <label>Collecte <select id="interval"><option value="5">toutes les 5 min</option><option value="60">toutes les heures</option><option value="180">toutes les 3 h</option><option value="360">toutes les 6 h</option><option value="720">toutes les 12 h</option><option value="1440">toutes les 24 h</option><option value="0">à heures fixes…</option></select></label>
+        <span class="grp" id="grpHeures" hidden><input id="heures" placeholder="08:00, 20:00" style="width:11em" aria-label="Heures de collecte"><button class="btn small" id="heuresOk" type="button">Valider</button></span>
         <label><input type="checkbox" id="discover"> Ajouter les répéteurs entendus</label>
       </div>
       <details class="activity"><summary>Activité de la liaison</summary><ol id="events"></ol></details>
@@ -365,6 +380,10 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
   </nav>
 
   <div class="tabpane" id="tab-reseau">
+  <section class="panel" id="encart">
+    <div class="panel-head"><h2>Répéteurs ADRASEC</h2><span class="reading" id="encartInfo"></span></div>
+    <div class="ecards" id="ecards"></div>
+  </section>
   <section class="summary" id="summary" aria-label="Synthèse des états"></section>
 
   <div class="main">
@@ -615,7 +634,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
 
   let api = null, nodes = [], allNodes = [], journal = [], liaison = {}, rev = -1, loaded = false;
   let messages = [], alertes = [], exercice = null, exercices = [], reglages = {}, tab = "reseau";
-  let aprsDirty = false;
+  let aprsDirty = false, heuresEdit = false;
   let aprsData = {etat:{}, reglages:{}, stations:[], traces:{}}, showAprs = true;
   let traces = {}, couvertures = [], dispo = {}, maj = null, showTeams = true, showCov = false, crise = false, crMap = null, crLayer = null;
   let vus = {};
@@ -649,7 +668,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
   };
   const fmtDate = iso => { try { return new Date(iso).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"}); } catch(e){ return iso; } };
   const fmtUptime = s => { if (empty(s)) return ""; const d=Math.floor(s/86400), h=Math.floor(s%86400/3600), m=Math.floor(s%3600/60); return (d?d+" j ":"")+h+" h "+String(m).padStart(2,"0"); };
-  const statusOf = n => n.statut === "supprime" ? STATUTS.supprime : n.proprio === "externe" ? {t:"Voisin", c:"var(--navy)"} : (STATUTS[n.statut] || STATUTS.prevu);
+  const statusOf = n => n.eteint ? {t:"Éteint", c:"var(--muted)", hollow:true} : n.statut === "supprime" ? STATUTS.supprime : n.proprio === "externe" ? {t:"Voisin", c:"var(--navy)"} : (STATUTS[n.statut] || STATUTS.prevu);
   const pill = n => { const s = statusOf(n); return `<span class="pill" style="--c:${s.c}"><span class="dot${s.hollow?" hollow":""}" style="--c:${s.c}"></span>${s.t}</span>`; };
   const byName = name => nodes.find(n => (n.nom||"").toLowerCase() === String(name||"").toLowerCase());
   let toastT;
@@ -709,7 +728,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     if (!L.bibliotheque) msg = "La bibliothèque meshcore est absente : la lecture automatique est désactivée.";
     else if (L.connecte && !L.occupe && L.prochainCycle) {
       const s = Math.max(0, Math.round(L.prochainCycle - Date.now()/1000));
-      msg += ` · prochaine lecture dans ${s >= 60 ? Math.round(s/60) + " min" : s + " s"}`;
+      msg += s >= 3600 ? ` · prochaine collecte à ${new Date(L.prochainCycle*1000).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}` : ` · prochaine lecture dans ${s >= 60 ? Math.round(s/60) + " min" : s + " s"}`;
     } else if (!L.connecte) msg = "Choisissez USB ou Bluetooth, puis connectez le nœud companion.";
     $("#linkMsg").textContent = msg;
     $("#connect").hidden = !!L.connecte; $("#disconnect").hidden = !L.connecte;
@@ -717,12 +736,49 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     document.querySelectorAll("#mode button").forEach(b => b.disabled = !!L.connecte);
     if (L.connecte && L.mode && L.mode !== mode) setMode(L.mode);
     $("#pollNow").disabled = !L.connecte || L.occupe;
-    if (document.activeElement !== $("#interval")) $("#interval").value = String(L.intervalle || 15);
+    if (document.activeElement !== $("#interval") && !heuresEdit) {
+      const v = String(L.intervalle ?? 15), sel = $("#interval");
+      if (![...sel.options].some(o => o.value === v)) sel.insertAdjacentHTML("afterbegin", `<option value="${v}">toutes les ${v} min</option>`);
+      sel.value = v;
+      $("#grpHeures").hidden = v !== "0";
+      if (document.activeElement !== $("#heures")) $("#heures").value = (L.heures || []).join(", ");
+    }
     $("#discover").checked = !!L.decouverte;
     $("#events").innerHTML = (L.evenements||[]).map(e => `<li><time>${fmtDate(e.date)}</time><span>${esc(e.texte)}</span></li>`).join("") || `<li><span></span><span class="muted">Aucune activité.</span></li>`;
   }
 
   /* ---------- synthèse ---------- */
+  /* ---------- encart des répéteurs ADRASEC ---------- */
+  let offConfirm = null, encartBusy = {};
+  function nodesEncart(){
+    return allNodes.filter(n => (n.proprio !== "externe" && !["prevu","supprime"].includes(n.statut)) || normNom(n.nom) === "fr06mouginsf4jcf")
+      .filter(n => n.statut !== "supprime")
+      .sort((a,b) => a.nom.localeCompare(b.nom));
+  }
+  function pylSvg(col, w){ const h = Math.round(w*1.4); return `<svg width="${w}" height="${h}" viewBox="0 0 20 28" aria-hidden="true"><g fill="none" stroke="${col}" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"><path d="M10 6 L4 27 M10 6 L16 27 M5.6 21 H14.4 M7 15.5 H13 M8.4 10.5 H11.6 M5.6 21 L13 15.5 M14.4 21 L7 15.5 M7 15.5 L11.6 10.5 M13 15.5 L8.4 10.5 M3 27 H17"/><path d="M5.2 4.2 A6.5 6.5 0 0 1 5.2 -2.2 M14.8 4.2 A6.5 6.5 0 0 0 14.8 -2.2" stroke-width="1.4"/></g><circle cx="10" cy="5" r="2.2" fill="${col}"/></svg>`; }
+  function renderEncart(){
+    const list = nodesEncart();
+    const on = list.filter(n => !n.eteint && n.statut === "en-ligne").length;
+    $("#encartInfo").textContent = list.length ? `${on} en ligne sur ${list.length}` : "";
+    if (inside("#ecards .warn")) return;
+    $("#ecards").innerHTML = list.length ? list.map(n => {
+      const s = n.eteint ? statusOf(n) : (STATUTS[n.statut] || STATUTS["en-ligne"]), d = dispo[n.id] || {}, busy = encartBusy[n.id];
+      const pastille = `<span class="pill" style="--c:${s.c}"><span class="dot${s.hollow?" hollow":""}" style="--c:${s.c}"></span>${s.t}</span>`;
+      return `<article class="ecard${n.id===sel?" sel":""}" style="--c:${s.c}">
+        <div class="hd"><span class="nm">${pylSvg(n.eteint ? "#8794a1" : "#f07b14", 14)}<b title="${esc(n.nom)}">${esc(n.nom.replace(/^FR06-/,""))}</b></span>${pastille}</div>
+        ${n.eteint ? `<span class="off">Éteint à distance ${ago(n.eteint)} (${fmtDate(n.eteint)}). Surveillance suspendue.</span>` : `
+        <div class="kv"><span>Batterie<b>${fmtNum(n.batterie,2)}${empty(n.batterie)?"":" V"}</b></span><span>Bruit<b>${fmtNum(n.bruit)}${empty(n.bruit)?"":" dBm"}</b></span><span>Dispo 7 j<b>${d.j7 != null ? fmtNum(d.j7,0)+" %" : "—"}</b></span>
+          <span>Firmware<b>${esc(n.firmware || "—")}</b></span><span>Err. RX<b>${fmtNum(n.erreursRx)}</b></span><span>Lu<b>${n.maj ? ago(n.maj).replace("il y a ","") : "—"}</b></span></div>`}
+        ${busy ? `<span class="reading">${esc(busy)}</span>` : ""}
+        ${offConfirm === n.id ? `<div class="warn"><strong>Éteindre ${esc(n.nom)} ?</strong>
+            <span>Le répéteur s'arrête complètement. Il <b>ne pourra être rallumé que sur place</b> : aucune commande à distance ne pourra le réveiller. Le réseau perd ce relais d'ici là.</span>
+            <label><input type="checkbox" id="offOk-${esc(n.id)}"> Je confirme qu'une intervention sur place sera nécessaire pour le rallumer.</label>
+            <div class="acts"><button class="btn small danger" data-offgo="${esc(n.id)}">Éteindre définitivement</button><button class="btn small" data-offno="1">Annuler</button></div></div>` : `
+        <div class="acts"><button class="btn small" data-efiche="${esc(n.id)}">Fiche</button>
+          ${n.eteint ? `<button class="btn small" data-ereprise="${esc(n.id)}">Rallumé : reprendre la surveillance</button>` : (n.aMotDePasse && liaison.connecte ? `<button class="btn small" data-ereboot="${esc(n.id)}" ${busy?"disabled":""}>Redémarrer</button><button class="btn small danger" data-eoff="${esc(n.id)}" ${busy?"disabled":""}>Éteindre</button>` : `<span class="reading">${!liaison.connecte ? "Connectez le nœud companion pour agir" : "Mot de passe admin requis pour agir"}</span>`)}</div>`}
+      </article>`; }).join("") : `<div class="empty">Aucun répéteur ADRASEC actif.</div>`;
+  }
+
   function renderSummary(){
     const own = nodes.filter(n => n.proprio !== "externe");
     const parts = Object.entries(STATUTS).filter(([k]) => k !== "supprime").map(([k,s]) => {
@@ -1136,7 +1192,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
 
   function renderAll(){
     renderRadio(); renderLink(); renderAlerts(); renderTabs();
-    if (tab === "reseau") { renderSummary(); renderMap(); if (!editing) renderFiche(); renderTable(); renderTodos(); renderLog(); }
+    if (tab === "reseau") { renderEncart(); renderSummary(); renderMap(); if (!editing) renderFiche(); renderTable(); renderTodos(); renderLog(); }
     if (tab === "messages") renderChat();
     if (tab === "courante") renderCourante();
     if (tab === "reglages") renderSettings();
@@ -1407,6 +1463,27 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     const t = e.target;
     const tb = t.closest(".tabs button");
     if (tb) { tab = tb.dataset.tab; editing = null; renderAll(); if (tab==="reseau" && lmap) setTimeout(()=>lmap.invalidateSize(),0); return; }
+    const ef = t.closest("[data-efiche]");
+    if (ef) { pick(ef.dataset.efiche); $("#fiche").scrollIntoView({block:"nearest",behavior:"smooth"}); return; }
+    const eo = t.closest("[data-eoff]");
+    if (eo) { offConfirm = eo.dataset.eoff; renderEncart(); return; }
+    if (t.closest("[data-offno]")) { offConfirm = null; renderEncart(); return; }
+    const eg = t.closest("[data-offgo]");
+    if (eg) {
+      const id = eg.dataset.offgo;
+      if (!$("#offOk-" + CSS.escape(id))?.checked) { toast("Cochez la case de confirmation pour éteindre le répéteur."); return; }
+      offConfirm = null; encartBusy[id] = "Extinction en cours, vérification (environ 30 s)…"; renderEncart();
+      const r = await api.commande(id, "poweroff"); delete encartBusy[id];
+      toast(r.ok ? "Extinction confirmée : le répéteur ne répond plus." : r.erreur); refresh(true); return;
+    }
+    const er = t.closest("[data-ereboot]");
+    if (er) {
+      const id = er.dataset.ereboot; encartBusy[id] = "Redémarrage en cours, vérification (environ 40 s)…"; renderEncart();
+      const r = await api.commande(id, "reboot"); delete encartBusy[id];
+      toast(r.ok ? r.reponse : r.erreur); refresh(true); return;
+    }
+    const ep = t.closest("[data-ereprise]");
+    if (ep) { await api.reprendre_surveillance(ep.dataset.ereprise); toast("Surveillance reprise : interrogation lancée"); refresh(true); return; }
     const sb = t.closest("[data-suite]");
     if (sb) { suiteFor = +sb.dataset.suite; renderRegistre(); return; }
     if (t.closest("[data-suitecancel]")) { suiteFor = null; renderRegistre(); return; }
@@ -1494,6 +1571,10 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
         if (p) { $("#covLat").value = (+p.lat).toFixed(5); $("#covLon").value = (+p.lon).toFixed(5); toast(p.source === "GPS" ? `Position GPS du ${esc(p.nom || "nœud")} reprise (${ago(p.date)})` : "Position enregistrée dans le nœud reprise (pas de GPS reçu)"); }
         else toast("Le nœud companion ne transmet pas encore de position GPS. Dans l'application MeshCore, vérifiez que le GPS est activé et que la télémétrie de position est autorisée ; ou saisissez la position à la main.");
         return; }
+      case "heuresOk": {
+        const h = $("#heures").value;
+        if (!/\d{1,2}\s*[:hH]\s*\d{2}/.test(h)) { toast("Indiquez au moins une heure, par exemple 08:00, 20:00"); return; }
+        await api.regler(0, null, h); heuresEdit = false; toast("Collecte à heures fixes enregistrée"); refresh(true); return; }
       case "alertsSeen": await api.alertes_vues(); refresh(true); return;
       case "mcEditCadre": { const e = exercice; $("#cdNom").value = e.nom||""; $("#cdLieu").value = e.lieu||""; $("#cdAutorite").value = e.autorite||""; $("#cdDesc").value = e.description||""; $("#cdSign").value = e.signataire||""; $("#mcCadre").hidden = false; $("#mcClose").hidden = true; $("#cdNom").focus(); return; }
       case "cdCancel": $("#mcCadre").hidden = true; return;
@@ -1507,7 +1588,10 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     }
   });
   document.addEventListener("change", async e => {
-    if (e.target.id === "interval") { await api.regler(+e.target.value, null); toast("Intervalle enregistré"); }
+    if (e.target.id === "interval") {
+      if (e.target.value === "0") { heuresEdit = true; $("#grpHeures").hidden = false; $("#heures").focus(); return; }
+      heuresEdit = false; await api.regler(+e.target.value, null, null); toast("Fréquence de collecte enregistrée");
+    }
     if (e.target.id === "discover") { await api.regler(null, e.target.checked); }
     if (e.target.id === "showTeams") { showTeams = e.target.checked; renderMap(); }
     if (e.target.id === "showCov") { showCov = e.target.checked; renderMap(); }

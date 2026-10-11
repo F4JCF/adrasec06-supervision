@@ -83,6 +83,13 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 - Un opérateur repéré en APRS qui écrit sur #ADRASEC 06 passe aussi en orange fluo.
 - Il faut Internet ; seules les stations reçues par une iGate sont visibles.
 
+### Nouveautés de la version 1.6
+
+- **Collecte** : toutes les 5 min, 1 h, 3 h, 6 h, 12 h, 24 h, ou **à heures fixes** (ex. « 08:00, 20:00 »).
+- **Encart « Répéteurs ADRASEC »** en haut de l'onglet Réseau : état, batterie, bruit, disponibilité, firmware, dernière lecture ; FR06-MOUGins-F4JCF y figure et est interrogé.
+- **Redémarrer** : la reprise est vérifiée (temps de fonctionnement) et notée au journal.
+- **Éteindre à distance** (`poweroff`) avec double confirmation : le répéteur ne peut être rallumé que sur place ; l'extinction est vérifiée, la surveillance suspendue (pas d'alertes) jusqu'au bouton « Rallumé : reprendre la surveillance ».
+
 ### Les données
 
 Tout est enregistré sur le PC dans `%APPDATA%\ADRASEC06-Supervision\supervision.db`, y compris les mots de passe des répéteurs et le PIN Bluetooth (en clair, dans ce fichier local uniquement). Le journal technique est dans `supervision.log` au même endroit.
