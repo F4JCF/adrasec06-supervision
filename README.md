@@ -94,6 +94,7 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 
 - **Liste des nœuds** : case à cocher par ligne et « tout cocher » (liste affichée) ; barre d'actions : **Supprimer la sélection** (état Supprimé, réversible avec « Rétablir » dans le filtre Supprimés) ou **Effacer définitivement** (avec confirmation). Un voisin effacé n'est plus ajouté par la découverte automatique.
 - **Messagerie** : croix au survol d'un message pour le supprimer, bouton **Vider la conversation** (avec confirmation). La suppression ne concerne que l'historique du PC.
+- 1.7.1 : un opérateur qui a écrit sur #ADRASEC 06 (6 h) est signalé par un **triangle orange** sur la carte.
 
 ### Les données
 

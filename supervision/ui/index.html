@@ -270,9 +270,9 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
 /* Équipes et couverture sur la carte */
 .team-icon{width:16px;height:16px;transform:rotate(45deg);border:2px solid #fff;box-shadow:0 0 0 1.5px #7a3fb0;background:#9b59d0;border-radius:2px}
 /* expéditeur récent sur le canal ADRASEC 06 : orange fluo, pulsation */
-.team-icon.hot{width:22px;height:22px;background:#ff5f00;border-color:#fff200;box-shadow:0 0 0 2px #ff5f00,0 0 14px 6px rgba(255,95,0,.75);animation:hotpulse 1.2s ease-in-out infinite}
-@keyframes hotpulse{50%{box-shadow:0 0 0 2px #ff5f00,0 0 26px 12px rgba(255,95,0,.35)}}
-@media (prefers-reduced-motion:reduce){.team-icon.hot{animation:none}}
+.hot-tri{width:26px;height:24px;display:block;filter:drop-shadow(0 0 6px rgba(255,95,0,.9));animation:hotpulse 1.2s ease-in-out infinite}
+@keyframes hotpulse{50%{filter:drop-shadow(0 0 14px rgba(255,95,0,.45))}}
+@media (prefers-reduced-motion:reduce){.hot-tri{animation:none}}
 .map-label.hot{color:#b33c00;font-weight:700;font-size:11px}
 .aprs-icon{width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-bottom:16px solid #1f6fd1;filter:drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1px #fff)}
 .aprs-icon.hot{border-bottom-color:#ff5f00;filter:drop-shadow(0 0 6px rgba(255,95,0,.9)) drop-shadow(0 0 1px #fff2a0)}
@@ -311,7 +311,7 @@ tbody tr.checked{background:color-mix(in srgb,var(--accent) 9%,transparent)}
 .msgs .msg .del:hover{color:var(--crit)}
 .thread-head .acts{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .legend-hot{display:inline-flex;align-items:center;gap:6px}
-.legend-hot i{width:10px;height:10px;background:#ff5f00;transform:rotate(45deg);box-shadow:0 0 6px 2px rgba(255,95,0,.7);border:0}
+.legend-hot i{width:0;height:0;background:none;border:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:11px solid #ff5f00;filter:drop-shadow(0 0 3px rgba(255,95,0,.8))}
 .map-tools{display:flex;gap:12px;flex-wrap:wrap;font-size:.82rem;color:var(--muted)}
 .map-tools label{display:inline-flex;flex-direction:row;align-items:center;gap:5px;color:var(--fg)}
 .map-tools input{width:auto}
@@ -895,7 +895,8 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     const ch = liaison.canaux || [];
     return ch.find(c => normNom(c.nom) === "adrasec06") || ch.find(c => normNom(c.nom).includes("adrasec06")) || null;
   }
-  const HOT_MIN = 360; // 6 heures
+  const HOT_TRI = `<svg class="hot-tri" viewBox="0 0 26 24" aria-hidden="true"><polygon points="13,2 24.5,22 1.5,22" fill="#ff5f00" stroke="#fff200" stroke-width="2" stroke-linejoin="round"/></svg>`;
+const HOT_MIN = 360; // 6 heures
   function expediteursRecents(){
     const chan = canalAdrasec(), lim = Date.now() - HOT_MIN*60000, out = {};
     messages.forEach(m => {
@@ -912,7 +913,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
       const tr = traces[t.cle];
       if (tr && tr.length > 1) L.polyline(tr.map(p => [p[0], p[1]]), {color:"#9b59d0", weight:2.5, opacity:.8, dashArray:"2 6"}).addTo(layer);
       const h = hot[normNom(t.nom)];
-      L.marker([t.lat, t.lon], {zIndexOffset: h ? 1000 : 0, icon: L.divIcon({className:"", html:`<div class="team-icon${h ? " hot" : ""}"></div>`, iconSize: h ? [22,22] : [16,16], iconAnchor: h ? [11,11] : [8,8]})})
+      L.marker([t.lat, t.lon], {zIndexOffset: h ? 1000 : 0, icon: L.divIcon({className:"", html: h ? HOT_TRI : `<div class="team-icon"></div>`, iconSize: h ? [26,24] : [16,16], iconAnchor: h ? [13,16] : [8,8]})})
         .bindTooltip(h ? `${esc(t.nom)} · message ${ago(h.date)} : « ${esc(h.texte.slice(0,60))}${h.texte.length>60?"…":""} »` : `${esc(t.nom)} · ${ago(t.vu)}`, {permanent:true, direction:"right", offset:[h ? 13 : 10, 0], className: "map-label" + (h ? " hot" : "")})
         .bindPopup(`<b>${esc(t.nom)}</b><br>Équipe / mobile<br>Position ${ago(t.vu)}<br>${(+t.lat).toFixed(5)}, ${(+t.lon).toFixed(5)}`).addTo(layer);
     });
@@ -1748,7 +1749,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     await loadSettings();
     await refresh(true);
     setInterval(() => refresh(false), 2000);
-    setInterval(() => { if (Object.keys(expediteursRecents()).length || document.querySelector(".team-icon.hot")) { if (tab === "reseau") renderMap(); if (crise) renderCrise(); } }, 60000);
+    setInterval(() => { if (Object.keys(expediteursRecents()).length || document.querySelector(".hot-tri")) { if (tab === "reseau") renderMap(); if (crise) renderCrise(); } }, 60000);
   }
   if (window.pywebview && window.pywebview.api) start();
   else window.addEventListener("pywebviewready", start);
