@@ -212,6 +212,7 @@ class Poller:
         except Exception:
             pass
         await self._load_channels()
+        await self._maj_position()
         try:
             res = await mc.commands.get_contacts()
             if res is not None and res.type != EventType.ERROR:
@@ -681,6 +682,7 @@ class Poller:
             if self.busy or self.couverture_en_cours or self.mc is None:
                 continue
             try:
+                await self._maj_position()
                 res = await self.mc.commands.get_contacts()
                 if res is not None and res.type != EventType.ERROR:
                     self._contacts = dict(res.payload or {})
@@ -804,3 +806,40 @@ class Poller:
             self.store._bump()
             await asyncio.sleep(1)
         return not self.busy
+
+
+    # ---------- position GPS du nœud companion ----------
+    async def _maj_position(self):
+        """Position du nœud companion : GPS de sa télémétrie, sinon position enregistrée dans le nœud."""
+        mc = self.mc
+        if mc is None:
+            return
+        pos, source = None, ""
+        try:
+            ev = await mc.commands.get_self_telemetry()
+            if ev is not None and ev.type != EventType.ERROR:
+                for x in (ev.payload or {}).get("lpp") or []:
+                    if isinstance(x, dict) and x.get("type") == "gps" and isinstance(x.get("value"), dict):
+                        v = x["value"]
+                        lat, lon = v.get("latitude"), v.get("longitude")
+                        if lat is not None and lon is not None and (abs(lat) > 0.01 or abs(lon) > 0.01):
+                            pos, source = {"lat": float(lat), "lon": float(lon), "alt": v.get("altitude")}, "GPS"
+                            break
+        except Exception as e:  # noqa: BLE001
+            log.debug("télémétrie du nœud companion : %s", e)
+        if pos is None:
+            try:
+                ev = await mc.commands.send_appstart()
+                if ev is not None and ev.type != EventType.ERROR:
+                    p = ev.payload or {}
+                    lat, lon = p.get("adv_lat") or 0, p.get("adv_lon") or 0
+                    if abs(lat) > 0.01 or abs(lon) > 0.01:
+                        pos, source = {"lat": float(lat), "lon": float(lon), "alt": None}, "position enregistrée"
+            except Exception as e:  # noqa: BLE001
+                log.debug("position du nœud companion : %s", e)
+        if pos:
+            pos.update(source=source, date=now_iso(), nom=self.local_name)
+            self.position = pos
+        elif self.position:
+            self.position["perimee"] = True
+        self.store._bump()

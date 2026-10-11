@@ -281,6 +281,7 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
 .pylone.sel{filter:drop-shadow(0 0 4px rgba(0,0,0,.6)) drop-shadow(0 0 1.5px #fff)}
 .pylone.prevu{opacity:.45}
 .legend-pyl{display:inline-flex;align-items:center;gap:5px}
+.moi-icon{width:18px;height:18px;border-radius:50%;background:#18a058;border:3px solid #fff;box-shadow:0 0 0 2px #18a058,0 0 10px 3px rgba(24,160,88,.55)}
 .legend-hot{display:inline-flex;align-items:center;gap:6px}
 .legend-hot i{width:10px;height:10px;background:#ff5f00;transform:rotate(45deg);box-shadow:0 0 6px 2px rgba(255,95,0,.7);border:0}
 .map-tools{display:flex;gap:12px;flex-wrap:wrap;font-size:.82rem;color:var(--muted)}
@@ -380,6 +381,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
         <span class="legend-pyl"><svg width="12" height="17" viewBox="0 0 20 28" aria-hidden="true"><g fill="none" stroke="#f07b14" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"><path d="M10 6 L4 27 M10 6 L16 27 M5.6 21 H14.4 M7 15.5 H13 M8.4 10.5 H11.6 M5.6 21 L13 15.5 M14.4 21 L7 15.5 M7 15.5 L11.6 10.5 M13 15.5 L8.4 10.5 M3 27 H17"/><path d="M5.2 4.2 A6.5 6.5 0 0 1 5.2 -2.2 M14.8 4.2 A6.5 6.5 0 0 0 14.8 -2.2" stroke-width="1.4"/></g><circle cx="10" cy="5" r="2.2" fill="#f07b14"/></svg>Répéteur ADRASEC</span>
         <span class="legend-pyl"><svg width="12" height="17" viewBox="0 0 20 28" aria-hidden="true"><g fill="none" stroke="#9b4fd0" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"><path d="M10 6 L4 27 M10 6 L16 27 M5.6 21 H14.4 M7 15.5 H13 M8.4 10.5 H11.6 M5.6 21 L13 15.5 M14.4 21 L7 15.5 M7 15.5 L11.6 10.5 M13 15.5 L8.4 10.5 M3 27 H17"/><path d="M5.2 4.2 A6.5 6.5 0 0 1 5.2 -2.2 M14.8 4.2 A6.5 6.5 0 0 0 14.8 -2.2" stroke-width="1.4"/></g><circle cx="10" cy="5" r="2.2" fill="#9b4fd0"/></svg>Autre répéteur</span>
         <span class="legend-aprs"><i></i>Station APRS</span>
+        <span class="legend-pyl"><span style="width:10px;height:10px;border-radius:50%;background:#18a058;border:2px solid #fff;box-shadow:0 0 0 1px #18a058"></span>Vous (nœud companion)</span>
         <span class="legend-hot"><i></i>A écrit sur #ADRASEC 06 (6 h)</span>
       </div>
     </section>
@@ -842,6 +844,12 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
         .bindTooltip(h ? `${esc(t.nom)} · message ${ago(h.date)} : « ${esc(h.texte.slice(0,60))}${h.texte.length>60?"…":""} »` : `${esc(t.nom)} · ${ago(t.vu)}`, {permanent:true, direction:"right", offset:[h ? 13 : 10, 0], className: "map-label" + (h ? " hot" : "")})
         .bindPopup(`<b>${esc(t.nom)}</b><br>Équipe / mobile<br>Position ${ago(t.vu)}<br>${(+t.lat).toFixed(5)}, ${(+t.lon).toFixed(5)}`).addTo(layer);
     });
+    const me = liaison.position;
+    if (me && me.lat != null && liaison.connecte) {
+      L.marker([me.lat, me.lon], {zIndexOffset: 1200, icon: L.divIcon({className:"", html:'<div class="moi-icon"></div>', iconSize:[18,18], iconAnchor:[9,9]})})
+        .bindTooltip(`${esc(me.nom || liaison.noeudLocal || "Nœud companion")} (vous) · ${me.source === "GPS" ? "GPS" : "position enregistrée"}`, {permanent:true, direction:"right", offset:[12,0], className:"map-label"})
+        .bindPopup(`<b>${esc(me.nom || liaison.noeudLocal || "")}</b><br>Nœud companion relié à ce PC<br>${me.source === "GPS" ? "Position GPS" : "Position enregistrée dans le nœud"} · ${ago(me.date)}${me.alt != null ? ` · ${Math.round(me.alt)} m` : ""}<br>${(+me.lat).toFixed(5)}, ${(+me.lon).toFixed(5)}`).addTo(layer);
+    }
     if (showAprs) (aprsData.stations || []).forEach(a => {
       const tr = (aprsData.traces || {})[a.call];
       if (tr && tr.length > 1) L.polyline(tr.map(p => [p[0], p[1]]), {color:"#1f6fd1", weight:2.5, opacity:.75, dashArray:"6 5"}).addTo(layer);
@@ -1480,7 +1488,12 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
       case "majInstall": case "majInstall2": { toast("Téléchargement de la nouvelle version… le logiciel va redémarrer."); const r = await api.installer_maj(); if (!r.ok) toast(r.erreur); return; }
       case "aprsSave": { const r = await api.regler_aprs($("#aprsOn").checked, $("#aprsCalls").value, +$("#aprsRayon").value || 0); aprsDirty = false; toast(r.ok ? "Réglages APRS enregistrés" : r.erreur); refresh(true); return; }
       case "tplSave": { await api.enregistrer_modeles($("#tplEdit").value.split("\n")); toast("Modèles enregistrés"); refresh(true); return; }
-      case "covPos": { const p = liaison.position; if (p) { $("#covLat").value = (+p.lat).toFixed(5); $("#covLon").value = (+p.lon).toFixed(5); } else toast("Le nœud companion n'a pas de position GPS. Saisissez-la à la main."); return; }
+      case "covPos": {
+        const p = liaison.position;
+        if (!liaison.connecte) { toast("Connectez d'abord le nœud companion (Liaison avec le nœud → Connecter)."); return; }
+        if (p) { $("#covLat").value = (+p.lat).toFixed(5); $("#covLon").value = (+p.lon).toFixed(5); toast(p.source === "GPS" ? `Position GPS du ${esc(p.nom || "nœud")} reprise (${ago(p.date)})` : "Position enregistrée dans le nœud reprise (pas de GPS reçu)"); }
+        else toast("Le nœud companion ne transmet pas encore de position GPS. Dans l'application MeshCore, vérifiez que le GPS est activé et que la télémétrie de position est autorisée ; ou saisissez la position à la main.");
+        return; }
       case "alertsSeen": await api.alertes_vues(); refresh(true); return;
       case "mcEditCadre": { const e = exercice; $("#cdNom").value = e.nom||""; $("#cdLieu").value = e.lieu||""; $("#cdAutorite").value = e.autorite||""; $("#cdDesc").value = e.description||""; $("#cdSign").value = e.signataire||""; $("#mcCadre").hidden = false; $("#mcClose").hidden = true; $("#cdNom").focus(); return; }
       case "cdCancel": $("#mcCadre").hidden = true; return;
