@@ -67,14 +67,18 @@ header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:spac
 .btn.small{padding:4px 10px;font-size:.85rem}
 
 /* Grille principale */
-.main{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:18px}
-@media (max-width:900px){.main{grid-template-columns:minmax(0,1fr)}}
+.main{display:grid;grid-template-columns:minmax(0,1fr);gap:18px}
+/* fiche nœud en pleine largeur : contenu sur deux colonnes */
+.fiche.wide{display:block;column-count:2;column-gap:32px}
+.fiche.wide > *{break-inside:avoid;margin-bottom:12px}
+.fiche.wide > .panel-head, .fiche.wide > .todo{column-span:all}
+@media (max-width:900px){.fiche.wide{column-count:1}}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px;display:grid;gap:12px;min-width:0;align-content:start}
 .panel-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
 
 /* Carte */
 .map-box{overflow:hidden;border-radius:4px;border:1px solid var(--line);background:var(--sea)}
-#map{display:block;width:100%;height:auto}
+#map{display:block;width:100%;height:auto;max-height:68vh}
 #map .land{fill:var(--land)}
 #map .coast{fill:none;stroke:var(--line);stroke-width:1.2}
 #map .grid{stroke:var(--line);stroke-width:.5;stroke-dasharray:2 4}
@@ -191,7 +195,7 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
 .alerts time{font-family:var(--f-mono);font-size:.78rem;color:var(--muted)}
 .lvl{font-family:var(--f-mono);font-size:.7rem;padding:0 6px;border-radius:3px;border:1px solid var(--c);color:var(--c);text-transform:uppercase}
 /* Carte réelle */
-#lmap{height:520px;width:100%;background:var(--sea)}
+#lmap{height:min(68vh,680px);min-height:420px;width:100%;background:var(--sea)}
 .leaflet-container{font-family:var(--f-body)}
 .leaflet-popup-content{font-size:.85rem;margin:10px 12px}
 .leaflet-popup-content b{font-family:var(--f-mono)}
@@ -216,10 +220,10 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
 .thread{display:flex;flex-direction:column;min-width:0}
 .thread-head{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:baseline;gap:10px}
 .msgs{flex:1;overflow:auto;padding:14px 16px;display:flex;flex-direction:column;gap:8px;max-height:520px;min-height:320px}
-.msg{max-width:78%;padding:7px 11px;border-radius:8px;background:var(--sunk);display:grid;gap:2px;align-self:flex-start;overflow-wrap:anywhere}
-.msg.out{align-self:flex-end;background:color-mix(in srgb,var(--accent) 18%,var(--panel))}
-.msg .meta{font-family:var(--f-mono);font-size:.7rem;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap}
-.msg .who{font-weight:600;font-size:.82rem;color:var(--navy)}
+.msgs .msg{max-width:78%;padding:7px 11px;border-radius:8px;background:var(--sunk);display:grid;gap:2px;align-self:flex-start;overflow-wrap:anywhere}
+.msgs .msg.out{align-self:flex-end;background:color-mix(in srgb,var(--accent) 18%,var(--panel))}
+.msgs .msg .meta{font-family:var(--f-mono);font-size:.7rem;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap}
+.msgs .msg .who{font-weight:600;font-size:.82rem;color:var(--navy)}
 .compose{border-top:1px solid var(--line);padding:10px 12px;display:flex;gap:8px;align-items:flex-end}
 .compose textarea{min-height:42px;flex:1}
 .compose .count{font-family:var(--f-mono);font-size:.72rem;color:var(--muted);white-space:nowrap}
@@ -860,7 +864,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
       const s = statusOf(n), c = colorOf(s.c);
       const own = n.proprio!=="externe" && n.statut!=="prevu";
       const mk = L.marker([+n.lat,+n.lon], {icon: iconeNoeud(n), zIndexOffset: own ? 500 : (n.proprio==="externe" ? 0 : 200), title: n.nom});
-      mk.on("click", () => pick(n.id));
+      mk.on("click", () => { pick(n.id); setTimeout(() => $("#fiche").scrollIntoView({block:"start", behavior:"smooth"}), 50); });
       mk.bindPopup(`<b>${esc(n.nom)}</b><br>${s.t}${n.commune?` · ${esc(n.commune)}`:""}${!empty(n.bruit)?`<br>Bruit ${fmtNum(n.bruit)} dBm`:""}${!empty(n.batterie)?` · ${fmtNum(n.batterie,2)} V`:""}`);
       if (own || n.id===sel) mk.bindTooltip(esc(n.nom.replace(/^FR06-/,"")), {permanent:true, direction:"right", offset:[4,0], className:"map-label"});
       mk.addTo(lLayer);
@@ -927,8 +931,8 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
   }
   function renderMap(){
     const leaf = useLeaflet();
-    $("#lmap").hidden = !leaf; $("#map").hidden = leaf;
-    if (leaf) { try { renderLeaflet(); return; } catch(e) { console.error(e); $("#lmap").hidden = true; $("#map").hidden = false; } }
+    $("#lmap").hidden = !leaf; $("#map").style.display = leaf ? "none" : "block";
+    if (leaf) { try { renderLeaflet(); return; } catch(e) { console.error(e); $("#lmap").hidden = true; $("#map").style.display = "block"; } }
     renderSchema();
   }
   function renderSchema(){
@@ -990,6 +994,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
   /* ---------- fiche ---------- */
   function renderFiche(){
     const f = $("#fiche");
+    f.classList.toggle("wide", !editing && !!allNodes.find(x => x.id === sel));
     if (editing) return renderForm(f);
     const n = allNodes.find(x => x.id === sel);
     if (!n){
