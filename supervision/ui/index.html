@@ -275,6 +275,12 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
 .map-label.aprs{color:#123f7a}
 .legend-aprs{display:inline-flex;align-items:center;gap:6px}
 .legend-aprs i{width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:10px solid #1f6fd1}
+.pylone{position:relative;line-height:0;filter:drop-shadow(0 0 1.2px #fff) drop-shadow(0 0 1px #fff)}
+.pylone svg{display:block;overflow:visible}
+.pylone .st{position:absolute;right:-3px;bottom:0;width:9px;height:9px;border-radius:50%;border:1.5px solid #fff;background:var(--c)}
+.pylone.sel{filter:drop-shadow(0 0 4px rgba(0,0,0,.6)) drop-shadow(0 0 1.5px #fff)}
+.pylone.prevu{opacity:.45}
+.legend-pyl{display:inline-flex;align-items:center;gap:5px}
 .legend-hot{display:inline-flex;align-items:center;gap:6px}
 .legend-hot i{width:10px;height:10px;background:#ff5f00;transform:rotate(45deg);box-shadow:0 0 6px 2px rgba(255,95,0,.7);border:0}
 .map-tools{display:flex;gap:12px;flex-wrap:wrap;font-size:.82rem;color:var(--muted)}
@@ -371,6 +377,8 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
         <span><i style="--c:var(--ok)"></i>SNR ≥ +5 dB</span>
         <span><i style="--c:var(--warn)"></i>−5 à +5 dB</span>
         <span><i style="--c:var(--crit)"></i>&lt; −5 dB</span>
+        <span class="legend-pyl"><svg width="12" height="17" viewBox="0 0 20 28" aria-hidden="true"><g fill="none" stroke="#f07b14" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"><path d="M10 6 L4 27 M10 6 L16 27 M5.6 21 H14.4 M7 15.5 H13 M8.4 10.5 H11.6 M5.6 21 L13 15.5 M14.4 21 L7 15.5 M7 15.5 L11.6 10.5 M13 15.5 L8.4 10.5 M3 27 H17"/><path d="M5.2 4.2 A6.5 6.5 0 0 1 5.2 -2.2 M14.8 4.2 A6.5 6.5 0 0 0 14.8 -2.2" stroke-width="1.4"/></g><circle cx="10" cy="5" r="2.2" fill="#f07b14"/></svg>Répéteur ADRASEC</span>
+        <span class="legend-pyl"><svg width="12" height="17" viewBox="0 0 20 28" aria-hidden="true"><g fill="none" stroke="#9b4fd0" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"><path d="M10 6 L4 27 M10 6 L16 27 M5.6 21 H14.4 M7 15.5 H13 M8.4 10.5 H11.6 M5.6 21 L13 15.5 M14.4 21 L7 15.5 M7 15.5 L11.6 10.5 M13 15.5 L8.4 10.5 M3 27 H17"/><path d="M5.2 4.2 A6.5 6.5 0 0 1 5.2 -2.2 M14.8 4.2 A6.5 6.5 0 0 0 14.8 -2.2" stroke-width="1.4"/></g><circle cx="10" cy="5" r="2.2" fill="#9b4fd0"/></svg>Autre répéteur</span>
         <span class="legend-aprs"><i></i>Station APRS</span>
         <span class="legend-hot"><i></i>A écrit sur #ADRASEC 06 (6 h)</span>
       </div>
@@ -748,6 +756,19 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
   function cssVar(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim() || "#888"; }
   function colorOf(c){ return c.startsWith("var(") ? cssVar(c.slice(4,-1)) : c; }
   function useLeaflet(){ return !!window.L && (reglages.fondCarte || "osmfr") !== "schema"; }
+  /* icône pylône : orange = répéteur ADRASEC (pastille = état), mauve = autre répéteur */
+  const PYL_ORANGE = "#f07b14", PYL_MAUVE = "#9b4fd0";
+  function pylone(col, w, etat, cls){
+    const h = Math.round(w * 1.4);
+    return L.divIcon({className:"", iconSize:[w, h], iconAnchor:[w/2, h - 1], popupAnchor:[0, -h + 4], tooltipAnchor:[w/2, -h/2],
+      html:`<div class="pylone ${cls || ""}"><svg width="${w}" height="${h}" viewBox="0 0 20 28"><g fill="none" stroke="${col}" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"><path d="M10 6 L4 27 M10 6 L16 27 M5.6 21 H14.4 M7 15.5 H13 M8.4 10.5 H11.6 M5.6 21 L13 15.5 M14.4 21 L7 15.5 M7 15.5 L11.6 10.5 M13 15.5 L8.4 10.5 M3 27 H17"/><path d="M5.2 4.2 A6.5 6.5 0 0 1 5.2 -2.2 M14.8 4.2 A6.5 6.5 0 0 0 14.8 -2.2" stroke-width="1.4"/></g><circle cx="10" cy="5" r="2.2" fill="${col}"/></svg>${etat ? `<span class="st" style="--c:${etat}"></span>` : ""}</div>`});
+  }
+  function iconeNoeud(n, grand){
+    const s = statusOf(n);
+    if (n.proprio === "externe") return pylone(PYL_MAUVE, n.id===sel ? 20 : 16, null, n.id===sel ? "sel" : "");
+    if (n.statut === "prevu") return pylone(PYL_ORANGE, 16, null, "prevu" + (n.id===sel ? " sel" : ""));
+    return pylone(PYL_ORANGE, (grand ? 26 : 22) + (n.id===sel ? 4 : 0), colorOf(s.c), n.id===sel ? "sel" : "");
+  }
   function renderLeaflet(){
     const el = $("#lmap");
     if (!lmap) {
@@ -780,11 +801,10 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     order.forEach(n => {
       const s = statusOf(n), c = colorOf(s.c);
       const own = n.proprio!=="externe" && n.statut!=="prevu";
-      const mk = L.circleMarker([+n.lat,+n.lon], {radius: n.id===sel ? 10 : own ? 8 : 5, color:c, weight:2,
-        fillColor: own ? c : colorOf("var(--panel)"), fillOpacity: own ? .95 : .9});
+      const mk = L.marker([+n.lat,+n.lon], {icon: iconeNoeud(n), zIndexOffset: own ? 500 : (n.proprio==="externe" ? 0 : 200), title: n.nom});
       mk.on("click", () => pick(n.id));
       mk.bindPopup(`<b>${esc(n.nom)}</b><br>${s.t}${n.commune?` · ${esc(n.commune)}`:""}${!empty(n.bruit)?`<br>Bruit ${fmtNum(n.bruit)} dBm`:""}${!empty(n.batterie)?` · ${fmtNum(n.batterie,2)} V`:""}`);
-      if (own || n.id===sel) mk.bindTooltip(esc(n.nom.replace(/^FR06-/,"")), {permanent:true, direction:"right", offset:[8,0], className:"map-label"});
+      if (own || n.id===sel) mk.bindTooltip(esc(n.nom.replace(/^FR06-/,"")), {permanent:true, direction:"right", offset:[4,0], className:"map-label"});
       mk.addTo(lLayer);
     });
     drawOverlays(lLayer);
@@ -1139,7 +1159,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     el.hidden = false;
     el.className = "alerts" + (neuves.some(a => a.niveau==="critique") ? "" : " calm");
     el.innerHTML = `<div class="alerts-head"><strong>${neuves.length} alerte(s) non lue(s)</strong><button class="btn small" id="alertsSeen">Marquer comme lues</button></div>
-      <ul>${neuves.slice(0,8).map(a => { const [t,c] = NIV[a.niveau] || ["Info","var(--muted)"]; return `<li><time>${fmtDate(a.date)}</time><span class="lvl" style="--c:${c}">${t}</span><span>${esc(a.texte)}</span></li>`; }).join("")}</ul>`;
+      <ul>${neuves.slice(0,8).map(a => { const [t,c] = NIV[a.niveau] || ["Info","var(--muted)"]; return `<li><time>${fmtDate(a.date)}</time><span class="lvl" style="--c:${c}">${t}</span><strong>${esc(a.texte)}</strong></li>`; }).join("")}</ul>`;
   }
 
   /* ---------- messagerie ---------- */
@@ -1298,7 +1318,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     $("#crNodes").innerHTML = own.map(n => `<div><span class="nm">${esc(n.nom.replace(/^FR06-/,""))}</span><span>${!empty(n.batterie) ? `<span class="mono" style="font-size:.9rem;margin-right:8px">${fmtNum(n.batterie,2)} V</span>` : ""}${pill(n)}</span></div>`).join("") || `<span class="muted">Aucun répéteur.</span>`;
     const neuves = alertes.filter(a => !a.vue);
     $("#crAlertsBox").hidden = !neuves.length;
-    $("#crAlerts").innerHTML = neuves.slice(0,5).map(a => `<div class="cr-alert">${fmtDate(a.date).slice(-5)} · ${esc(a.texte)}</div>`).join("");
+    $("#crAlerts").innerHTML = neuves.slice(0,5).map(a => `<div class="cr-alert">${fmtDate(a.date).slice(-5)} · <strong>${esc(a.texte)}</strong></div>`).join("");
     // salle de crise : uniquement le canal ADRASEC 06 (nom comparé sans espaces, tirets ni majuscules)
     const norm = x => String(x || "").toLowerCase().replace(/[^a-z0-9]/g, "");
     const chan = (liaison.canaux || []).find(c => norm(c.nom) === "adrasec06") || (liaison.canaux || []).find(c => norm(c.nom).includes("adrasec06"));
@@ -1311,8 +1331,8 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
       nodes.filter(hasPos).forEach(n => {
         const s = statusOf(n), c = colorOf(s.c), own2 = n.proprio!=="externe" && n.statut!=="prevu";
         if (!own2 && n.proprio==="externe") return;
-        const mk = L.circleMarker([+n.lat,+n.lon], {radius: own2 ? 11 : 6, color:c, weight:3, fillColor: own2 ? c : colorOf("var(--panel)"), fillOpacity:.95}).addTo(crLayer);
-        if (own2) mk.bindTooltip(esc(n.nom.replace(/^FR06-/,"")), {permanent:true, direction:"right", offset:[12,0], className:"map-label"});
+        const mk = L.marker([+n.lat,+n.lon], {icon: iconeNoeud(n, true), zIndexOffset: own2 ? 500 : 0}).addTo(crLayer);
+        if (own2) mk.bindTooltip(esc(n.nom.replace(/^FR06-/,"")), {permanent:true, direction:"right", offset:[4,0], className:"map-label"});
       });
       const keep = showCov; showCov = false; drawOverlays(crLayer); showCov = keep;
     }
