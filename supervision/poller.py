@@ -55,6 +55,7 @@ class Poller:
         self.position = None
         self._eq_task = None
         self.couverture_en_cours = False
+        self.prioritaire = 0  # demandes de l'opérateur (test, commande) en attente : l'interrogation leur cède la place
         self.loop = asyncio.new_event_loop()
         self.thread = threading.Thread(target=self._run_loop, name="meshcore", daemon=True)
         self.thread.start()
@@ -270,7 +271,7 @@ class Poller:
     # ---------- un cycle d'interrogation ----------
     async def _cycle(self):
         mc = self.mc
-        while self.couverture_en_cours:
+        while self.couverture_en_cours or self.prioritaire:
             await asyncio.sleep(2)
         self.busy = True
         self.message = "Lecture des contacts du nœud companion…"
@@ -289,6 +290,12 @@ class Poller:
                    if n.get("proprio") != "externe" and n.get("statut") not in ("prevu", "supprime")]
         for i, node in enumerate(targets, 1):
             if self.mc is None:
+                return
+            if self.prioritaire or self.couverture_en_cours:
+                # l'opérateur a demandé un test ou une commande : on lui laisse la place, la suite au prochain cycle
+                self.busy = False
+                self.message = "Interrogation suspendue au profit de la demande de l'opérateur"
+                self.store._bump()
                 return
             self.message = f"Interrogation {i}/{len(targets)} : {node.get('nom')}"
             self.store._bump()
@@ -608,12 +615,18 @@ class Poller:
             return {"ok": False, "erreur": "Nœud inconnu."}
         if not self.store.password(node_id):
             return {"ok": False, "erreur": "Saisissez d'abord le mot de passe admin de ce répéteur (Modifier)."}
-        if self.busy:
-            return {"ok": False, "erreur": "Une interrogation est en cours, réessayez dans un instant."}
+        self.prioritaire += 1
         try:
-            return self._submit(self._commande(node, cmd, operateur), timeout=90)
+            return self._submit(self._commande_prio(node, cmd, operateur), timeout=260)
         except Exception as e:  # noqa: BLE001
             return {"ok": False, "erreur": f"Commande impossible : {e}"}
+        finally:
+            self.prioritaire = max(0, self.prioritaire - 1)
+
+    async def _commande_prio(self, node, cmd, operateur):
+        if not await self._attendre_la_main("Commande"):
+            return {"ok": False, "erreur": "L'interrogation en cours ne s'est pas terminée à temps. Réessayez."}
+        return await self._commande(node, cmd, operateur)
 
     async def _commande(self, node: dict, cmd: str, operateur: str) -> dict:
         name = node.get("nom", "")
@@ -682,17 +695,25 @@ class Poller:
     def test_couverture(self, lat, lon, lieu: str) -> dict:
         if self.mc is None:
             return {"ok": False, "erreur": "Aucun nœud connecté."}
-        if self.busy or self.couverture_en_cours:
-            return {"ok": False, "erreur": "Une interrogation est en cours, réessayez dans un instant."}
+        if self.couverture_en_cours:
+            return {"ok": False, "erreur": "Un test de couverture est déjà en cours."}
         try:
             lat, lon = float(lat), float(lon)
         except (TypeError, ValueError):
             return {"ok": False, "erreur": "Position invalide : indiquez la latitude et la longitude du point de mesure."}
+        self.prioritaire += 1
         try:
-            return self._submit(self._couverture(lat, lon, lieu), timeout=900)
+            return self._submit(self._couverture_prio(lat, lon, lieu), timeout=1100)
         except Exception as e:  # noqa: BLE001
             self.couverture_en_cours = False
             return {"ok": False, "erreur": f"Test impossible : {e}"}
+        finally:
+            self.prioritaire = max(0, self.prioritaire - 1)
+
+    async def _couverture_prio(self, lat, lon, lieu):
+        if not await self._attendre_la_main("Test de couverture"):
+            return {"ok": False, "erreur": "L'interrogation en cours ne s'est pas terminée à temps. Réessayez."}
+        return await self._couverture(lat, lon, lieu)
 
     async def _trace(self, contact) -> dict | None:
         """Trace vers un répéteur voisin direct : SNR reçu par le répéteur (aller) et par nous (retour)."""
@@ -772,3 +793,14 @@ class Poller:
             self.alerte("info", node.get("nom", ""), f"{node.get('nom')} : firmware mis à jour en {nouvelle}.")
             fields.update(otaDebut="", otaReponse="")
         self.store.patch_node(node["id"], fields)
+
+
+    # ---------- priorité aux demandes de l'opérateur ----------
+    async def _attendre_la_main(self, quoi: str, delai: float = 150) -> bool:
+        """L'interrogation en cours s'arrête après le répéteur en cours ; on attend qu'elle ait rendu la main."""
+        t0 = time.time()
+        while self.busy and time.time() - t0 < delai:
+            self.message = f"{quoi} : attente de la fin de l'interrogation du répéteur en cours…"
+            self.store._bump()
+            await asyncio.sleep(1)
+        return not self.busy

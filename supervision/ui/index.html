@@ -538,7 +538,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
         <form class="edit" id="covForm"><div class="fgrid">
           <label class="full">Lieu<input id="covLieu" placeholder="Ex. : Col de Vence, parking" maxlength="80"></label>
           <label>Latitude<input id="covLat" inputmode="decimal"></label><label>Longitude<input id="covLon" inputmode="decimal"></label></div>
-          <div class="actions"><button class="btn primary" type="submit" id="covGo">Lancer le test ici</button><button class="btn small" type="button" id="covPos">Position du nœud companion</button><span class="msg" id="covMsg"></span></div>
+          <div class="actions"><button class="btn primary" type="submit" id="covGo">Lancer le test ici</button><button class="btn small" type="button" id="covPos">Position du nœud companion</button><span class="reading" id="covMsg"></span></div>
         </form>
       </section>
       <section class="panel">
@@ -1549,7 +1549,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
       return;
     }
     if (e.target.id === "covForm") {
-      $("#covMsg").textContent = "Test en cours, cela peut prendre plusieurs minutes…";
+      $("#covMsg").textContent = "Test en cours : il attend la fin du répéteur en cours d'interrogation, puis teste chaque répéteur (plusieurs minutes)…";
       const r = await api.test_couverture($("#covLat").value.replace(",","."), $("#covLon").value.replace(",","."), $("#covLieu").value);
       $("#covMsg").textContent = "";
       if (r.ok) { const ok = r.resultats.filter(x => x.joignable).length; toast(`Test terminé : ${ok}/${r.resultats.length} répéteurs joignables`); $("#covLieu").value = ""; } else toast(r.erreur);
