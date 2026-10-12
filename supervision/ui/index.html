@@ -289,16 +289,18 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
 .pylone.prevu{opacity:.45}
 .legend-pyl{display:inline-flex;align-items:center;gap:5px}
 .moi-icon{width:18px;height:18px;border-radius:50%;background:#18a058;border:3px solid #fff;box-shadow:0 0 0 2px #18a058,0 0 10px 3px rgba(24,160,88,.55)}
-.ecards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;align-items:start}
-.ecard{border:1px solid var(--line);border-left:5px solid var(--c);border-radius:6px;padding:10px 12px;display:grid;gap:6px;background:var(--bg);min-width:0}
+.ecards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,330px),1fr));gap:12px;align-items:stretch}
+.ecard{border:1px solid var(--line);border-left:5px solid var(--c);border-radius:6px;padding:10px 12px;display:flex;flex-direction:column;gap:8px;background:var(--bg);min-width:0;min-height:190px}
 .ecard.sel{box-shadow:0 0 0 2px var(--accent)}
 .ecard .hd{display:flex;align-items:center;gap:8px;justify-content:space-between}
-.ecard .nm{display:flex;align-items:center;gap:8px;min-width:0}
+.ecard .nm{display:flex;align-items:center;gap:8px;min-width:0;flex:1}
+.ecard .hd .pill{flex:none;white-space:nowrap}
 .ecard .nm b{font-family:var(--f-mono);font-size:.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ecard .kv{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 8px}
 .ecard .kv span{display:grid;font-size:.72rem;color:var(--muted)}
 .ecard .kv b{font-family:var(--f-mono);font-size:.88rem;color:var(--fg);font-weight:500;font-variant-numeric:tabular-nums}
-.ecard .acts{display:flex;flex-wrap:wrap;gap:6px}
+.ecard .acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:auto}
+.ecard .acts .btn{white-space:nowrap}
 .ecard .warn{border:1px solid var(--crit);border-radius:4px;padding:8px;display:grid;gap:6px;font-size:.85rem;color:var(--crit)}
 .ecard .warn label{display:flex;flex-direction:row;gap:6px;align-items:flex-start;color:var(--fg);font-size:.85rem}
 .ecard .warn input{width:16px;height:16px;flex:none;margin-top:2px}
