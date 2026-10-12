@@ -377,6 +377,10 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
 #mdetMap{height:min(60vh,520px);min-height:300px;border-radius:6px;border:1px solid var(--line);background:var(--sea)}
 .det-pin{width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.4)}
 .det-num{background:#fff;color:#111;border-radius:9px;font:700 11px/16px var(--f-mono);min-width:16px;text-align:center;border:2px solid var(--rc);padding:0 3px}
+.hvig{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:.8rem}
+.hvig .lbl{font-size:.72rem;color:var(--muted);min-width:7.5em}
+.hvig b{font-family:var(--f-mono);font-size:.88rem;font-weight:500;font-variant-numeric:tabular-nums}
+.hvig b small{font-size:.72rem;color:var(--muted)}
 .dreq{display:grid;gap:1px;border-top:1px dashed var(--line);padding-top:6px;font-size:.8rem;min-width:0}
 .dreq .lbl{font-size:.72rem;color:var(--muted)}
 .dreq .l1,.dreq .l2{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -729,6 +733,17 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     const d = Math.floor(h/24); return d === 1 ? "hier" : `il y a ${d} j`;
   };
   const fmtDate = iso => { try { return new Date(iso).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"}); } catch(e){ return iso; } };
+  function horlogeVignette(n){
+    if (!n.horloge) return `<div class="hvig"><span class="lbl">Heure du nœud</span><b class="muted">—</b><span class="muted">${n.aMotDePasse ? "pas encore lue" : "mot de passe admin requis"}</span></div>`;
+    const e = +n.horlogeEcart || 0, ae = Math.abs(e), mauvais = ae >= 120;
+    // heure actuelle estimée du nœud = heure lue + temps écoulé depuis la lecture
+    const lue = new Date(n.horlogeLue).getTime(), t = new Date(new Date(n.horloge).getTime() + Math.max(0, Date.now() - lue));
+    const hh = t.toLocaleTimeString("fr-FR", {hour:"2-digit", minute:"2-digit"}), jj = t.toLocaleDateString("fr-FR", {day:"2-digit", month:"2-digit", year:"2-digit"});
+    const etat = ae < 60 ? "à l'heure" : `${e > 0 ? "avance" : "retard"} ${ae >= 86400 ? Math.round(ae/86400) + " j" : ae >= 3600 ? Math.round(ae/3600) + " h" : Math.round(ae/60) + " min"}`;
+    return `<div class="hvig" title="Heure lue sur le nœud le ${esc(fmtDate(n.horlogeLue))} ; affichée à l'heure de ce PC et avancée depuis la lecture">
+      <span class="lbl">Heure du nœud</span><b style="${mauvais ? "color:var(--crit)" : ""}">${hh} <small>${jj}</small></b>
+      <span style="color:${mauvais ? "var(--crit)" : "var(--ok)"}">${mauvais ? "⚠ " : "✓ "}${etat}</span></div>`;
+  }
   function horlogeHtml(n){
     const t = new Date(n.horloge), e = +n.horlogeEcart || 0, ae = Math.abs(e);
     const date = t.toLocaleString("fr-FR", {weekday:"short", day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit", ...(n.horlogeSecondes ? {second:"2-digit"} : {})});
@@ -841,7 +856,8 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
         <div class="hd"><span class="nm">${pylSvg(n.eteint ? "#8794a1" : "#f07b14", 14)}<b title="${esc(n.nom)}">${esc(n.nom.replace(/^FR06-/,""))}</b></span>${pastille}</div>
         ${n.eteint ? `<span class="off">Éteint à distance ${ago(n.eteint)} (${fmtDate(n.eteint)}). Surveillance suspendue.</span>` : `
         <div class="kv"><span>Batterie<b>${fmtNum(n.batterie,2)}${empty(n.batterie)?"":" V"}</b></span><span>Bruit<b>${fmtNum(n.bruit)}${empty(n.bruit)?"":" dBm"}</b></span><span>Dispo 7 j<b>${d.j7 != null ? fmtNum(d.j7,0)+" %" : "—"}</b></span>
-          <span>Firmware<b>${esc(n.firmware || "—")}</b></span><span>Err. RX<b>${fmtNum(n.erreursRx)}</b></span><span>Lu<b>${n.maj ? ago(n.maj).replace("il y a ","") : "—"}</b></span></div>`}
+          <span>Firmware<b>${esc(n.firmware || "—")}</b></span><span>Err. RX<b>${fmtNum(n.erreursRx)}</b></span><span>Lu<b>${n.maj ? ago(n.maj).replace("il y a ","") : "—"}</b></span></div>
+        ${horlogeVignette(n)}`}
         ${busy ? `<span class="reading">${esc(busy)}</span>` : ""}
         ${n.derniereRequete ? (q => `<div class="dreq" title="${esc(q.libelle)} — ${esc(fmtDate(q.date))}${q.operateur ? " par " + esc(q.operateur) : ""}\n${esc(q.resultat || "")}">
           <span class="lbl">Dernière requête</span>
