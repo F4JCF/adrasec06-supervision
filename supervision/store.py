@@ -595,6 +595,24 @@ def _attach_moyens():
             rows = self._cx.execute("SELECT * FROM moyens WHERE exercice=? ORDER BY id", (ex_id,)).fetchall()
         return [dict(r) for r in rows]
 
+    def moyens_connus(self) -> dict:
+        """Opérateurs et valeurs déjà saisis dans les mains courantes précédentes (pour les menus déroulants)."""
+        with self._lock:
+            rows = self._cx.execute("SELECT * FROM moyens ORDER BY id").fetchall()
+        ops, vals = {}, {"fonction": {}, "equipe": {}, "materiel": {}, "lieu": {}}
+        for r in rows:
+            r = dict(r)
+            ind = (r.get("indicatif") or "").strip().upper()
+            if ind:
+                ops[ind] = {k: r.get(k) or "" for k in ("nom", "fonction", "equipe", "materiel", "lieu")}
+                ops[ind]["indicatif"] = ind
+            for k in vals:
+                v = (r.get(k) or "").strip()
+                if v:
+                    vals[k][v.lower()] = v
+        return {"operateurs": sorted(ops.values(), key=lambda o: o["indicatif"]),
+                **{k: sorted(v.values(), key=str.lower) for k, v in vals.items()}}
+
     def add_moyen(self, ex_id: int, m: dict) -> int:
         keys = ("indicatif", "nom", "fonction", "equipe", "materiel", "lieu", "contact")
         with self._lock:
@@ -631,7 +649,7 @@ def _attach_moyens():
             self._cx.commit()
         self._bump()
 
-    for f in (list_moyens, add_moyen, update_moyen, delete_moyen):
+    for f in (list_moyens, moyens_connus, add_moyen, update_moyen, delete_moyen):
         setattr(Store, f.__name__, f)
 
 

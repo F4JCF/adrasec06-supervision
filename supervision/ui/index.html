@@ -377,6 +377,8 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
 #mdetMap{height:min(60vh,520px);min-height:300px;border-radius:6px;border:1px solid var(--line);background:var(--sea)}
 .det-pin{width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.4)}
 .det-num{background:#fff;color:#111;border-radius:9px;font:700 11px/16px var(--f-mono);min-width:16px;text-align:center;border:2px solid var(--rc);padding:0 3px}
+.combo{display:grid;gap:6px;min-width:0;align-content:start}
+#moyForm .fgrid{align-items:start}
 </style>
 </head>
 <body>
@@ -575,12 +577,12 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
           <div class="moy" id="mcMoyens"></div>
           <form class="edit" id="moyForm" style="border-top:1px solid var(--line);padding-top:10px">
             <div class="fgrid">
-              <label>Indicatif<input id="myInd" maxlength="20" placeholder="F4XXX"></label>
+              <label>Indicatif<span class="combo"><select id="myInd"></select><input id="myIndAutre" maxlength="20" placeholder="F4XXX" hidden aria-label="Autre indicatif"></span></label>
               <label>Nom<input id="myNom" maxlength="60"></label>
-              <label>Fonction<input id="myFct" maxlength="60" placeholder="Chef d'équipe, opérateur PC…"></label>
-              <label>Équipe<input id="myEq" maxlength="40" placeholder="Équipe 1"></label>
-              <label>Matériel<input id="myMat" maxlength="80" placeholder="T1000-E, portatif VHF…"></label>
-              <label>Lieu / secteur<input id="myLieu" maxlength="80"></label>
+              <label>Fonction<span class="combo"><select id="myFct"></select><input id="myFctAutre" maxlength="60" placeholder="Préciser la fonction" hidden aria-label="Autre fonction"></span></label>
+              <label>Équipe<span class="combo"><select id="myEq"></select><input id="myEqAutre" maxlength="40" placeholder="Préciser l'équipe" hidden aria-label="Autre équipe"></span></label>
+              <label>Matériel<span class="combo"><select id="myMat"></select><input id="myMatAutre" maxlength="80" placeholder="Préciser le matériel" hidden aria-label="Autre matériel"></span></label>
+              <label>Lieu / secteur<span class="combo"><select id="myLieu"></select><input id="myLieuAutre" maxlength="80" placeholder="Préciser le lieu" hidden aria-label="Autre lieu"></span></label>
               <label class="full" style="flex-direction:row;display:flex;align-items:center;gap:8px;color:var(--fg)"><input type="checkbox" id="myArr" style="width:auto" checked> Déjà sur zone (heure d'arrivée = maintenant)</label>
             </div>
             <div class="actions"><button class="btn" type="submit">Ajouter le moyen</button></div>
@@ -1429,6 +1431,40 @@ const HOT_MIN = 360; // 6 heures
   const NAT = {"info":["Information","var(--navy)"], "demande":["Demande","var(--test)"], "ordre":["Ordre","var(--accent)"],
                "compte-rendu":["Compte rendu","var(--ok)"], "evenement":["Événement","var(--muted)"]};
   let mc = {entrees:[], moyens:[]}, mcFiltre = "tout", suiteFor = null;
+  /* menus déroulants des moyens engagés : listes de base + valeurs déjà utilisées + « Autre… » */
+  const LISTES_MOY = {
+    fonction: ["Chef de PC", "Chef d'équipe", "Opérateur radio", "Opérateur PC", "Opérateur MeshCore", "Secrétariat / main courante", "Logisticien", "Chauffeur", "Observateur"],
+    equipe: ["PC", "Équipe 1", "Équipe 2", "Équipe 3", "Équipe 4", "Équipe 5", "Équipe 6", "Mobile 1", "Mobile 2", "Mobile 3", "Relais"],
+    materiel: ["T1000-E", "Wio Tracker L1", "Heltec V3", "Portatif VHF", "Portatif VHF/UHF", "Mobile VHF/UHF", "Station HF", "Station fixe", "Répéteur portable", "Tracker APRS"],
+    lieu: ["PC ADRASEC 06", "Mougins", "Cannes", "Le Cannet", "Mandelieu-la-Napoule", "Grasse", "Valbonne", "Antibes", "Vallauris", "Cagnes-sur-Mer", "Nice", "Préfecture (Nice)", "CODIS"],
+  };
+  const COMBOS = {myFct:"fonction", myEq:"equipe", myMat:"materiel", myLieu:"lieu"};
+  const cleCmp = v => String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, "");
+  function remplirCombo(id, valeurs, vide){
+    const sel = $("#" + id), cur = sel.value, vus = new Set(), opts = [];
+    valeurs.forEach(v => { const k = cleCmp(v); if (v && !vus.has(k)) { vus.add(k); opts.push(v); } });
+    sel.innerHTML = `<option value="">${vide}</option>` + opts.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("") + `<option value="__autre">Autre…</option>`;
+    if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
+  }
+  function renderMoyForm(){
+    if (inside("#moyForm")) return;
+    const k = mc.connus || {};
+    for (const [id, cle] of Object.entries(COMBOS)) remplirCombo(id, [...LISTES_MOY[cle], ...(k[cle] || [])], "— choisir —");
+    const ops = (k.operateurs || []), sel = $("#myInd"), cur = sel.value, engages = new Set((mc.moyens || []).map(m => (m.indicatif || "").toUpperCase()));
+    const suivis = ((aprsData.reglages || {}).indicatifs || []).filter(c => !ops.some(o => o.indicatif === c.replace(/\*$/, "")));
+    sel.innerHTML = `<option value="">— choisir un opérateur —</option>` +
+      ops.map(o => `<option value="${esc(o.indicatif)}"${engages.has(o.indicatif) ? " disabled" : ""}>${esc(o.indicatif)}${o.nom ? " · " + esc(o.nom) : ""}${engages.has(o.indicatif) ? " (déjà engagé)" : ""}</option>`).join("") +
+      suivis.map(c => `<option value="${esc(c.replace(/\*$/, ""))}">${esc(c.replace(/\*$/, ""))} (APRS)</option>`).join("") +
+      `<option value="__autre">Autre indicatif…</option>`;
+    if ([...sel.options].some(o => o.value === cur && !o.disabled)) sel.value = cur;
+  }
+  const valCombo = id => { const v = $("#" + id).value; return v === "__autre" ? $("#" + id + "Autre").value.trim() : v; };
+  function choisirValeur(id, v){
+    if (!v) { $("#" + id).value = ""; return; }
+    const o = [...$("#" + id).options].find(o => cleCmp(o.value) === cleCmp(v));
+    if (o) { $("#" + id).value = o.value; $("#" + id + "Autre").hidden = true; }
+    else { $("#" + id).value = "__autre"; $("#" + id + "Autre").hidden = false; $("#" + id + "Autre").value = v; }
+  }
   const hm = iso => { try { return new Date(iso).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}); } catch(e) { return ""; } };
   const inside = sel => document.activeElement && document.activeElement.closest(sel);
   function renderCourante(){
@@ -1447,6 +1483,7 @@ const HOT_MIN = 360; // 6 heures
       if (e.autorite) qui.add(e.autorite);
       $("#mcQui").innerHTML = [...qui].map(q => `<option value="${esc(q)}">`).join("");
       if (!inside("#mcReg")) renderRegistre();
+      renderMoyForm();
       if (!inside("#mcMoyens")) renderMoyens();
       document.querySelectorAll("#mcFiltre button").forEach(b => b.setAttribute("aria-pressed", b.dataset.f === mcFiltre));
       // rapports : on déplace le panneau sous la main courante ouverte
@@ -1773,6 +1810,15 @@ const HOT_MIN = 360; // 6 heures
     }
   });
   document.addEventListener("change", async e => {
+    if (["myInd","myFct","myEq","myMat","myLieu"].includes(e.target.id)) {
+      const id = e.target.id, autre = $("#" + id + "Autre");
+      autre.hidden = e.target.value !== "__autre"; if (!autre.hidden) autre.focus();
+      if (id === "myInd" && e.target.value && e.target.value !== "__autre") {
+        const o = ((mc.connus || {}).operateurs || []).find(o => o.indicatif === e.target.value);
+        if (o) { $("#myNom").value = o.nom || ""; choisirValeur("myFct", o.fonction); choisirValeur("myEq", o.equipe); choisirValeur("myMat", o.materiel); choisirValeur("myLieu", o.lieu); }
+      }
+      return;
+    }
     if (e.target.id === "interval") {
       if (e.target.value === "0") { heuresEdit = true; $("#grpHeures").hidden = false; $("#heures").focus(); return; }
       heuresEdit = false; await api.regler(+e.target.value, null, null); toast("Fréquence de collecte enregistrée");
@@ -1859,9 +1905,9 @@ const HOT_MIN = 360; // 6 heures
       return;
     }
     if (e.target.id === "moyForm") {
-      const m = {indicatif: $("#myInd").value.trim().toUpperCase(), nom: $("#myNom").value, fonction: $("#myFct").value, equipe: $("#myEq").value, materiel: $("#myMat").value, lieu: $("#myLieu").value, arrive: $("#myArr").checked};
+      const m = {indicatif: valCombo("myInd").toUpperCase(), nom: $("#myNom").value, fonction: valCombo("myFct"), equipe: valCombo("myEq"), materiel: valCombo("myMat"), lieu: valCombo("myLieu"), arrive: $("#myArr").checked};
       const r = await api.moyen_ajouter(m);
-      if (r.ok) { ["#myInd","#myNom","#myFct","#myEq","#myMat","#myLieu"].forEach(k => $(k).value = ""); $("#myInd").focus(); refresh(true); } else toast(r.erreur);
+      if (r.ok) { ["myInd","myFct","myEq","myMat","myLieu"].forEach(k => { $("#"+k).value = ""; $("#"+k+"Autre").value = ""; $("#"+k+"Autre").hidden = true; }); $("#myNom").value = ""; $("#myInd").focus(); refresh(true); } else toast(r.erreur);
       return;
     }
     if (e.target.id === "logForm") {

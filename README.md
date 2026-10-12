@@ -107,6 +107,10 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 - Messages directs : chiffrés de bout en bout, seul le nombre de sauts est connu ; la route connue vers le contact est affichée.
 - Le parcours n'est disponible que pour les messages reçus à partir de cette version.
 
+### Nouveautés de la version 1.10
+
+- **Moyens engagés** : menus déroulants pour l'indicatif, la fonction, l'équipe, le matériel et le lieu. Listes de base + valeurs déjà utilisées dans les mains courantes précédentes + « Autre… » pour saisir librement. Choisir un opérateur déjà connu remplit automatiquement son nom, sa fonction, son équipe, son matériel et son lieu habituels ; les indicatifs suivis en APRS sont proposés.
+
 ### Les données
 
 Tout est enregistré sur le PC dans `%APPDATA%\ADRASEC06-Supervision\supervision.db`, y compris les mots de passe des répéteurs et le PIN Bluetooth (en clair, dans ce fichier local uniquement). Le journal technique est dans `supervision.log` au même endroit.

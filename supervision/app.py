@@ -13,7 +13,7 @@ from . import aprs, rapports, systeme, taches
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.9.1"
+VERSION = "1.10.0"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -50,7 +50,8 @@ class Api:
             "messages": self._store.list_messages(400),
             "alertes": self._store.list_alerts(30),
             "exercice": self._store.current_exercise(),
-            "mc": ({"entrees": self._store.journal_of_exercise(cur_ex["id"]), "moyens": self._store.list_moyens(cur_ex["id"])}
+            "mc": ({"entrees": self._store.journal_of_exercise(cur_ex["id"]), "moyens": self._store.list_moyens(cur_ex["id"]),
+                    "connus": self._store.moyens_connus()}
                    if (cur_ex := self._store.current_exercise()) else {"entrees": [], "moyens": []}),
             "exercices": self._store.list_exercises()[:30],
             "reglages": {
