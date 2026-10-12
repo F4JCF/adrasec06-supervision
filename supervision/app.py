@@ -13,7 +13,7 @@ from . import aprs, rapports, systeme, taches
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.11.2"
+VERSION = "1.11.3"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -206,11 +206,33 @@ class Api:
         return self._poller.envoyer_message(texte, canal, contact)
 
     # ----- commandes à distance -----
+    LIBELLES = {"advert": "Envoyer un advert", "reboot": "Redémarrer", "poweroff": "Éteindre",
+                "powersaving on": "Économie d'énergie : activer", "powersaving off": "Économie d'énergie : désactiver",
+                "start ota": "Préparer la mise à jour (OTA)", "ver": "Vérifier la version", "clock sync": "Remettre l'heure",
+                "clock": "Lire l'heure du nœud", "reinit chemin": "Réinitialiser le chemin"}
+
+    def _noter_requete(self, node_id, cmd, r):
+        try:
+            c = (cmd or "").strip().lower()
+            libelle = self.LIBELLES.get(c) or (f"Puissance TX {c.split()[-1]} dBm" if c.startswith("set tx") else c)
+            r = r or {}
+            resultat = (r.get("reponse") or r.get("message") or "").strip() if r.get("ok") else (r.get("erreur") or "échec")
+            self._store.patch_node(node_id, {"derniereRequete": {
+                "libelle": libelle, "date": now_iso(), "ok": bool(r.get("ok")),
+                "resultat": resultat[:160] or ("sans réponse" if r.get("ok") else "échec"),
+                "operateur": self._store.get_config("operateur", "")}})
+        except Exception:  # noqa: BLE001
+            logging.getLogger("supervision").exception("dernière requête")
+
     def reinit_chemin(self, node_id):
-        return self._poller.reinit_chemin(node_id, self._store.get_config("operateur", ""))
+        r = self._poller.reinit_chemin(node_id, self._store.get_config("operateur", ""))
+        self._noter_requete(node_id, "reinit chemin", r)
+        return r
 
     def commande(self, node_id, cmd):
-        return self._poller.commande(node_id, cmd, self._store.get_config("operateur", ""))
+        r = self._poller.commande(node_id, cmd, self._store.get_config("operateur", ""))
+        self._noter_requete(node_id, cmd, r)
+        return r
 
     # ----- alertes et réglages -----
     def alertes_vues(self):

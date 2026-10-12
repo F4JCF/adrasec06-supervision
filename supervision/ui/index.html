@@ -377,6 +377,10 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
 #mdetMap{height:min(60vh,520px);min-height:300px;border-radius:6px;border:1px solid var(--line);background:var(--sea)}
 .det-pin{width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.4)}
 .det-num{background:#fff;color:#111;border-radius:9px;font:700 11px/16px var(--f-mono);min-width:16px;text-align:center;border:2px solid var(--rc);padding:0 3px}
+.dreq{display:grid;gap:1px;border-top:1px dashed var(--line);padding-top:6px;font-size:.8rem;min-width:0}
+.dreq .lbl{font-size:.72rem;color:var(--muted)}
+.dreq .l1,.dreq .l2{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dreq .l2{font-family:var(--f-mono);font-size:.76rem}
 .combo{display:grid;gap:6px;min-width:0;align-content:start}
 #moyForm .fgrid{align-items:start}
 </style>
@@ -839,6 +843,11 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
         <div class="kv"><span>Batterie<b>${fmtNum(n.batterie,2)}${empty(n.batterie)?"":" V"}</b></span><span>Bruit<b>${fmtNum(n.bruit)}${empty(n.bruit)?"":" dBm"}</b></span><span>Dispo 7 j<b>${d.j7 != null ? fmtNum(d.j7,0)+" %" : "—"}</b></span>
           <span>Firmware<b>${esc(n.firmware || "—")}</b></span><span>Err. RX<b>${fmtNum(n.erreursRx)}</b></span><span>Lu<b>${n.maj ? ago(n.maj).replace("il y a ","") : "—"}</b></span></div>`}
         ${busy ? `<span class="reading">${esc(busy)}</span>` : ""}
+        ${n.derniereRequete ? (q => `<div class="dreq" title="${esc(q.libelle)} — ${esc(fmtDate(q.date))}${q.operateur ? " par " + esc(q.operateur) : ""}\n${esc(q.resultat || "")}">
+          <span class="lbl">Dernière requête</span>
+          <span class="l1"><b>${esc(q.libelle)}</b><span class="muted"> · ${fmtDate(q.date)} (${ago(q.date)})</span></span>
+          <span class="l2" style="color:${q.ok ? "var(--ok)" : "var(--crit)"}">${q.ok ? "✓" : "✗"} ${esc(q.resultat || "")}</span></div>`)(n.derniereRequete)
+          : `<div class="dreq"><span class="lbl">Dernière requête</span><span class="l1 muted">Aucune depuis ce PC</span></div>`}
         ${offConfirm === n.id ? `<div class="warn"><strong>Éteindre ${esc(n.nom)} ?</strong>
             <span>Le répéteur s'arrête complètement. Il <b>ne pourra être rallumé que sur place</b> : aucune commande à distance ne pourra le réveiller. Le réseau perd ce relais d'ici là.</span>
             <label><input type="checkbox" id="offOk-${esc(n.id)}"> Je confirme qu'une intervention sur place sera nécessaire pour le rallumer.</label>
