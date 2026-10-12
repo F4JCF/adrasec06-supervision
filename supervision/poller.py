@@ -55,6 +55,8 @@ class Poller:
         self.canaux: list[dict] = []
         self.equipes: list[dict] = []
         self.position = None
+        self.batterie = None  # batterie du nœud companion : {"mv", "pct", "date"}
+        self._batt_alerte = False
         self._eq_task = None
         self.couverture_en_cours = False
         self.prioritaire = 0
@@ -110,6 +112,7 @@ class Poller:
             "canaux": self.canaux if self.mc is not None else [],
             "equipes": self.equipes,
             "position": self.position,
+            "batterie": self.batterie if self.mc is not None else None,
             "couvertureEnCours": self.couverture_en_cours,
             "contactsMessagerie": self.contacts_messagerie() if self.mc is not None else [],
         }
@@ -246,6 +249,7 @@ class Poller:
             pass
         await self._load_channels()
         await self._maj_position()
+        await self._maj_batterie()
         try:
             res = await mc.commands.get_contacts()
             if res is not None and res.type != EventType.ERROR:
@@ -951,6 +955,7 @@ class Poller:
                 continue
             try:
                 await self._maj_position()
+                await self._maj_batterie()
                 res = await self.mc.commands.get_contacts()
                 if res is not None and res.type != EventType.ERROR:
                     self._contacts = dict(res.payload or {})
@@ -1098,6 +1103,42 @@ class Poller:
 
 
     # ---------- position GPS du nœud companion ----------
+    @staticmethod
+    def _pct_batterie(mv: int) -> int:
+        """Pourcentage approximatif d'un accu Li-ion d'après sa tension."""
+        pts = [(3300, 0), (3500, 8), (3600, 18), (3700, 35), (3800, 52), (3900, 66), (4000, 80), (4100, 91), (4200, 100)]
+        if mv <= pts[0][0]:
+            return 0
+        for (v1, p1), (v2, p2) in zip(pts, pts[1:]):
+            if mv <= v2:
+                return round(p1 + (p2 - p1) * (mv - v1) / (v2 - v1))
+        return 100
+
+    async def _maj_batterie(self):
+        """Tension de la batterie du nœud companion (commande get_bat)."""
+        mc = self.mc
+        if mc is None:
+            return
+        try:
+            ev = await mc.commands.get_bat()
+        except Exception as e:  # noqa: BLE001
+            log.debug("batterie companion : %s", e)
+            return
+        if ev is None or ev.type == EventType.ERROR:
+            return
+        mv = int((ev.payload or {}).get("level") or 0)
+        if mv <= 0:
+            return
+        self.batterie = {"mv": mv, "pct": self._pct_batterie(mv), "date": now_iso()}
+        seuil = float(self.store.get_config("seuil_batterie", 3.5) or 3.5) * 1000
+        if mv < seuil and not self._batt_alerte:
+            self._batt_alerte = True
+            self.alerte("attention", self.local_name or "nœud companion",
+                        f"Batterie faible sur le nœud companion {self.local_name} : {mv / 1000:.2f} V.")
+        elif mv >= seuil + 100:
+            self._batt_alerte = False
+        self.store._bump()
+
     async def _maj_position(self):
         """Position du nœud companion : GPS de sa télémétrie, sinon position enregistrée dans le nœud."""
         mc = self.mc

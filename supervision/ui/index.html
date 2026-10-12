@@ -377,6 +377,11 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
 #mdetMap{height:min(60vh,520px);min-height:300px;border-radius:6px;border:1px solid var(--line);background:var(--sea)}
 .det-pin{width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.4)}
 .det-num{background:#fff;color:#111;border-radius:9px;font:700 11px/16px var(--f-mono);min-width:16px;text-align:center;border:2px solid var(--rc);padding:0 3px}
+.radio .batt{display:inline-flex;align-items:center;gap:6px}
+.radio .batt span{padding:0;border:0;background:none;font:inherit}
+.bico{display:inline-block;position:relative;width:22px;height:11px;border:1.5px solid var(--bc);border-radius:2px;margin-right:2px}
+.bico::after{content:"";position:absolute;right:-4px;top:2.5px;width:2px;height:4px;background:var(--bc);border-radius:0 1px 1px 0}
+.bico i{position:absolute;left:1px;top:1px;bottom:1px;max-width:calc(100% - 2px);background:var(--bc);border-radius:1px}
 .hvig{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:.8rem}
 .hvig .lbl{font-size:.72rem;color:var(--muted);min-width:7.5em}
 .hvig b{font-family:var(--f-mono);font-size:.88rem;font-weight:500;font-variant-numeric:tabular-nums}
@@ -762,6 +767,16 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
   let toastT;
   const toast = t => { const el=$("#toast"); el.textContent=t; el.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>el.hidden=true, 4000); };
 
+  /* ---------- batterie du nœud companion ---------- */
+  function battBadge(b){
+    if (!b || !b.mv) return `<span title="Batterie du nœud companion pas encore lue"><b>Batterie</b>—</span>`;
+    const v = (b.mv / 1000).toLocaleString("fr-FR", {minimumFractionDigits:2, maximumFractionDigits:2});
+    const seuil = (+reglages.seuilBatterie || 3.5) * 1000, faible = b.mv < seuil, moyen = !faible && b.pct < 40;
+    const c = faible ? "var(--crit)" : moyen ? "var(--warn)" : "var(--ok)";
+    const w = Math.max(2, Math.min(100, b.pct || 0));
+    return `<span class="batt" style="--bc:${c};border-color:${faible ? c : ""}" title="Batterie du nœud companion ${esc(liaison.noeudLocal || "")} : ${v} V (environ ${b.pct} %), lue le ${esc(fmtDate(b.date))}. Relue chaque minute.">
+      <b>Batterie</b><i class="bico" aria-hidden="true"><i style="width:${w}%"></i></i><span style="color:${c}">${v} V · ${b.pct} %</span></span>`;
+  }
   /* ---------- en-tête radio ---------- */
   function renderRadio(){
     const r = liaison.radio || {};
@@ -769,7 +784,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     const bw = r.radio_bw ? (+r.radio_bw).toLocaleString("fr-FR",{maximumFractionDigits:1}) + " kHz" : "62,5 kHz";
     const sf = r.radio_sf || 8, cr = r.radio_cr ? "4/" + r.radio_cr : "4/8";
     $("#radio").innerHTML = `<span><b>f</b>${f}</span><span><b>BW</b>${bw}</span><span><b>SF</b>${sf}</span><span><b>CR</b>${cr}</span>` +
-      (liaison.connecte ? `<span><b>Lu sur</b>${esc(liaison.noeudLocal||"nœud companion")}</span>` : `<span><b>Preset</b>EU narrow</span>`);
+      (liaison.connecte ? `<span><b>Lu sur</b>${esc(liaison.noeudLocal||"nœud companion")}</span>` + battBadge(liaison.batterie) : `<span><b>Preset</b>EU narrow</span>`);
   }
 
   /* ---------- liaison ---------- */
