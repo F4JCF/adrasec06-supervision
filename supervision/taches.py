@@ -42,11 +42,26 @@ def verifier_maj(version_actuelle: str) -> dict:
     exe = next((a for a in data.get("assets", []) if a.get("name", "").lower().endswith(".exe")), None)
     return {"ok": True, "derniere": tag.lstrip("vV"), "actuelle": version_actuelle,
             "disponible": bool(exe) and _v(tag) > _v(version_actuelle),
-            "url": exe.get("browser_download_url") if exe else None,
+            "url": exe.get("browser_download_url") if exe else None, "taille": exe.get("size") if exe else None,
             "notes": (data.get("body") or "")[:2000], "page": data.get("html_url")}
 
 
-def installer_maj(url: str, quitter) -> dict:
+COOKIE_PYI = b"MEI\x0c\x0b\x0a\x0b\x0e"  # signature de fin d'un exécutable PyInstaller complet
+
+
+def _exe_complet(chemin: Path, taille_attendue=None) -> bool:
+    try:
+        n = chemin.stat().st_size
+        if n < 1_000_000 or (taille_attendue and n != int(taille_attendue)):
+            return False
+        with open(chemin, "rb") as f:
+            f.seek(max(0, n - 8192))
+            return COOKIE_PYI in f.read()
+    except OSError:
+        return False
+
+
+def installer_maj(url: str, quitter, taille=None) -> dict:
     """Télécharge le nouvel exécutable, remplace l'actuel après fermeture, puis relance."""
     if not getattr(sys, "frozen", False) or not sys.platform.startswith("win"):
         return {"ok": False, "erreur": "La mise à jour automatique ne fonctionne que dans l'exécutable Windows."}
@@ -54,18 +69,30 @@ def installer_maj(url: str, quitter) -> dict:
     dossier = data_dir() / "mise-a-jour"
     dossier.mkdir(exist_ok=True)
     neuf = dossier / "Supervision-ADRASEC06-nouveau.exe"
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Supervision-ADRASEC06"})
-        with urllib.request.urlopen(req, timeout=180) as r, open(neuf, "wb") as f:
-            while True:
-                bloc = r.read(1 << 16)
-                if not bloc:
-                    break
-                f.write(bloc)
-    except Exception as e:  # noqa: BLE001
-        return {"ok": False, "erreur": f"Téléchargement impossible : {e}"}
-    if neuf.stat().st_size < 1_000_000:
-        return {"ok": False, "erreur": "Le fichier téléchargé est incomplet. Réessayez plus tard."}
+    erreur = None
+    for _essai in range(3):  # un téléchargement coupé est recommencé
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Supervision-ADRASEC06"})
+            with urllib.request.urlopen(req, timeout=60) as r, open(neuf, "wb") as f:
+                annonce = r.headers.get("Content-Length")
+                while True:
+                    bloc = r.read(1 << 16)
+                    if not bloc:
+                        break
+                    f.write(bloc)
+            attendu = taille or (int(annonce) if annonce and annonce.isdigit() else None)
+            if _exe_complet(neuf, attendu):
+                erreur = None
+                break
+            erreur = "fichier incomplet"
+        except Exception as e:  # noqa: BLE001
+            erreur = str(e)
+    if erreur:
+        try:
+            neuf.unlink()
+        except OSError:
+            pass
+        return {"ok": False, "erreur": f"Téléchargement incomplet ({erreur}). Rien n'a été modifié ; réessayez plus tard."}
     # l'exécutable PyInstaller « un seul fichier » tourne en deux processus : on attend les deux
     pids = {os.getpid(), os.getppid()}
     # attente de la fermeture (30 s maximum), puis arrêt forcé si l'ancienne version traîne encore
@@ -77,6 +104,8 @@ def installer_maj(url: str, quitter) -> dict:
         f'ping -n 2 127.0.0.1 >nul\r\ngoto attente{i}\r\n:fini{i}\r\n'
         for i, p in enumerate(sorted(pids)))
     journal = dossier / "installation.log"
+    ancien = dossier / "Supervision-ADRASEC06-precedent.exe"
+    temp = exe + ".maj"
     bat = dossier / "installer.bat"
     bat.write_text(
         "@echo off\r\n"
@@ -85,7 +114,10 @@ def installer_maj(url: str, quitter) -> dict:
         "ping -n 3 127.0.0.1 >nul\r\n"
         "set n=0\r\n"
         ":copie\r\n"
-        f'copy /Y "{neuf}" "{exe}" >nul && (echo %date% %time% copie OK >> "{journal}" & goto lance)\r\n'
+        f'copy /Y "{exe}" "{ancien}" >nul 2>&1\r\n'
+        f'copy /Y "{neuf}" "{temp}" >nul 2>&1 || goto echec\r\n'
+        f'move /Y "{temp}" "{exe}" >nul 2>&1 && (echo %date% %time% copie OK >> "{journal}" & del "{neuf}" & goto lance)\r\n'
+        ":echec\r\n"
         "set /a n+=1\r\n"
         f'if %n% geq 30 (echo %date% %time% copie impossible >> "{journal}" & goto lance)\r\n'
         "ping -n 2 127.0.0.1 >nul\r\n"

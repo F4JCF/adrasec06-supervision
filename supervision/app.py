@@ -13,7 +13,7 @@ from . import aprs, rapports, systeme, taches
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.10.1"
+VERSION = "1.10.2"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -398,7 +398,7 @@ class Api:
         r = (self._taches.maj if self._taches else None) or taches.verifier_maj(VERSION)
         if not r.get("ok") or not r.get("disponible"):
             return {"ok": False, "erreur": "Aucune nouvelle version à installer."}
-        return taches.installer_maj(r["url"], self._quitter or (lambda: None))
+        return taches.installer_maj(r["url"], self._quitter or (lambda: None), r.get("taille"))
 
     def regler_maj_auto(self, actif):
         self._store.set_config("maj_auto", bool(actif))
