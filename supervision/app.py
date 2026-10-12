@@ -13,7 +13,7 @@ from . import aprs, rapports, systeme, taches
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.8.0"
+VERSION = "1.9.0"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -130,6 +130,13 @@ class Api:
                 self._store.save_node(node)
                 n += 1
         return {"ok": True, "n": n}
+
+    def detail_message(self, mid):
+        try:
+            return self._poller.detail_message(int(mid))
+        except Exception as e:  # noqa: BLE001
+            logging.getLogger("supervision").exception("detail_message")
+            return {"ok": False, "erreur": str(e)}
 
     def supprimer_message(self, mid):
         self._store.delete_message(int(mid))

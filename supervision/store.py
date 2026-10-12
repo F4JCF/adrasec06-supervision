@@ -96,6 +96,15 @@ class Store:
             for col in ("lieu", "autorite", "description", "bilan", "signataire"):
                 if col not in ecols:
                     self._cx.execute(f"ALTER TABLE exercices ADD COLUMN {col} TEXT")
+            mcols = {r[1] for r in self._cx.execute("PRAGMA table_info(messages)")}
+            for col, typ in (("msg_hash", "INTEGER"), ("chemin", "TEXT"), ("rssi", "INTEGER")):
+                if col not in mcols:
+                    self._cx.execute(f"ALTER TABLE messages ADD COLUMN {col} {typ}")
+            # chaque réception radio d'un message de canal (plusieurs chemins possibles pour un même message)
+            self._cx.execute("""CREATE TABLE IF NOT EXISTS receptions (
+                msg_hash INTEGER, ts REAL NOT NULL, texte TEXT, chemin TEXT, taille INTEGER, snr REAL, rssi INTEGER)""")
+            self._cx.execute("CREATE INDEX IF NOT EXISTS receptions_hash ON receptions(msg_hash)")
+            self._cx.execute("CREATE INDEX IF NOT EXISTS receptions_ts ON receptions(ts)")
             self._cx.execute("""CREATE TABLE IF NOT EXISTS aprs (
                 call TEXT NOT NULL, ts REAL NOT NULL, lat REAL, lon REAL, vitesse REAL, cap REAL, altitude REAL,
                 commentaire TEXT, symbole TEXT)""")
@@ -297,16 +306,46 @@ class Store:
     def add_message(self, m: dict) -> int:
         with self._lock:
             c = self._cx.execute(
-                "INSERT INTO messages(date, ts, sens, canal, canal_nom, contact, contact_cle, auteur, texte, snr, sauts, statut)"
-                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO messages(date, ts, sens, canal, canal_nom, contact, contact_cle, auteur, texte, snr, sauts, statut,"
+                " msg_hash, chemin, rssi) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (m.get("date") or now_iso(), m.get("ts") or time.time(), m["sens"], m.get("canal"), m.get("canal_nom"),
                  m.get("contact"), m.get("contact_cle"), m.get("auteur"), m["texte"], m.get("snr"), m.get("sauts"),
-                 m.get("statut")))
+                 m.get("statut"), m.get("msg_hash"), m.get("chemin"), m.get("rssi")))
             self._cx.execute("DELETE FROM messages WHERE ts < ?", (time.time() - 365 * 86400,))
             self._cx.commit()
             mid = c.lastrowid
         self._bump()
         return mid
+
+    def get_message(self, mid: int) -> dict | None:
+        with self._lock:
+            r = self._cx.execute("SELECT * FROM messages WHERE id=?", (int(mid),)).fetchone()
+        return dict(r) if r else None
+
+    def add_reception(self, r: dict):
+        with self._lock:
+            self._cx.execute("INSERT INTO receptions(msg_hash, ts, texte, chemin, taille, snr, rssi) VALUES(?,?,?,?,?,?,?)",
+                             (r.get("msg_hash"), r.get("ts") or time.time(), r.get("texte"), r.get("chemin") or "",
+                              r.get("taille") or 1, r.get("snr"), r.get("rssi")))
+            self._cx.execute("DELETE FROM receptions WHERE ts < ?", (time.time() - 60 * 86400,))
+            self._cx.commit()
+
+    def receptions_for(self, msg_hash, texte: str | None, ts: float) -> list[dict]:
+        """Réceptions radio d'un message : par empreinte, sinon par texte identique reçu dans les 10 min."""
+        with self._lock:
+            rows = []
+            if msg_hash is not None:
+                rows = self._cx.execute("SELECT * FROM receptions WHERE msg_hash=? ORDER BY ts", (int(msg_hash),)).fetchall()
+            if not rows and texte:
+                rows = self._cx.execute("SELECT * FROM receptions WHERE texte=? AND ts BETWEEN ? AND ? ORDER BY ts",
+                                        (texte, ts - 600, ts + 600)).fetchall()
+        return [dict(r) for r in rows]
+
+    def last_position_by_name(self, nom: str):
+        with self._lock:
+            r = self._cx.execute("SELECT lat, lon, ts FROM positions WHERE lower(nom)=lower(?) ORDER BY ts DESC LIMIT 1",
+                                 (nom or "",)).fetchone()
+        return dict(r) if r else None
 
     def set_message_status(self, mid: int, statut: str):
         with self._lock:

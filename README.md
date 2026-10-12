@@ -100,6 +100,13 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 
 - Titre « Supervision Réseau Meshcore Adrasec 06 » avec le logo ; la fenêtre s'ouvre en plein écran et l'affichage (largeur, hauteur de la carte) s'adapte à la taille de l'écran, y compris sur les portables 1366 × 768.
 
+### Nouveautés de la version 1.9
+
+- **Détail d'un message** : un clic sur un message (messagerie ou salle de crise) ouvre son parcours : émetteur, relais traversés dans l'ordre, SNR et RSSI à la réception, et une carte du trajet. Si le message est arrivé par plusieurs chemins, chacun est affiché (trait plein puis pointillés). Pour vos propres messages, les échos des relais qui les ont répétés sont listés.
+- Les relais sont identifiés par le début de leur clé ; quand plusieurs répéteurs partagent le même identifiant, le plus proche du trajet est retenu (« probable »).
+- Messages directs : chiffrés de bout en bout, seul le nombre de sauts est connu ; la route connue vers le contact est affichée.
+- Le parcours n'est disponible que pour les messages reçus à partir de cette version.
+
 ### Les données
 
 Tout est enregistré sur le PC dans `%APPDATA%\ADRASEC06-Supervision\supervision.db`, y compris les mots de passe des répéteurs et le PIN Bluetooth (en clair, dans ce fichier local uniquement). Le journal technique est dans `supervision.log` au même endroit.

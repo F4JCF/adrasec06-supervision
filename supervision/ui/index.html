@@ -351,6 +351,30 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
 @media (max-height:820px){header.top{padding-block:12px 10px}.panel{padding:12px}.wrap{gap:12px}#crise{padding:10px 14px;gap:10px}.cr-head h1{font-size:1.7rem}}
 @media (min-width:1700px){body{font-size:16px}}
 @media (max-width:700px){.logo{width:40px}.brand{gap:10px}}
+/* Détail d'un message */
+.msgs .msg[data-msgid]{cursor:pointer}
+.msgs .msg[data-msgid]:hover{outline:1px solid var(--accent);outline-offset:1px}
+.cr-msgs [data-msgid]{cursor:pointer}
+#mdet{position:fixed;inset:0;z-index:2500;background:rgba(5,10,15,.55);display:grid;place-items:center;padding:16px}
+#mdet[hidden]{display:none}
+.mdet-box{background:var(--panel);border:1px solid var(--line);border-radius:8px;width:min(1100px,100%);max-height:calc(100vh - 32px);display:grid;grid-template-rows:auto 1fr;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.35)}
+.mdet-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.mdet-head h2{margin:0}
+.mdet-body{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:16px;padding:16px;overflow:auto;min-height:0}
+@media (max-width:860px){.mdet-body{grid-template-columns:minmax(0,1fr)}}
+.mdet-txt{background:var(--sunk);border-radius:6px;padding:10px 12px;overflow-wrap:anywhere}
+.mdet-kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:.9rem;margin:10px 0}
+.mdet-kv dt{color:var(--muted)}.mdet-kv dd{margin:0}
+.route{border:1px solid var(--line);border-left:5px solid var(--rc);border-radius:6px;padding:8px 10px;margin-top:10px;display:grid;gap:6px}
+.route .rh{font-family:var(--f-mono);font-size:.76rem;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap}
+.route ol{margin:0;padding:0;list-style:none;display:grid;gap:3px}
+.route li{display:grid;grid-template-columns:1.8em minmax(0,1fr);gap:6px;font-size:.9rem;align-items:baseline}
+.route li .k{font-family:var(--f-mono);font-size:.75rem;color:var(--muted);text-align:right}
+.route li .x{color:var(--muted);font-size:.78rem}
+.route li.adr b{color:var(--accent)}
+#mdetMap{height:min(60vh,520px);min-height:300px;border-radius:6px;border:1px solid var(--line);background:var(--sea)}
+.det-pin{width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.4)}
+.det-num{background:#fff;color:#111;border-radius:9px;font:700 11px/16px var(--f-mono);min-width:16px;text-align:center;border:2px solid var(--rc);padding:0 3px}
 </style>
 </head>
 <body>
@@ -361,7 +385,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
       <div class="brand-txt"><span class="eyebrow">Protection civile · Réseau LoRa</span>
       <h1>Supervision Réseau Meshcore Adrasec 06</h1></div>
     </div>
-    <div style="display:grid;gap:8px;justify-items:end">
+    <div style="display:grid;gap:8px;justify-items:end;margin-left:auto">
       <div class="radio" id="radio" aria-label="Paramètres radio du réseau"></div>
       <button class="btn small" id="crOpen" type="button">Salle de crise (plein écran)</button>
     </div>
@@ -630,6 +654,12 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     <span class="actions"><button class="btn small" id="export" type="button">Exporter les données</button><button class="btn small" id="import" type="button">Importer un export</button></span>
   </footer>
 </div>
+<div id="mdet" hidden role="dialog" aria-modal="true" aria-labelledby="mdetTitle">
+  <div class="mdet-box">
+    <div class="mdet-head"><h2 id="mdetTitle">Détail du message</h2><button class="btn small" id="mdetClose" type="button">Fermer (Échap)</button></div>
+    <div class="mdet-body"><div id="mdetInfo"></div><div><div id="mdetMap"></div><p class="muted" id="mdetMapNote" style="font-size:.8rem;margin:6px 0 0"></p></div></div>
+  </div>
+</div>
 <div id="crise" hidden>
   <div class="cr-head"><div class="brand"><img class="logo sm" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAYAAABccqhmAAAIjElEQVR4nO3dOZYUSxIF0KRPbwONDaAisQvWyC6QUNkAGgvhC/w6nWTnEIMP5mb3ylDlEeXvhUdmDJcLAAAAAAAAAJDFu9kDaOX9py+/Z4+BWn59/7p8fpbcAGEnqtVKYYnBCjyril4IoQcn+GQRtQjCDUroyS5SGYQZiOBTTYQimD4Awae6mUXwn1m/+HIRfrhc5uZgSvMIPtw3ejUwfAUg/PDY6HwMLQDhh9dG5mTIckPw4ZjepwTdVwDCD8f1zk/XAhB+OK9njroVgPBDO73y1KUAhB/a65Gr5gUg/NBP63w1LQDhh/5a5mzqpcDAXM0KwNEfxmmVtyYFIPwwXovcnS4A4Yd5zubPZwBQ2KkCcPSH+c7k8HABCD/EcTSPTgGgsEMF4OgP8RzJpRUAFLa7ABz9Ia69+bQCgMIUABS2qwAs/yG+PTm1AoDCNheAoz+sY2terQCgMAUAhSkAKGxTATj/h/Vsya0VABSmAKAwBQCFKQAo7GUB+AAQ1vUqv1YAUJgCgMIUABSmAKAwBQCFKQAoTAFAYf+dPQD6+fH5Z7Of9fHbh2Y/izgUwOJahvzo71EO61IACxkV9r3ujUsprEEBBBY18Fvcjl0hxKQAglk59M9cb5cyiEMBBJA19I8ogzgUwETVgn/P2z5QBHMogMGE/j6rgjkUwCCCv51VwTgKoDPBP04R9KcAOhH8dhRBPwqgMcHvRxG0pwAaEfxxFEE77gZsQPjnsN/PswI4YYUJ2OIoGXk7rQbOUQAHRAtE78n/7OdH2ReK4BgFsFOECR9pkt+OZfb++fH5Z6j9E50C2GHW5F5pQkcoBCWwnQLYYMYkzjKBr7dj5H50SrCNbwFeGB3+j98+pJ20M7Zt9ilJdFYAT4yaPFkD/8joVYFTgscUwB2CP87bPui9z50S3OcU4MaI8Gde5h81ap84JfibArjSe3II/msj9pES+B8F8K+ek0Lw9+u9z5TAHwrg0m8yCP55PfehElAAXcNPO0qgj9IF0OOP76jfT699W7kEyhZAr/DTnxJop2QBCP/6lEAb5S4Eav1HXiH4Z7Y58vb1uIio2lWD7179g/efvvweMZARsod/5BEs+7ZH274zfn3/+jDnZQog4wSJtGTNuD8ibFML5Qsg08SIFPpHMu2fDCXwrADKfQZwxqzJsELor818zdeom4uySP8tQKuJMCP8Pz7/XH4iz9qGVn+v1ff/K6kLYNXwZwj+rRnbpAReS1sAK4Y/Y/Bvjd5GJfBc2gJoYVT4KwT/1shtzvBBXi8pC6DFxBoZ/spWKoGMfyvfAkyScTIdtcrjuqKP74iUK4Czd415Is0cI57INOP/Rpb+QqC9k8pTaGKI8nfIEPxnFwKlXAFc27MaiDLp6P+Itpb/bmXpVwDXnk2q7OE/sn2rjnurR9uXLfguBf7X6MtEV74C7tnPyvyKr2zhf6XUCuBa7+vVV7zY5YjVt3OVbyDOKH834GijXi4STdXtjq70h4CjVX65iJd6rEcBNOTlIn94qcc6FEAjXi7y/7zUIz4F0ID3Czznef5xKYCAsgT/VtbtWpkCOMkz6PZpvX1WAecogBNaTr5MS/5XWm+rEjhOARzUOvwVKYH5FMBkVcP/pvr2z6YAJjL5/7Af5lEAB52dtCb9384+rMP+PEYBnHB04pms99mX45W6HbiXj98+bP4QapU792aNc+u+FPw23A3Y0KuJO+MFI61EGrvw7+N24MHuTd5MjxmfuS3Cv58nAg2255SglcxP6Rn9uyqxAujsx+ef6W+N7b19wn+OB4JMlD38l0uMJ/hyjFOABUUJ/rUKz9bLyApgMRHDfy36+PibAljIKuFaZZwogGWsFqrVxluVAljAqmFaddyVKIDgVg/R6uPPTgEEliU8WbYjIwUQVLbQZNueLFwHUMyW7+l7PeaceBRAUC3vJ9gbvut/32IMwh+XAgjs7OvMWwQvwhjoRwEs4Mhq4Fnwjtxrv3cMgr8GdwMu5uhDR44cwY/+LOGPxQNBknkUwHvB63UO72Ed63A7cDL3HkbaK/yPfs6W3098CmBhR8/zj3i26hD+dTkFSMgDOrjmFKCQ3lfcuaIvFwWQyKhwKoE8FAAUpgCSyPwYcvpRAFCYAoDCFEACs5bjTgPWpwCgMAUAhSkAKEwBQGEKAApTAFCYAkhg1h167gxcnwKAwhQAFKYAkhi9HLf8z0EBQGEKIJFRR2VH/zwUQDK9wyn8uSiAhHqFVPjzUQBJtQ6r8OekABJrFVrhz8vLQZM783Zfwc/PCqCIvWEW/hoUABSmAKAwBQCFKQAoTAFAYQoAClMAUJgCgMIUABSmAKAwBQCFKQAoTAFAYQoAClMAUJgCgMIUABSmAKAwBQCFKQAoTAFAYQoAClMAUJgCgMIUABSmAKAwBQCFKQAoTAFAYQoAClMAUJgCgMIUABSmAKAwBQCFKQAoTAFAYQoAClMAUJgCgMIUABT2sgB+ff/6bsRAgPZe5dcKAApTAFCYAoDCFAAUtqkAfBAI69mSWysAKEwBQGEKAArbXAA+B4B1bM2rFQAUtqsArAIgvj05tQKAwhQAFLa7AJwGQFx782kFAIUdPpq///Tld8uBAOccWZ1bAUBhhwvAZwEQx9E8nloBKAGY70wOnQJAYacLwCoA5jmbvyYrACUA47XIXbNTACUA47TKm88AoLCmBWAVAP21zFnzFYASgH5a56vLKYASgPZ65KrbZwBKANrplaeuHwIqATivZ466fwugBOC43vkZGk63EMM2ow6cQ68DsBqA10bmZPiFQEoAHhudj6lhdEoAf8w6ME69FNhqAObmIEwArQaoJsIBcPoAbikCsosQ/DdhBnKPMiCLSKG/FnJQtxQBq4oa/DehB/eIQiCq6IG/tdRgn1EKjLZa2AEAAAAAAIAS/gHdY5pE8ssisAAAAABJRU5ErkJggg==" alt=""><div class="brand-txt"><span class="eyebrow">Supervision Réseau Meshcore Adrasec 06</span><h1 id="crTitle">Salle de crise</h1></div></div><div style="display:flex;gap:16px;align-items:center"><span class="cr-clock" id="crClock">--:--:--</span><button class="btn" id="crClose" type="button">Quitter (Échap)</button></div></div>
   <div class="cr-body"><div id="crMap"></div>
@@ -677,6 +707,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
   const refFw = () => nodes.filter(n => n.firmware && n.proprio!=="externe").reduce((m,n) => !m || cmpVer(n.firmware,m)>0 ? n.firmware : m, null);
   const fwOld = n => { const r = refFw(); return n.proprio!=="externe" && n.firmware && r && cmpVer(n.firmware, r) < 0; };
   const snrColor = s => s >= 5 ? "var(--ok)" : s >= -5 ? "var(--warn)" : "var(--crit)";
+  const diese = n => String(n || "").startsWith("#") ? String(n) : "#" + (n || "");
   const fmtSnr = s => (s > 0 ? "+" : s < 0 ? "−" : "") + Math.abs(s).toLocaleString("fr-FR",{maximumFractionDigits:2}) + " dB";
   const empty = v => v === "" || v == null || (typeof v === "number" && isNaN(v));
   const fmtNum = (v,d=0) => empty(v) || isNaN(v) ? "—" : Number(v).toLocaleString("fr-FR",{maximumFractionDigits:d}).replace("-", "−");
@@ -829,6 +860,92 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
 
   /* ---------- carte réelle (Leaflet) ---------- */
   let lmap = null, lLayer = null, lBase = null, lBaseKey = null, lFitted = false;
+  /* ---------- détail d'un message : parcours et carte ---------- */
+  const ROUTE_COUL = ["#e8590c", "#1c7ed6", "#2f9e44", "#ae3ec9", "#f59f00", "#0ca678"];
+  let detMap = null, detLayer = null, detRetour = null;
+  function fermerDetail(){ $("#mdet").hidden = true; if (detRetour) { try { detRetour.focus(); } catch(e) {} } }
+  const fmtHeure = ts => ts ? new Date(ts * 1000).toLocaleTimeString("fr-FR") : "";
+  function nomRelais(r){ return r.nom ? esc(r.nom) + (r.candidats > 1 ? ` <span class="x" title="${r.candidats} relais ont le même identifiant ${esc(r.hash)} : le plus proche du parcours a été retenu">(probable)</span>` : "")
+                                      : `Relais inconnu <span class="x">identifiant ${esc(r.hash)}</span>`; }
+  async function ouvrirDetail(id){
+    detRetour = document.activeElement;
+    $("#mdet").hidden = false; $("#mdetClose").focus();
+    $("#mdetInfo").innerHTML = `<p class="reading">Chargement…</p>`; $("#mdetMapNote").textContent = "";
+    let d; try { d = await api.detail_message(id); } catch(e) { d = {ok:false, erreur:String(e)}; }
+    if (!d || !d.ok) { $("#mdetInfo").innerHTML = `<p style="color:var(--crit)">${esc((d && d.erreur) || "Détail indisponible.")}</p>`; return; }
+    const m = d.message, emis = m.sens === "emis", canal = m.canal != null;
+    const auteur = emis ? (d.moi.nom + " (nous)") : (m.auteur || m.contact || "Inconnu");
+    let html = `<div class="mdet-txt">${esc(m.texte)}</div>
+      <dl class="mdet-kv"><dt>De</dt><dd><b>${esc(auteur)}</b>${d.auteur.source && !emis ? ` <span class="muted">· ${esc(d.auteur.source)}</span>` : ""}</dd>
+      <dt>${canal ? "Canal" : "À"}</dt><dd>${canal ? esc(diese(m.canal_nom)) : esc(emis ? (m.contact || "") : d.moi.nom)}</dd>
+      <dt>Date</dt><dd>${fmtDate(m.date)}</dd>
+      ${m.snr != null ? `<dt>SNR</dt><dd>${fmtSnr(+m.snr)}</dd>` : ""}${m.rssi != null ? `<dt>RSSI</dt><dd>${m.rssi} dBm</dd>` : ""}
+      ${m.sauts != null ? `<dt>Sauts</dt><dd>${m.sauts === 0 ? "reçu en direct (aucun relais)" : m.sauts + " relais"}</dd>` : ""}
+      ${m.statut ? `<dt>Statut</dt><dd>${esc(m.statut)}</dd>` : ""}</dl>`;
+    const routes = d.routes || [];
+    if (routes.length) {
+      html += `<h3 style="margin:6px 0 0">${emis ? `Échos entendus (${routes.length})` : routes.length > 1 ? `Reçu par ${routes.length} chemins` : "Parcours"}</h3>`;
+      if (emis) html += `<p class="muted" style="font-size:.82rem;margin:2px 0">Votre message a été répété par ces relais et entendu en retour par le nœud companion.</p>`;
+      routes.forEach((r, i) => {
+        const c = ROUTE_COUL[i % ROUTE_COUL.length];
+        html += `<div class="route" style="--rc:${c}"><div class="rh"><b style="color:${c}">Chemin ${i + 1}</b><span>reçu à ${fmtHeure(r.ts)}</span>${r.snr != null ? `<span>SNR ${fmtSnr(+r.snr)}</span>` : ""}${r.rssi != null ? `<span>RSSI ${r.rssi} dBm</span>` : ""}<span>${r.relais.length} saut(s)</span></div><ol>
+          <li><span class="k">▲</span><span><b>${esc(auteur)}</b> <span class="x">émetteur${d.auteur.lat == null && !emis ? " · position inconnue" : ""}</span></span></li>
+          ${r.relais.map((h, j) => `<li class="${h.adrasec ? "adr" : ""}"><span class="k">${j + 1}</span><span>${h.adrasec ? "<b>" : ""}${nomRelais(h)}${h.adrasec ? "</b>" : ""}${h.lat == null && h.nom ? ` <span class="x">· position inconnue</span>` : ""}</span></li>`).join("")}
+          <li><span class="k">●</span><span><b>${esc(d.moi.nom)}</b> <span class="x">réception</span></span></li></ol></div>`;
+      });
+    } else if (canal) {
+      html += `<p class="muted" style="font-size:.86rem">Parcours détaillé indisponible pour ce message${m.sauts != null ? ` (seul le nombre de sauts est connu)` : ""} : il a été reçu avant la version 1.9, ou le nœud companion ne l'a pas transmis.</p>`;
+    } else {
+      html += `<p class="muted" style="font-size:.86rem">Message direct chiffré de bout en bout : le parcours exact n'est pas lisible, seul le nombre de sauts est connu.</p>`;
+      if (d.route_connue) html += `<div class="route" style="--rc:${ROUTE_COUL[1]}"><div class="rh"><b>Route connue vers ce contact</b><span>${d.route_connue.sauts === 0 ? "direct" : d.route_connue.sauts + " saut(s)"}</span></div><ol>
+        <li><span class="k">●</span><span><b>${esc(d.moi.nom)}</b></span></li>${d.route_connue.relais.map((h, j) => `<li class="${h.adrasec ? "adr" : ""}"><span class="k">${j + 1}</span><span>${nomRelais(h)}</span></li>`).join("")}
+        <li><span class="k">▲</span><span><b>${esc(m.contact || "")}</b></span></li></ol></div>`;
+    }
+    $("#mdetInfo").innerHTML = html;
+    dessinerDetail(d, routes, auteur, emis);
+  }
+  function dessinerDetail(d, routes, auteur, emis){
+    const el = $("#mdetMap");
+    if (!window.L) { el.innerHTML = `<div class="empty">Carte indisponible.</div>`; return; }
+    if (!detMap) {
+      detMap = L.map(el, {zoomControl:true}).setView([43.65, 7.0], 9);
+      const f = FONDS[reglages.fondCarte] || FONDS.osmfr;
+      L.tileLayer(f[0], {attribution:f[1], maxZoom:f[2], subdomains:"abc"}).addTo(detMap);
+      detLayer = L.layerGroup().addTo(detMap);
+    }
+    detLayer.clearLayers();
+    const pts = [], pin = (lat, lon, coul, tip) => { pts.push([lat, lon]);
+      L.marker([lat, lon], {zIndexOffset: 800, icon: L.divIcon({className:"", html:`<div class="det-pin" style="background:${coul}"></div>`, iconSize:[14,14], iconAnchor:[7,7]})}).bindTooltip(tip).addTo(detLayer); };
+    const A = d.auteur, M = d.moi, aPos = A.lat != null, mPos = M.lat != null;
+    let manque = 0;
+    routes.forEach((r, i) => {
+      const c = ROUTE_COUL[i % ROUTE_COUL.length], ligne = [];
+      if (aPos) ligne.push([A.lat, A.lon]);
+      r.relais.forEach((h, j) => { if (h.lat == null) { manque++; return; }
+        ligne.push([h.lat, h.lon]); pts.push([h.lat, h.lon]);
+        L.marker([h.lat, h.lon], {zIndexOffset: 600, icon: L.divIcon({className:"", html:`<div class="det-num" style="--rc:${c}">${j + 1}</div>`, iconSize:[22,18], iconAnchor:[11,9]})})
+          .bindTooltip(`Chemin ${i + 1} · relais ${j + 1} : ${esc(h.nom || h.hash)}`).addTo(detLayer); });
+      if (mPos) ligne.push([M.lat, M.lon]);
+      if (ligne.length > 1) L.polyline(ligne, {color:c, weight:4, opacity:.85, dashArray: i ? "8 6" : null}).addTo(detLayer);
+    });
+    if (!routes.length && d.route_connue) {
+      const ligne = mPos ? [[M.lat, M.lon]] : [];
+      d.route_connue.relais.forEach((h, j) => { if (h.lat == null) return; ligne.push([h.lat, h.lon]); pts.push([h.lat, h.lon]);
+        L.marker([h.lat, h.lon], {icon: L.divIcon({className:"", html:`<div class="det-num" style="--rc:${ROUTE_COUL[1]}">${j + 1}</div>`, iconSize:[22,18], iconAnchor:[11,9]})}).bindTooltip(esc(h.nom || h.hash)).addTo(detLayer); });
+      if (aPos && !emis) ligne.push([A.lat, A.lon]);
+      if (ligne.length > 1) L.polyline(ligne, {color:ROUTE_COUL[1], weight:4, opacity:.8, dashArray:"8 6"}).addTo(detLayer);
+    }
+    if (aPos && !emis) pin(A.lat, A.lon, "#1f3a5f", `Émetteur : ${esc(auteur)}`);
+    if (mPos) pin(M.lat, M.lon, "#e8590c", `Réception : ${esc(M.nom)}`);
+    const notes = [];
+    if (!aPos && !emis) notes.push("position de l'émetteur inconnue");
+    if (!mPos) notes.push("position de votre nœud inconnue");
+    if (manque) notes.push(`${manque} relais sans position`);
+    $("#mdetMapNote").textContent = notes.length ? "Sur la carte : " + notes.join(" · ") + "." : "Trait plein : premier chemin reçu ; pointillés : autres chemins.";
+    setTimeout(() => { detMap.invalidateSize();
+      if (pts.length > 1) detMap.fitBounds(pts, {padding:[30,30], maxZoom:13}); else if (pts.length) detMap.setView(pts[0], 12); }, 60);
+  }
+
   const FONDS = {
     osmfr: ["https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png", "© contributeurs OpenStreetMap · OSM France", 20],
     osm:   ["https://tile.openstreetmap.org/{z}/{x}/{y}.png", "© contributeurs OpenStreetMap", 19],
@@ -1286,18 +1403,18 @@ const HOT_MIN = 360; // 6 heures
     vus[conv] = Math.max(vus[conv] || 0, dernierRecu(conv)); saveVus();
     const item = (k, label) => { const u = k === conv ? 0 : nonLus(k);
       return `<button data-conv="${esc(k)}" aria-pressed="${conv===k}" class="${u ? "unread" : ""}" title="${u ? u + " message(s) non lu(s)" : ""}"><span>${esc(label)}</span><span class="n">${u ? u : (cnt(k) || "")}</span></button>`; };
-    $("#convs").innerHTML = `<h3>Canaux</h3>` + chans.map(c => item("c:"+c.index, "#"+c.nom)).join("") +
+    $("#convs").innerHTML = `<h3>Canaux</h3>` + chans.map(c => item("c:"+c.index, diese(c.nom))).join("") +
       `<h3>Messages directs</h3>` + (Object.values(dms).sort((a,b)=>(nonLus("d:"+b.cle)-nonLus("d:"+a.cle))||(b.n-a.n)||a.nom.localeCompare(b.nom)).map(d => item("d:"+d.cle, d.nom)).join("") || `<span class="reading" style="padding:4px 14px">Aucun contact. Connectez le nœud companion.</span>`);
     const list = messages.filter(m => convKey(m)===conv);
     const isChan = conv.startsWith("c:");
-    const title = isChan ? "#" + (chans.find(c => "c:"+c.index===conv)||{nom:"Canal"}).nom : (dms[conv.slice(2)]||{nom:"Contact"}).nom;
+    const title = isChan ? diese((chans.find(c => "c:"+c.index===conv)||{nom:"Canal"}).nom) : (dms[conv.slice(2)]||{nom:"Contact"}).nom;
     $("#threadTitle").textContent = title;
     $("#threadSub").textContent = isChan ? "Canal partagé : tous les nœuds du canal reçoivent le message" : "Message direct chiffré";
     const box = $("#msgs"), atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
     $("#threadActs").innerHTML = list.length ? (convConfirm
       ? `<span class="reading" style="color:var(--crit)">Supprimer les ${list.length} message(s) de cette conversation sur ce PC ?</span><button class="btn small danger" id="convClearYes">Oui, supprimer</button><button class="btn small" id="convClearNo">Non</button>`
       : `<button class="btn small" id="convClear">Vider la conversation</button>`) : "";
-    box.innerHTML = list.length ? list.map(m => `<div class="msg${m.sens==="emis"?" out":""}"><button class="del" data-msgdel="${m.id}" title="Supprimer ce message" aria-label="Supprimer ce message">×</button>${m.sens==="recu" && m.auteur ? `<span class="who">${esc(m.auteur)}</span>` : ""}<span>${esc(m.texte)}</span>
+    box.innerHTML = list.length ? list.map(m => `<div class="msg${m.sens==="emis"?" out":""}" data-msgid="${m.id}" title="Cliquer pour voir le parcours du message"><button class="del" data-msgdel="${m.id}" title="Supprimer ce message" aria-label="Supprimer ce message">×</button>${m.sens==="recu" && m.auteur ? `<span class="who">${esc(m.auteur)}</span>` : ""}<span>${esc(m.texte)}</span>
       <span class="meta"><span>${fmtDate(m.date)}</span>${m.snr!=null?`<span>SNR ${fmtSnr(+m.snr)}</span>`:""}${m.sauts!=null?`<span>${m.sauts} saut(s)</span>`:""}${m.statut?`<span>${esc(m.statut)}</span>`:""}</span></div>`).join("")
       : `<div class="empty">${liaison.connecte ? "Aucun message pour l'instant." : "Connectez le nœud companion pour recevoir et envoyer des messages."}</div>`;
     if (atBottom || lastMsgCount !== messages.length) box.scrollTop = box.scrollHeight;
@@ -1435,8 +1552,8 @@ const HOT_MIN = 360; // 6 heures
     const norm = x => String(x || "").toLowerCase().replace(/[^a-z0-9]/g, "");
     const chan = (liaison.canaux || []).find(c => norm(c.nom) === "adrasec06") || (liaison.canaux || []).find(c => norm(c.nom).includes("adrasec06"));
     const adr = messages.filter(m => m.canal != null && (chan ? m.canal === chan.index : norm(m.canal_nom).includes("adrasec06")));
-    $("#crMsgTitle").textContent = "#" + (chan ? chan.nom : "ADRASEC 06");
-    $("#crMsgs").innerHTML = adr.slice(-10).reverse().map(m => `<div><span class="meta">${fmtDate(m.date)}</span><div>${m.sens==="recu" && m.auteur ? `<b>${esc(m.auteur)}</b> : ` : (m.sens==="emis" ? "<b>Nous</b> : " : "")}${esc(m.texte)}</div></div>`).join("")
+    $("#crMsgTitle").textContent = diese(chan ? chan.nom : "ADRASEC 06");
+    $("#crMsgs").innerHTML = adr.slice(-10).reverse().map(m => `<div data-msgid="${m.id}" title="Cliquer pour voir le parcours"><span class="meta">${fmtDate(m.date)}</span><div>${m.sens==="recu" && m.auteur ? `<b>${esc(m.auteur)}</b> : ` : (m.sens==="emis" ? "<b>Nous</b> : " : "")}${esc(m.texte)}</div></div>`).join("")
       || `<span class="muted">${chan || adr.length ? "Aucun message sur ce canal pour l'instant." : "Le canal ADRASEC 06 n'est pas configuré sur le nœud companion (ajoutez-le dans l'application MeshCore)."}</span>`;
     if (crMap) {
       crLayer.clearLayers();
@@ -1450,7 +1567,7 @@ const HOT_MIN = 360; // 6 heures
     }
   }
   setInterval(() => { if (crise) $("#crClock").textContent = new Date().toLocaleTimeString("fr-FR"); }, 1000);
-  document.addEventListener("keydown", e => { if (e.key === "Escape" && crise) openCrise(false); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#mdet").hidden) { fermerDetail(); return; } if (e.key === "Escape" && crise) openCrise(false); });
 
   /* ---------- messages types ---------- */
   function fillTemplate(t){
@@ -1549,6 +1666,9 @@ const HOT_MIN = 360; // 6 heures
     if (cv) { conv = cv.dataset.conv; convConfirm = false; lastMsgCount = -2; renderChat(); return; }
     const mdel = t.closest("[data-msgdel]");
     if (mdel) { await api.supprimer_message(+mdel.dataset.msgdel); refresh(true); return; }
+    if (t.closest("#mdetClose") || t.id === "mdet") { fermerDetail(); return; }
+    const mid = t.closest("[data-msgid]");
+    if (mid && !window.getSelection().toString()) { ouvrirDetail(+mid.dataset.msgid); return; }
     const mc = t.closest("[data-mc]");
     if (mc) { const r = await api.main_courante(+mc.dataset.mc); if (r.ok) toast("Main courante enregistrée : " + r.chemin); else if (r.erreur) toast(r.erreur); return; }
     const cb = t.closest("[data-cmd]");

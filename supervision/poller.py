@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
+import hashlib
 import random
 import re
 import threading
@@ -234,6 +236,8 @@ class Poller:
         try:
             mc.subscribe(EventType.CHANNEL_MSG_RECV, self._on_channel_msg)
             mc.subscribe(EventType.CONTACT_MSG_RECV, self._on_contact_msg)
+            mc.subscribe(EventType.RX_LOG_DATA, self._on_rx_log)
+            mc.set_decrypt_channel_logs(True)  # pour retrouver le parcours des messages de canal
         except Exception as e:  # noqa: BLE001
             log.warning("Abonnement aux messages impossible : %s", e)
         try:
@@ -629,9 +633,121 @@ class Poller:
         auteur, _, corps = texte.partition(": ")
         if not corps:
             auteur, corps = "", texte
+        h = p.get("txt_hash")
+        if h is None:
+            try:
+                ts = int(p.get("sender_timestamp") or 0).to_bytes(4, "little", signed=False)
+                h = int.from_bytes(hashlib.sha256(ts + texte.encode("utf-8")).digest()[:4], "little", signed=False)
+            except Exception:
+                h = None
         self.store.add_message({"sens": "recu", "canal": p.get("channel_idx"), "canal_nom": self._canal_nom(p.get("channel_idx")),
-                                "auteur": auteur, "texte": corps, "snr": p.get("SNR"),
+                                "auteur": auteur, "texte": corps, "snr": p.get("SNR"), "rssi": p.get("RSSI"),
+                                "msg_hash": h, "chemin": p.get("path"),
                                 "sauts": p.get("path_len") if p.get("path_len") not in (255, None) else None})
+
+    async def _on_rx_log(self, event):
+        """Chaque paquet de canal entendu par le nœud companion : on garde son parcours (relais traversés)."""
+        p = event.payload or {}
+        try:
+            if p.get("payload_type") != 0x05 or not p.get("message"):
+                return
+            self.store.add_reception({"msg_hash": p.get("msg_hash"), "ts": p.get("recv_time") or time.time(),
+                                      "texte": p.get("message"), "chemin": p.get("path") or "",
+                                      "taille": p.get("path_hash_size") or 1, "snr": p.get("snr"), "rssi": p.get("rssi")})
+        except Exception as e:  # noqa: BLE001
+            log.debug("Réception ignorée : %s", e)
+
+    # ---------- détail d'un message ----------
+    def detail_message(self, mid) -> dict:
+        m = self.store.get_message(int(mid))
+        if not m:
+            return {"ok": False, "erreur": "Message introuvable."}
+        moi_nom = self.local_name or "Ce nœud"
+        moi = {"nom": moi_nom, "lat": None, "lon": None}
+        if self.position:
+            moi.update(lat=self.position.get("lat"), lon=self.position.get("lon"))
+        # répertoire des relais connus : nœuds de la base + contacts du nœud companion
+        repert = []
+        for n in self.store.list_nodes():
+            if n.get("cle") and n.get("statut") != "supprime":
+                repert.append({"cle": n["cle"].lower(), "nom": n.get("nom"), "lat": n.get("lat"), "lon": n.get("lon"),
+                               "adrasec": n.get("proprio") != "externe"})
+        connus = {r["cle"][:12] for r in repert}
+        for c in self._contacts.values():
+            k = (c.get("public_key") or "").lower()
+            if c.get("type") in (2, 3) and k and k[:12] not in connus:
+                lat, lon = c.get("adv_lat") or None, c.get("adv_lon") or None
+                repert.append({"cle": k, "nom": c.get("adv_name"), "lat": lat, "lon": lon, "adrasec": False})
+
+        def pos(x):
+            return x.get("lat") is not None and x.get("lon") is not None and abs(x["lat"]) > 0.01
+
+        def dist(a, b):
+            return math.hypot((a["lat"] - b["lat"]) * 111, (a["lon"] - b["lon"]) * 111 * math.cos(math.radians(a["lat"])))
+
+        def resoudre(hexpath: str, taille: int) -> list[dict]:
+            taille = max(1, int(taille or 1))
+            hops = [hexpath[i:i + 2 * taille] for i in range(0, len(hexpath or ""), 2 * taille)]
+            out = [None] * len(hops)
+            suivant = moi if pos(moi) else None  # on remonte depuis le récepteur : chaque relais est à portée du suivant
+            for i in range(len(hops) - 1, -1, -1):
+                h = hops[i].lower()
+                cands = [r for r in repert if r["cle"].startswith(h)]
+                choix = None
+                if len(cands) > 1 and suivant is not None:
+                    avec = [c for c in cands if pos(c)]
+                    if avec:
+                        choix = min(avec, key=lambda c: dist(c, suivant))
+                elif cands:
+                    choix = cands[0]
+                if choix is None and cands:
+                    choix = cands[0]
+                e = {"hash": h.upper(), "nom": choix["nom"] if choix else None, "adrasec": bool(choix and choix["adrasec"]),
+                     "lat": choix["lat"] if choix and pos(choix) else None, "lon": choix["lon"] if choix and pos(choix) else None,
+                     "candidats": len(cands)}
+                out[i] = e
+                if e["lat"] is not None:
+                    suivant = e
+            return out
+
+        # auteur
+        auteur_nom = m.get("auteur") or m.get("contact") or ""
+        auteur = {"nom": auteur_nom, "lat": None, "lon": None, "source": None}
+        if m.get("sens") == "emis":
+            auteur.update(moi, source="ce nœud")
+        else:
+            c = next((c for c in self._contacts.values() if (c.get("adv_name") or "").lower() == auteur_nom.lower()), None)
+            if c and abs(c.get("adv_lat") or 0) > 0.01:
+                auteur.update(lat=c["adv_lat"], lon=c["adv_lon"], source="position annoncée")
+            else:
+                pp = self.store.last_position_by_name(auteur_nom)
+                if pp:
+                    auteur.update(lat=pp["lat"], lon=pp["lon"], source="dernière position connue")
+                else:
+                    n = next((n for n in repert if (n.get("nom") or "").lower() == auteur_nom.lower() and pos(n)), None)
+                    if n:
+                        auteur.update(lat=n["lat"], lon=n["lon"], source="position du nœud")
+
+        routes = []
+        if m.get("canal") is not None:
+            plein = f"{m.get('auteur')}: {m.get('texte')}" if m.get("auteur") else m.get("texte")
+            vus = set()
+            for r in self.store.receptions_for(m.get("msg_hash"), plein, float(m.get("ts") or 0)):
+                if (r["chemin"] or "") in vus:  # même parcours entendu deux fois
+                    continue
+                vus.add(r["chemin"] or "")
+                routes.append({"ts": r["ts"], "snr": r["snr"], "rssi": r["rssi"], "relais": resoudre(r["chemin"], r["taille"])})
+            if not routes and m.get("chemin") is not None:
+                routes.append({"ts": m.get("ts"), "snr": m.get("snr"), "rssi": m.get("rssi"), "relais": resoudre(m["chemin"], 1)})
+        route_connue = None
+        if m.get("canal") is None and m.get("contact_cle"):
+            c = next((c for c in self._contacts.values() if (c.get("public_key") or "").startswith(m["contact_cle"])), None)
+            if c:
+                n = c.get("out_path_len", -1)
+                if n is not None and n >= 0:
+                    route_connue = {"sauts": n, "relais": resoudre(c.get("out_path") or "", (c.get("out_path_hash_mode") or 0) + 1)}
+        return {"ok": True, "message": m, "auteur": auteur, "moi": moi, "routes": routes, "route_connue": route_connue,
+                "decodage": bool(self.mc)}
 
     async def _on_contact_msg(self, event):
         p = event.payload or {}
