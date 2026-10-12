@@ -47,8 +47,8 @@ button{cursor:pointer}
 header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px;padding-block:22px 14px;border-bottom:3px solid var(--accent)}
 .brand{display:flex;align-items:center;gap:14px;min-width:0}
 .brand-txt{display:grid;gap:2px;min-width:0}
-.logo{height:clamp(56px,6vw,84px);width:auto;flex:none;filter:drop-shadow(0 2px 4px rgba(0,0,0,.35))}
-.logo.sm{height:52px}
+.logo{height:clamp(96px,9vw,140px);width:auto;flex:none;filter:drop-shadow(0 2px 4px rgba(0,0,0,.35))}
+.logo.sm{height:72px}
 .eyebrow{font-family:var(--f-mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
 .brand h1{font-size:clamp(1.35rem,2.6vw,2.3rem);line-height:1.05;overflow-wrap:anywhere}
 .radio{display:flex;flex-wrap:wrap;gap:6px}
@@ -350,9 +350,9 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
 .convs button.unread{color:var(--accent);font-weight:700;background:color-mix(in srgb,var(--accent) 12%,transparent);border-left-color:var(--accent)}
 .convs button.unread .n{background:var(--accent);color:var(--accent-ink);border-radius:999px;padding:0 7px;font-weight:700}
 .convs button.unread span:first-child::before{content:"● ";font-size:.8em}
-@media (max-height:820px){header.top{padding-block:12px 10px}.panel{padding:12px}.wrap{gap:12px}#crise{padding:10px 14px;gap:10px}.cr-head h1{font-size:1.7rem}}
+@media (max-height:820px){.logo{height:96px}header.top{padding-block:12px 10px}.panel{padding:12px}.wrap{gap:12px}#crise{padding:10px 14px;gap:10px}.cr-head h1{font-size:1.7rem}}
 @media (min-width:1700px){body{font-size:16px}}
-@media (max-width:700px){.logo{height:48px}.brand{gap:10px}}
+@media (max-width:700px){.logo{height:72px}.brand{gap:10px}}
 /* Détail d'un message */
 .msgs .msg[data-msgid]{cursor:pointer}
 .msgs .msg[data-msgid]:hover{outline:1px solid var(--accent);outline-offset:1px}
