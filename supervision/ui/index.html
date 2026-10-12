@@ -34,7 +34,7 @@ body{margin:0}
   --sea:#13283a; --land:#1a2631; color-scheme:dark}
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.45;padding-inline:16px;padding-block:0 40px}
-.wrap{max-width:1240px;margin:0 auto;display:grid;gap:18px}
+.wrap{max-width:2400px;margin:0 auto;display:grid;gap:18px}
 h1,h2,h3{font-family:var(--f-display);font-weight:600;letter-spacing:.01em;margin:0;text-wrap:balance}
 h2{font-size:1.35rem;text-transform:uppercase;letter-spacing:.06em;color:var(--navy)}
 .mono,.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
@@ -45,9 +45,12 @@ button{cursor:pointer}
 
 /* En-tête */
 header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px;padding-block:22px 14px;border-bottom:3px solid var(--accent)}
-.brand{display:grid;gap:2px}
+.brand{display:flex;align-items:center;gap:14px;min-width:0}
+.brand-txt{display:grid;gap:2px;min-width:0}
+.logo{width:clamp(44px,5vw,64px);height:auto;aspect-ratio:1;flex:none;border-radius:12px}
+.logo.sm{width:44px}
 .eyebrow{font-family:var(--f-mono);font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
-.brand h1{font-size:clamp(1.8rem,4vw,2.5rem);line-height:1}
+.brand h1{font-size:clamp(1.35rem,2.6vw,2.3rem);line-height:1.05;overflow-wrap:anywhere}
 .radio{display:flex;flex-wrap:wrap;gap:6px}
 .radio span{font-family:var(--f-mono);font-size:.78rem;padding:4px 8px;border:1px solid var(--line);background:var(--panel);border-radius:3px}
 .radio b{font-weight:500;color:var(--muted);margin-right:4px}
@@ -78,7 +81,7 @@ header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:spac
 
 /* Carte */
 .map-box{overflow:hidden;border-radius:4px;border:1px solid var(--line);background:var(--sea)}
-#map{display:block;width:100%;height:auto;max-height:68vh}
+#map{display:block;width:100%;height:auto;max-height:calc(100vh - 260px)}
 #map .land{fill:var(--land)}
 #map .coast{fill:none;stroke:var(--line);stroke-width:1.2}
 #map .grid{stroke:var(--line);stroke-width:.5;stroke-dasharray:2 4}
@@ -195,7 +198,7 @@ details.activity time{font-family:var(--f-mono);color:var(--muted);font-size:.78
 .alerts time{font-family:var(--f-mono);font-size:.78rem;color:var(--muted)}
 .lvl{font-family:var(--f-mono);font-size:.7rem;padding:0 6px;border-radius:3px;border:1px solid var(--c);color:var(--c);text-transform:uppercase}
 /* Carte réelle */
-#lmap{height:min(68vh,680px);min-height:420px;width:100%;background:var(--sea)}
+#lmap{height:clamp(380px,calc(100vh - 260px),1100px);width:100%;background:var(--sea)}
 .leaflet-container{font-family:var(--f-body)}
 .leaflet-popup-content{font-size:.85rem;margin:10px 12px}
 .leaflet-popup-content b{font-family:var(--f-mono)}
@@ -345,14 +348,18 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
 .convs button.unread{color:var(--accent);font-weight:700;background:color-mix(in srgb,var(--accent) 12%,transparent);border-left-color:var(--accent)}
 .convs button.unread .n{background:var(--accent);color:var(--accent-ink);border-radius:999px;padding:0 7px;font-weight:700}
 .convs button.unread span:first-child::before{content:"● ";font-size:.8em}
+@media (max-height:820px){header.top{padding-block:12px 10px}.panel{padding:12px}.wrap{gap:12px}#crise{padding:10px 14px;gap:10px}.cr-head h1{font-size:1.7rem}}
+@media (min-width:1700px){body{font-size:16px}}
+@media (max-width:700px){.logo{width:40px}.brand{gap:10px}}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header class="top">
     <div class="brand">
-      <span class="eyebrow">ADRASEC 06 · Réseau LoRa MeshCore</span>
-      <h1>Supervision du réseau</h1>
+      <img class="logo" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAYAAABccqhmAAAIjElEQVR4nO3dOZYUSxIF0KRPbwONDaAisQvWyC6QUNkAGgvhC/w6nWTnEIMP5mb3ylDlEeXvhUdmDJcLAAAAAAAAAJDFu9kDaOX9py+/Z4+BWn59/7p8fpbcAGEnqtVKYYnBCjyril4IoQcn+GQRtQjCDUroyS5SGYQZiOBTTYQimD4Awae6mUXwn1m/+HIRfrhc5uZgSvMIPtw3ejUwfAUg/PDY6HwMLQDhh9dG5mTIckPw4ZjepwTdVwDCD8f1zk/XAhB+OK9njroVgPBDO73y1KUAhB/a65Gr5gUg/NBP63w1LQDhh/5a5mzqpcDAXM0KwNEfxmmVtyYFIPwwXovcnS4A4Yd5zubPZwBQ2KkCcPSH+c7k8HABCD/EcTSPTgGgsEMF4OgP8RzJpRUAFLa7ABz9Ia69+bQCgMIUABS2qwAs/yG+PTm1AoDCNheAoz+sY2terQCgMAUAhSkAKGxTATj/h/Vsya0VABSmAKAwBQCFKQAo7GUB+AAQ1vUqv1YAUJgCgMIUABSmAKAwBQCFKQAoTAFAYf+dPQD6+fH5Z7Of9fHbh2Y/izgUwOJahvzo71EO61IACxkV9r3ujUsprEEBBBY18Fvcjl0hxKQAglk59M9cb5cyiEMBBJA19I8ogzgUwETVgn/P2z5QBHMogMGE/j6rgjkUwCCCv51VwTgKoDPBP04R9KcAOhH8dhRBPwqgMcHvRxG0pwAaEfxxFEE77gZsQPjnsN/PswI4YYUJ2OIoGXk7rQbOUQAHRAtE78n/7OdH2ReK4BgFsFOECR9pkt+OZfb++fH5Z6j9E50C2GHW5F5pQkcoBCWwnQLYYMYkzjKBr7dj5H50SrCNbwFeGB3+j98+pJ20M7Zt9ilJdFYAT4yaPFkD/8joVYFTgscUwB2CP87bPui9z50S3OcU4MaI8Gde5h81ap84JfibArjSe3II/msj9pES+B8F8K+ek0Lw9+u9z5TAHwrg0m8yCP55PfehElAAXcNPO0qgj9IF0OOP76jfT699W7kEyhZAr/DTnxJop2QBCP/6lEAb5S4Eav1HXiH4Z7Y58vb1uIio2lWD7179g/efvvweMZARsod/5BEs+7ZH274zfn3/+jDnZQog4wSJtGTNuD8ibFML5Qsg08SIFPpHMu2fDCXwrADKfQZwxqzJsELor818zdeom4uySP8tQKuJMCP8Pz7/XH4iz9qGVn+v1ff/K6kLYNXwZwj+rRnbpAReS1sAK4Y/Y/Bvjd5GJfBc2gJoYVT4KwT/1shtzvBBXi8pC6DFxBoZ/spWKoGMfyvfAkyScTIdtcrjuqKP74iUK4Czd415Is0cI57INOP/Rpb+QqC9k8pTaGKI8nfIEPxnFwKlXAFc27MaiDLp6P+Itpb/bmXpVwDXnk2q7OE/sn2rjnurR9uXLfguBf7X6MtEV74C7tnPyvyKr2zhf6XUCuBa7+vVV7zY5YjVt3OVbyDOKH834GijXi4STdXtjq70h4CjVX65iJd6rEcBNOTlIn94qcc6FEAjXi7y/7zUIz4F0ID3Czznef5xKYCAsgT/VtbtWpkCOMkz6PZpvX1WAecogBNaTr5MS/5XWm+rEjhOARzUOvwVKYH5FMBkVcP/pvr2z6YAJjL5/7Af5lEAB52dtCb9384+rMP+PEYBnHB04pms99mX45W6HbiXj98+bP4QapU792aNc+u+FPw23A3Y0KuJO+MFI61EGrvw7+N24MHuTd5MjxmfuS3Cv58nAg2255SglcxP6Rn9uyqxAujsx+ef6W+N7b19wn+OB4JMlD38l0uMJ/hyjFOABUUJ/rUKz9bLyApgMRHDfy36+PibAljIKuFaZZwogGWsFqrVxluVAljAqmFaddyVKIDgVg/R6uPPTgEEliU8WbYjIwUQVLbQZNueLFwHUMyW7+l7PeaceBRAUC3vJ9gbvut/32IMwh+XAgjs7OvMWwQvwhjoRwEs4Mhq4Fnwjtxrv3cMgr8GdwMu5uhDR44cwY/+LOGPxQNBknkUwHvB63UO72Ed63A7cDL3HkbaK/yPfs6W3098CmBhR8/zj3i26hD+dTkFSMgDOrjmFKCQ3lfcuaIvFwWQyKhwKoE8FAAUpgCSyPwYcvpRAFCYAoDCFEACs5bjTgPWpwCgMAUAhSkAKEwBQGEKAApTAFCYAkhg1h167gxcnwKAwhQAFKYAkhi9HLf8z0EBQGEKIJFRR2VH/zwUQDK9wyn8uSiAhHqFVPjzUQBJtQ6r8OekABJrFVrhz8vLQZM783Zfwc/PCqCIvWEW/hoUABSmAKAwBQCFKQAoTAFAYQoAClMAUJgCgMIUABSmAKAwBQCFKQAoTAFAYQoAClMAUJgCgMIUABSmAKAwBQCFKQAoTAFAYQoAClMAUJgCgMIUABSmAKAwBQCFKQAoTAFAYQoAClMAUJgCgMIUABSmAKAwBQCFKQAoTAFAYQoAClMAUJgCgMIUABT2sgB+ff/6bsRAgPZe5dcKAApTAFCYAoDCFAAUtqkAfBAI69mSWysAKEwBQGEKAArbXAA+B4B1bM2rFQAUtqsArAIgvj05tQKAwhQAFLa7AJwGQFx782kFAIUdPpq///Tld8uBAOccWZ1bAUBhhwvAZwEQx9E8nloBKAGY70wOnQJAYacLwCoA5jmbvyYrACUA47XIXbNTACUA47TKm88AoLCmBWAVAP21zFnzFYASgH5a56vLKYASgPZ65KrbZwBKANrplaeuHwIqATivZ466fwugBOC43vkZGk63EMM2ow6cQ68DsBqA10bmZPiFQEoAHhudj6lhdEoAf8w6ME69FNhqAObmIEwArQaoJsIBcPoAbikCsosQ/DdhBnKPMiCLSKG/FnJQtxQBq4oa/DehB/eIQiCq6IG/tdRgn1EKjLZa2AEAAAAAAIAS/gHdY5pE8ssisAAAAABJRU5ErkJggg==" alt="">
+      <div class="brand-txt"><span class="eyebrow">Protection civile · Réseau LoRa</span>
+      <h1>Supervision Réseau Meshcore Adrasec 06</h1></div>
     </div>
     <div style="display:grid;gap:8px;justify-items:end">
       <div class="radio" id="radio" aria-label="Paramètres radio du réseau"></div>
@@ -624,7 +631,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
   </footer>
 </div>
 <div id="crise" hidden>
-  <div class="cr-head"><div><span class="eyebrow">ADRASEC 06 · Réseau MeshCore</span><h1 id="crTitle">Salle de crise</h1></div><div style="display:flex;gap:16px;align-items:center"><span class="cr-clock" id="crClock">--:--:--</span><button class="btn" id="crClose" type="button">Quitter (Échap)</button></div></div>
+  <div class="cr-head"><div class="brand"><img class="logo sm" src="data:image/png;base64,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" alt=""><div class="brand-txt"><span class="eyebrow">Supervision Réseau Meshcore Adrasec 06</span><h1 id="crTitle">Salle de crise</h1></div></div><div style="display:flex;gap:16px;align-items:center"><span class="cr-clock" id="crClock">--:--:--</span><button class="btn" id="crClose" type="button">Quitter (Échap)</button></div></div>
   <div class="cr-body"><div id="crMap"></div>
     <div class="cr-side"><div class="cr-box"><h2>Répéteurs ADRASEC</h2><div class="cr-nodes" id="crNodes"></div></div>
       <div class="cr-box" id="crAlertsBox"><h2>Alertes</h2><div id="crAlerts"></div></div>

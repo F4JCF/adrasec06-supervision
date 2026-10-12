@@ -407,13 +407,14 @@ class Poller:
         except Exception:
             login = None
 
-        status = None
-        try:
-            status = await mc.commands.req_status_sync(contact, min_timeout=10)
-        except Exception:
-            status = None
+        status = await self._statut_robuste(contact)
 
         if not status:
+            # pas d'état lu : le répéteur est-il quand même vivant ? (trace directe, annonce récente)
+            preuve = await self._preuve_de_vie(contact)
+            if preuve:
+                self._marquer_vivant(node, f"Joignable ({preuve}) mais état non lu cette fois")
+                return
             self.store.add_attempt(node["id"], False)
             await self._mark_failure(node)
             return
@@ -467,6 +468,55 @@ class Poller:
                 if m:
                     fields["tx"] = int(m.group(1))
 
+        old = node.get("statut")
+        if old in ("degrade", "hors-ligne"):
+            fields["statut"] = "en-ligne"
+            self.store.add_journal(name, "AUTO", f"{name} répond de nouveau (était {old}).", auto=True)
+            if old == "hors-ligne":
+                self.alerte("info", name, f"{name} répond de nouveau.")
+        self.store.patch_node(node["id"], fields)
+
+    async def _statut_robuste(self, contact):
+        """Demande d'état avec 2e essai, puis en inondation si la route mémorisée ne passe plus."""
+        mc = self.mc
+        for essai in range(3):
+            if essai == 2:
+                n = contact.get("out_path_len")
+                if n is None or n < 0:
+                    break
+                try:  # route mémorisée périmée : on repart en inondation
+                    await mc.commands.reset_path(contact)
+                    contact["out_path_len"], contact["out_path"] = -1, ""
+                except Exception:  # noqa: BLE001
+                    break
+            try:
+                st = await mc.commands.req_status_sync(contact, min_timeout=10 + 5 * essai)
+            except Exception:  # noqa: BLE001
+                st = None
+            if st:
+                return st
+            await asyncio.sleep(2)
+        return None
+
+    async def _preuve_de_vie(self, contact) -> str | None:
+        adv = contact.get("last_advert") or 0
+        if adv and time.time() - adv < 3 * 3600:
+            return "annonce reçue il y a " + str(int((time.time() - adv) // 60)) + " min"
+        try:
+            if await self._trace(contact):
+                return "voisin direct, trace OK"
+        except Exception:  # noqa: BLE001
+            pass
+        return None
+
+    def _marquer_vivant(self, node: dict, lecture: str | None = None, extra: dict | None = None):
+        """Toute réponse d'un répéteur prouve qu'il est en service : état « en ligne », compteur d'échecs remis à zéro."""
+        node = self.store.get_node(node["id"]) or node
+        name = node.get("nom", "")
+        fields = {"echecs": 0, "dernierEssai": now_iso(), "maj": now_iso(), **(extra or {})}
+        if lecture:
+            fields["lecture"] = lecture
+        self.store.add_attempt(node["id"], True)
         old = node.get("statut")
         if old in ("degrade", "hors-ligne"):
             fields["statut"] = "en-ligne"
@@ -811,6 +861,8 @@ class Poller:
                         ch = self._chemin(c)
                         r.update(joignable=True, sauts=ch.get("sauts"), delai=round(time.time() - t0, 1),
                                  remarque="via le réseau" if ch.get("sauts") else "joignable")
+                if r["joignable"]:
+                    self._marquer_vivant(node)
                 resultats.append(r)
             cid = self.store.add_coverage(lat, lon, lieu or "", resultats)
             ok = sum(1 for r in resultats if r["joignable"])
@@ -924,10 +976,11 @@ class Poller:
             await asyncio.sleep(10)
         if st and st.get("uptime") is not None and st["uptime"] < 300:
             msg = f"Redémarrage de {name} confirmé (en service depuis {st['uptime']} s)."
-            self.store.patch_node(node["id"], {"uptime": st["uptime"], "maj": now_iso()})
+            self._marquer_vivant(node, "Redémarrage confirmé", {"uptime": st["uptime"]})
             ok = True
         elif st:
             msg = f"{name} répond mais n'a pas redémarré (en service depuis {st.get('uptime')} s)."
+            self._marquer_vivant(node, None, {"uptime": st.get("uptime")})
             ok = False
         else:
             msg = f"{name} ne répond pas encore après le redémarrage ; nouvelle vérification au prochain cycle."

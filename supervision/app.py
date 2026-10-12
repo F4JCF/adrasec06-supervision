@@ -13,7 +13,7 @@ from . import aprs, rapports, systeme, taches
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.7.1"
+VERSION = "1.8.0"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -485,7 +485,8 @@ def main():
     reduit = "--reduit" in sys.argv
     window = webview.create_window(
         f"Supervision MeshCore ADRASEC 06 — v{VERSION}", url=str(html), js_api=api,
-        width=1360, height=900, min_size=(900, 640), background_color="#0f161d", hidden=reduit,
+        width=1360, height=860, min_size=(800, 560), background_color="#0f161d", hidden=reduit,
+        maximized=True,
     )
     api._window = window
     window_ref["w"] = window
@@ -494,7 +495,7 @@ def main():
     def afficher():
         try:
             window.show()
-            window.restore()
+            window.maximize()
         except Exception:
             pass
 

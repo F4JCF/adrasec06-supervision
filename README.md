@@ -96,6 +96,10 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 - **Messagerie** : croix au survol d'un message pour le supprimer, bouton **Vider la conversation** (avec confirmation). La suppression ne concerne que l'historique du PC.
 - 1.7.1 : un opérateur qui a écrit sur #ADRASEC 06 (6 h) est signalé par un **triangle orange** sur la carte.
 
+### Nouveautés de la version 1.8
+
+- Titre « Supervision Réseau Meshcore Adrasec 06 » avec le logo ; la fenêtre s'ouvre en plein écran et l'affichage (largeur, hauteur de la carte) s'adapte à la taille de l'écran, y compris sur les portables 1366 × 768.
+
 ### Les données
 
 Tout est enregistré sur le PC dans `%APPDATA%\ADRASEC06-Supervision\supervision.db`, y compris les mots de passe des répéteurs et le PIN Bluetooth (en clair, dans ce fichier local uniquement). Le journal technique est dans `supervision.log` au même endroit.
