@@ -13,7 +13,7 @@ from . import aprs, rapports, systeme, taches
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.10.2"
+VERSION = "1.11.0"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -206,6 +206,9 @@ class Api:
         return self._poller.envoyer_message(texte, canal, contact)
 
     # ----- commandes à distance -----
+    def reinit_chemin(self, node_id):
+        return self._poller.reinit_chemin(node_id, self._store.get_config("operateur", ""))
+
     def commande(self, node_id, cmd):
         return self._poller.commande(node_id, cmd, self._store.get_config("operateur", ""))
 

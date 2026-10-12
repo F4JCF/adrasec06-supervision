@@ -111,6 +111,11 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 
 - **Moyens engagés** : menus déroulants pour l'indicatif, la fonction, l'équipe, le matériel et le lieu. Listes de base + valeurs déjà utilisées dans les mains courantes précédentes + « Autre… » pour saisir librement. Choisir un opérateur déjà connu remplit automatiquement son nom, sa fonction, son équipe, son matériel et son lieu habituels ; les indicatifs suivis en APRS sont proposés.
 
+### Nouveautés de la version 1.11
+
+- Fiche d'un nœud : date et heure de lecture de la télémétrie et du chemin.
+- **Réinitialiser le chemin** (toutes les fiches, nœud companion connecté, sans mot de passe) : le nœud companion oublie la route mémorisée vers ce nœud ; pour un répéteur, il l'interroge aussitôt pour réapprendre un chemin. Avant/après noté au journal.
+
 ### Les données
 
 Tout est enregistré sur le PC dans `%APPDATA%\ADRASEC06-Supervision\supervision.db`, y compris les mots de passe des répéteurs et le PIN Bluetooth (en clair, dans ce fichier local uniquement). Le journal technique est dans `supervision.log` au même endroit.

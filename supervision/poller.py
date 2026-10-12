@@ -384,7 +384,7 @@ class Poller:
                 }, bump=False)
                 added += 1
             else:
-                fields = {"dernierAdvert": last_seen, "cle": c.get("public_key", "")[:12], "chemin": self._chemin(c)}
+                fields = {"dernierAdvert": last_seen, "cle": c.get("public_key", "")[:12], "chemin": self._chemin(c), "cheminDate": now_iso()}
                 if has_pos and (node.get("lat") in ("", None) or node.get("lon") in ("", None)):
                     fields.update(lat=round(lat, 5), lon=round(lon, 5))
                 node.update(fields)
@@ -826,6 +826,62 @@ class Poller:
             return {"ok": False, "erreur": f"Commande impossible : {e}"}
         finally:
             self.prioritaire = max(0, self.prioritaire - 1)
+
+    # ---------- réinitialisation du chemin ----------
+    def reinit_chemin(self, node_id: str, operateur: str = "") -> dict:
+        """Oublie la route mémorisée par le nœud companion vers ce nœud ; la suivante est réapprise en inondation."""
+        if self.mc is None:
+            return {"ok": False, "erreur": "Aucun nœud connecté."}
+        node = self.store.get_node(node_id)
+        if node is None:
+            return {"ok": False, "erreur": "Nœud inconnu."}
+        self.prioritaire += 1
+        try:
+            return self._submit(self._reinit_chemin(node, operateur), timeout=120)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "erreur": f"Réinitialisation impossible : {e}"}
+        finally:
+            self.prioritaire = max(0, self.prioritaire - 1)
+
+    async def _reinit_chemin(self, node: dict, operateur: str) -> dict:
+        if not await self._attendre_la_main("Réinitialisation du chemin"):
+            return {"ok": False, "erreur": "L'interrogation en cours ne s'est pas terminée à temps. Réessayez."}
+        name = node.get("nom", "")
+        contact = self._contact_for(name)
+        if contact is None:
+            res = await self.mc.commands.get_contacts()
+            if res is not None and res.type != EventType.ERROR:
+                self._contacts = dict(res.payload or {})
+            contact = self._contact_for(name)
+        if contact is None:
+            return {"ok": False, "erreur": f"{name} n'est pas dans les contacts du nœud companion."}
+        avant = self._chemin(contact)
+        ev = await self.mc.commands.reset_path(contact)
+        if ev is None or ev.type == EventType.ERROR:
+            return {"ok": False, "erreur": "Le nœud companion a refusé la réinitialisation."}
+        contact["out_path_len"], contact["out_path"] = -1, ""
+        self.store.patch_node(node["id"], {"chemin": self._chemin(contact), "cheminDate": now_iso()})
+        # on sollicite le nœud pour qu'un nouveau chemin soit appris tout de suite (répéteurs uniquement)
+        apres = None
+        if contact.get("type") in (2, 3):
+            try:
+                await self.mc.commands.req_status_sync(contact, min_timeout=15)
+            except Exception:  # noqa: BLE001
+                pass
+            res = await self.mc.commands.get_contacts()
+            if res is not None and res.type != EventType.ERROR:
+                self._contacts = dict(res.payload or {})
+            c2 = self._contact_for(name)
+            if c2 is not None:
+                apres = self._chemin(c2)
+                self.store.patch_node(node["id"], {"chemin": apres, "cheminDate": now_iso()})
+        def txt(c):
+            if not c or c["type"] == "inondation":
+                return "inondation (route inconnue)"
+            return "direct" if c["type"] == "direct" else " → ".join(c["relais"])
+        msg = f"Chemin réinitialisé (avant : {txt(avant)})" + (f" ; nouveau chemin : {txt(apres)}" if apres else " ; il sera réappris au prochain échange")
+        self.store.add_journal(name, operateur or "AUTO", msg + ".")
+        return {"ok": True, "message": msg, "chemin": apres}
 
     async def _commande_prio(self, node, cmd, operateur):
         if not await self._attendre_la_main("Commande"):

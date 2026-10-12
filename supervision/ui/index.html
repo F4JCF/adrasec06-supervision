@@ -1181,9 +1181,11 @@ const HOT_MIN = 360; // 6 heures
         ${own ? row("Mot de passe admin", n.aMotDePasse ? "enregistré" : `<span style="color:var(--warn)">non renseigné</span>`) : ""}
       </dl>
       ${sparks}
-      ${(n.telemetrie||[]).length ? `<div class="neigh"><strong style="font-size:.9rem">Télémétrie${n.telemetrieDate?` <span class="muted" style="font-weight:400">· ${ago(n.telemetrieDate)}</span>`:""}</strong><div class="tele">${n.telemetrie.map(t => `<span>${esc(teleLabel(t))}</span>`).join("")}</div></div>` : ""}
+      ${(n.telemetrie||[]).length ? `<div class="neigh"><strong style="font-size:.9rem">Télémétrie${n.telemetrieDate?` <span class="muted" style="font-weight:400">· lue le ${fmtDate(n.telemetrieDate)} (${ago(n.telemetrieDate)})</span>`:""}</strong><div class="tele">${n.telemetrie.map(t => `<span>${esc(teleLabel(t))}</span>`).join("")}</div></div>` : ""}
       ${n.notesMaintenance ? `<div class="neigh"><strong style="font-size:.9rem">Notes de maintenance</strong><p style="margin:0;white-space:pre-wrap">${esc(n.notesMaintenance)}</p></div>` : ""}
-      ${n.chemin ? `<div class="neigh"><strong style="font-size:.9rem">Chemin depuis le nœud companion</strong>${renderPath(n.chemin)}</div>` : ""}
+      <div class="neigh"><strong style="font-size:.9rem">Chemin depuis le nœud companion${n.cheminDate?` <span class="muted" style="font-weight:400">· lu le ${fmtDate(n.cheminDate)}</span>`:""}</strong>
+        ${n.chemin ? renderPath(n.chemin) : `<span class="reading">Chemin pas encore lu.</span>`}
+        <div class="row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px"><button class="btn small" data-reinitchemin="${esc(n.id)}" ${liaison.connecte && !cheminBusy ? "" : "disabled"} title="Le nœud companion oublie la route mémorisée vers ce nœud et en réapprend une (utile si un relais du chemin est tombé)">${cheminBusy === n.id ? "Réinitialisation…" : "Réinitialiser le chemin"}</button>${!liaison.connecte ? `<span class="reading">Connectez le nœud companion</span>` : ""}</div></div>
       ${own && liaison.connecte ? renderCmds(n) : ""}
       ${neigh ? `<div class="neigh"><strong style="font-size:.9rem">Voisins entendus</strong>${neigh}</div>` : ""}
       ${n.notes ? `<p style="margin:0;white-space:pre-wrap">${esc(n.notes)}</p>` : ""}
@@ -1199,7 +1201,7 @@ const HOT_MIN = 360; // 6 heures
     if (c.type === "inondation" || !c.relais) return `<div class="path"><span>route inconnue : diffusion (flood) à chaque message</span></div>`;
     return `<div class="path"><span>${esc(liaison.noeudLocal||"companion")}</span>${c.relais.map(r => `<i>→</i><span>${esc(r)}</span>`).join("")}<i>→</i><span><b>destination</b></span></div><span class="reading">${c.sauts} relais${c.sauts>1?"":""}</span>`;
   }
-  let cmdConfirm = null;
+  let cmdConfirm = null, cheminBusy = null;
   function renderCmds(n){
     if (!n.aMotDePasse) return `<div class="cmds"><strong style="font-size:.9rem">Commandes à distance</strong><span class="reading">Saisissez le mot de passe admin (Modifier) pour commander ce répéteur.</span></div>`;
     const conf = cmdConfirm && cmdConfirm.id === n.id ? cmdConfirm.cmd : null;
@@ -1710,6 +1712,12 @@ const HOT_MIN = 360; // 6 heures
     if (mid && !window.getSelection().toString()) { ouvrirDetail(+mid.dataset.msgid); return; }
     const mc = t.closest("[data-mc]");
     if (mc) { const r = await api.main_courante(+mc.dataset.mc); if (r.ok) toast("Main courante enregistrée : " + r.chemin); else if (r.erreur) toast(r.erreur); return; }
+    const rc = t.closest("[data-reinitchemin]");
+    if (rc) {
+      cheminBusy = rc.dataset.reinitchemin; renderFiche(); toast("Réinitialisation du chemin… (jusqu'à 30 s)");
+      let r; try { r = await api.reinit_chemin(cheminBusy); } catch(err) { r = {ok:false, erreur:String(err)}; }
+      cheminBusy = null; toast(r.ok ? r.message : r.erreur); refresh(true); renderFiche(); return;
+    }
     const cb = t.closest("[data-cmd]");
     if (cb) {
       let cmd = cb.dataset.cmd;
