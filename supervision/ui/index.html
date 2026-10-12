@@ -725,6 +725,17 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     const d = Math.floor(h/24); return d === 1 ? "hier" : `il y a ${d} j`;
   };
   const fmtDate = iso => { try { return new Date(iso).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"}); } catch(e){ return iso; } };
+  function horlogeHtml(n){
+    const t = new Date(n.horloge), e = +n.horlogeEcart || 0, ae = Math.abs(e);
+    const date = t.toLocaleString("fr-FR", {weekday:"short", day:"2-digit", month:"2-digit", year:"numeric", hour:"2-digit", minute:"2-digit", ...(n.horlogeSecondes ? {second:"2-digit"} : {})});
+    const ecart = ae < 60 ? (n.horlogeSecondes ? (ae ? `${e > 0 ? "+" : "−"}${ae} s` : "à l'heure") : "à l'heure (à la minute près)")
+      : `${e > 0 ? "en avance" : "en retard"} de ${ae >= 86400 ? Math.round(ae/86400) + " j" : ae >= 3600 ? Math.round(ae/3600) + " h" : Math.round(ae/60) + " min"}`;
+    const mauvais = ae >= 120;
+    return `<div class="tele" style="margin:4px 0 6px"><span style="${mauvais ? "border-color:var(--crit);color:var(--crit)" : ""}">Heure du nœud : ${esc(date)}</span>
+      <span style="${mauvais ? "border-color:var(--crit);color:var(--crit)" : ""}">${esc(ecart)}</span></div>
+      ${mauvais ? `<span class="muted" style="font-size:.8rem;color:var(--crit)">Horloge décalée : utilisez « Remettre l'heure » (mot de passe admin).</span>` : ""}
+      <span class="muted" style="font-size:.76rem;display:block">Heure lue sur le nœud le ${fmtDate(n.horlogeLue)} · affichée à l'heure de ce PC</span>`;
+  }
   const fmtUptime = s => { if (empty(s)) return ""; const d=Math.floor(s/86400), h=Math.floor(s%86400/3600), m=Math.floor(s%3600/60); return (d?d+" j ":"")+h+" h "+String(m).padStart(2,"0"); };
   const statusOf = n => n.eteint ? {t:"Éteint", c:"var(--muted)", hollow:true} : n.statut === "supprime" ? STATUTS.supprime : n.proprio === "externe" ? {t:"Voisin", c:"var(--navy)"} : (STATUTS[n.statut] || STATUTS.prevu);
   const pill = n => { const s = statusOf(n); return `<span class="pill" style="--c:${s.c}"><span class="dot${s.hollow?" hollow":""}" style="--c:${s.c}"></span>${s.t}</span>`; };
@@ -1181,7 +1192,9 @@ const HOT_MIN = 360; // 6 heures
         ${own ? row("Mot de passe admin", n.aMotDePasse ? "enregistré" : `<span style="color:var(--warn)">non renseigné</span>`) : ""}
       </dl>
       ${sparks}
-      ${(n.telemetrie||[]).length ? `<div class="neigh"><strong style="font-size:.9rem">Télémétrie${n.telemetrieDate?` <span class="muted" style="font-weight:400">· lue le ${fmtDate(n.telemetrieDate)} (${ago(n.telemetrieDate)})</span>`:""}</strong><div class="tele">${n.telemetrie.map(t => `<span>${esc(teleLabel(t))}</span>`).join("")}</div></div>` : ""}
+      ${(n.telemetrie||[]).length || n.horloge ? `<div class="neigh"><strong style="font-size:.9rem">Télémétrie${n.telemetrieDate?` <span class="muted" style="font-weight:400">· lue le ${fmtDate(n.telemetrieDate)} (${ago(n.telemetrieDate)})</span>`:""}</strong>
+        ${n.horloge ? horlogeHtml(n) : ""}
+        ${(n.telemetrie||[]).length ? `<div class="tele">${n.telemetrie.map(t => `<span>${esc(teleLabel(t))}</span>`).join("")}</div>` : ""}</div>` : ""}
       ${n.notesMaintenance ? `<div class="neigh"><strong style="font-size:.9rem">Notes de maintenance</strong><p style="margin:0;white-space:pre-wrap">${esc(n.notesMaintenance)}</p></div>` : ""}
       <div class="neigh"><strong style="font-size:.9rem">Chemin depuis le nœud companion${n.cheminDate?` <span class="muted" style="font-weight:400">· lu le ${fmtDate(n.cheminDate)}</span>`:""}</strong>
         ${n.chemin ? renderPath(n.chemin) : `<span class="reading">Chemin pas encore lu.</span>`}
@@ -1232,6 +1245,7 @@ const HOT_MIN = 360; // 6 heures
       <div class="row">
         ${esp ? `<button class="btn small" data-cmd="start ota">Préparer la mise à jour (start ota)</button>` : ""}
         <button class="btn small" data-cmd="ver">Vérifier la version</button>
+        <button class="btn small" data-cmd="clock">Lire l'heure du nœud</button>
         <button class="btn small" data-cmd="clock sync">Remettre l'heure</button>
       </div>
       <span class="reading">Firmware : <span class="mono">flasher.meshcore.co.uk</span> (onglet du firmware Repeater de votre carte) ou la page GitHub des versions MeshCore.</span>
@@ -1722,7 +1736,7 @@ const HOT_MIN = 360; // 6 heures
     if (cb) {
       let cmd = cb.dataset.cmd;
       if (cmd === "tx") { const v = +$("#cmdTx").value; if (!(v>=1 && v<=22)) { toast("Puissance entre 1 et 22 dBm."); return; } cmd = "set tx " + v; }
-      if (cmd === "ver" || cmd === "clock sync") {
+      if (cmd === "ver" || cmd === "clock sync" || cmd === "clock") {
         toast("Commande envoyée, réponse attendue…");
         const r = await api.commande(sel, cmd);
         toast(r.ok ? (r.reponse ? `Réponse : ${r.reponse}` : "Pas de réponse du répéteur") : r.erreur);

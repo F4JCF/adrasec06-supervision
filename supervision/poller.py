@@ -466,6 +466,7 @@ class Poller:
                     if node.get("otaDebut"):
                         self._confirmer_ota(node, fields["firmware"], "AUTO")
                         fields["otaDebut"] = ""
+            fields.update(self._horloge(await self._cli(contact, "clock")))
             tx = await self._cli(contact, "get tx")
             if tx:
                 m = re.search(r"(-?\d+)", tx)
@@ -802,6 +803,7 @@ class Poller:
         "start ota": "start ota",
         "ver": "ver",
         "clock sync": "clock sync",
+        "clock": "clock",
     }
 
     def commande(self, node_id: str, cmd: str, operateur: str = "") -> dict:
@@ -911,6 +913,11 @@ class Poller:
         if cmd == "start ota":
             self.store.patch_node(node["id"], {"otaDebut": now_iso(), "otaFirmwareAvant": node.get("firmware", ""),
                                                "otaReponse": (reponse or "").strip()})
+        if cmd == "clock sync" and reponse:
+            reponse_h = await self._cli(contact, "clock")
+            self.store.patch_node(node["id"], self._horloge(reponse_h))
+        if cmd == "clock":
+            self.store.patch_node(node["id"], self._horloge(reponse))
         if cmd == "ver" and reponse:
             m = re.search(r"v?(\d+\.\d+(?:\.\d+)?)", reponse)
             if m:
@@ -1048,6 +1055,25 @@ class Poller:
 
 
     # ---------- mise à jour du firmware (OTA Wi-Fi) ----------
+    @staticmethod
+    def _horloge(reponse) -> dict:
+        """« 21:27 - 12/10/2026 UTC » (réponse de la commande clock) → heure du nœud et écart avec le PC."""
+        m = re.search(r"(\d{1,2}):(\d{2})(?::(\d{2}))?\s*-\s*(\d{1,2})/(\d{1,2})/(\d{4})", reponse or "")
+        if not m:
+            return {}
+        import datetime as _dt
+        hh, mi, ss, j, mo, an = m.groups()
+        try:
+            t = _dt.datetime(int(an), int(mo), int(j), int(hh), int(mi), int(ss or 0), tzinfo=_dt.timezone.utc)
+        except ValueError:
+            return {}
+        pc = _dt.datetime.now(_dt.timezone.utc)
+        ecart = (t - pc).total_seconds()
+        if ss is None:  # réponse à la minute près : écart nul si le PC est dans la même minute
+            ecart = 0 if -60 < ecart <= 0 else round((ecart + 30) / 60) * 60
+        return {"horloge": t.isoformat(), "horlogeEcart": int(ecart), "horlogeSecondes": ss is not None,
+                "horlogeLue": now_iso()}
+
     def _confirmer_ota(self, node: dict, nouvelle: str, operateur: str):
         """Après un « start ota », note la nouvelle version quand elle change."""
         avant = node.get("otaFirmwareAvant") or node.get("firmware") or "?"
