@@ -9,11 +9,14 @@ from pathlib import Path
 
 import webview
 
-from . import aprs, rapports, systeme, taches
+import re
+import time
+
+from . import aprs, courriel, rapports, systeme, taches, web
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.11.5"
+VERSION = "1.12.0"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -31,6 +34,8 @@ class Api:
         self._quitter = None
         self._taches = None
         self._aprs = None
+        self._courrier = None
+        self._web = None
 
     # ----- lecture -----
     def revision(self):
@@ -63,6 +68,11 @@ class Api:
                 "dossierSauvegarde": self._store.get_config("dossier_sauvegarde", ""),
                 "derniereSauvegarde": self._store.get_config("derniere_sauvegarde", ""),
                 "majAuto": bool(self._store.get_config("maj_auto", True)),
+                "horlogeAuto": bool(self._store.get_config("horloge_auto", True)),
+                "mail": courriel.reglages(self._store),
+                "mailDernier": self._courrier.dernier if self._courrier else None,
+                "web": {**(self._web.reglages() if self._web else {}), "etat": self._web.etat if self._web else {}},
+                "rapport": self._taches.reglages_rapport() if self._taches else {},
                 "modeles": self.modeles(),
             },
             "maj": self._taches.maj if self._taches else None,
@@ -70,10 +80,144 @@ class Api:
             "aprs": {"etat": self._aprs.etat if self._aprs else {}, "reglages": self._aprs.reglages() if self._aprs else {},
                      "stations": self._store.aprs_stations(12), "traces": self._store.aprs_traces(6)},
             "couvertures": self._store.list_coverage(),
+            "appel": self._store.appel(),
             "dispo": {n["id"]: {"j7": self._store.availability(n["id"], 7)["pct"],
                                 "j30": self._store.availability(n["id"], 30)["pct"]}
                       for n in nodes if n.get("proprio") != "externe" and n.get("statut") not in ("prevu", "supprime")},
         }
+
+    # ----- tableau de bord web (lecture seule) -----
+    def _canal_adrasec(self):
+        norm = lambda x: re.sub(r"[^a-z0-9]", "", (x or "").lower())
+        ch = self._poller.canaux or []
+        return next((c for c in ch if norm(c["nom"]) == "adrasec06"), None) or \
+            next((c for c in ch if "adrasec06" in norm(c["nom"])), None)
+
+    def tableau_donnees(self):
+        nodes = [n for n in self._store.list_nodes() if n.get("statut") != "supprime"]
+        garder = ("id", "nom", "statut", "proprio", "lat", "lon", "batterie", "bruit", "firmware", "maj", "eteint",
+                  "horloge", "horlogeEcart", "horlogeLue", "tendances", "autonomie", "voisins", "role")
+        norm = lambda x: re.sub(r"[^a-z0-9]", "", (x or "").lower())
+        out = []
+        for n in nodes:
+            d = {k: n.get(k) for k in garder}
+            d["encart"] = (n.get("proprio") != "externe" and n.get("statut") not in ("prevu",)) or norm(n.get("nom")) == "fr06mouginsf4jcf"
+            if d.get("autonomie"):
+                d["autonomie"] = {"jours": d["autonomie"].get("jours")}
+            if n.get("proprio") == "externe":
+                d["voisins"] = []
+            out.append(d)
+        ch = self._canal_adrasec()
+        msgs = [m for m in self._store.list_messages(400) if m.get("canal") is not None and
+                (m["canal"] == ch["index"] if ch else "adrasec06" in norm(m.get("canal_nom")))][-20:][::-1]
+        li = self._poller.state()
+        return {"version": VERSION, "noeuds": out, "alertes": self._store.list_alerts(12),
+                "messages": [{k: m.get(k) for k in ("date", "sens", "auteur", "texte")} for m in msgs],
+                "canal": ch["nom"] if ch else "", "appel": self._store.appel(), "exercice": self._store.current_exercise(),
+                "liaison": {k: li.get(k) for k in ("connecte", "noeudLocal", "batterie", "position")},
+                "equipes": li.get("equipes") or [],
+                "dispo": {n["id"]: {"j7": self._store.availability(n["id"], 7)["pct"]} for n in out if n["encart"]}}
+
+    def regler_web(self, actif=None, port=None, code=None):
+        return self._web.regler(actif, port, code) if self._web else {"ok": False, "erreur": "Indisponible."}
+
+    # ----- e-mail -----
+    def regler_mail(self, options):
+        return courriel.regler(self._store, options or {})
+
+    def tester_mail(self):
+        r = courriel.envoyer(self._store, "[ADRASEC 06] Essai d'envoi",
+                             "Ceci est un e-mail d'essai envoyé par le logiciel de supervision MeshCore ADRASEC 06.\n"
+                             "Si vous le recevez, les alertes par e-mail fonctionnent.")
+        if self._courrier:
+            self._courrier.dernier = {"date": time.strftime("%Y-%m-%dT%H:%M:%S"), "ok": r["ok"], "erreur": r.get("erreur", "")}
+        self._store._bump()
+        return r
+
+    # ----- rapport hebdomadaire -----
+    def regler_rapport(self, options):
+        o = options or {}
+        for k, ck in (("actif", "rapport_auto"), ("jour", "rapport_jour"), ("heure", "rapport_heure"),
+                      ("dossier", "rapport_dossier"), ("mail", "rapport_mail")):
+            if k in o:
+                v = o[k]
+                if k in ("actif", "mail"):
+                    v = bool(v)
+                elif k == "jour":
+                    try:
+                        v = max(0, min(6, int(v)))
+                    except (TypeError, ValueError):
+                        continue
+                else:
+                    v = str(v or "").strip()
+                self._store.set_config(ck, v)
+        self._store._bump()
+        return {"ok": True}
+
+    def choisir_dossier_rapport(self):
+        if not self._window:
+            return {"ok": False}
+        r = self._window.create_file_dialog(webview.FOLDER_DIALOG)
+        if not r:
+            return {"ok": False}
+        self._store.set_config("rapport_dossier", r[0] if isinstance(r, (list, tuple)) else r)
+        self._store._bump()
+        return {"ok": True}
+
+    def generer_rapport(self):
+        try:
+            return self._taches.generer_rapport()
+        except Exception as e:  # noqa: BLE001
+            logging.getLogger("supervision").exception("rapport")
+            return {"ok": False, "erreur": str(e)}
+
+    def ouvrir_dossier_rapports(self):
+        try:
+            os.startfile(str(self._taches.dossier_rapports()))  # type: ignore[attr-defined]
+            return {"ok": True}
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "erreur": str(e)}
+
+    # ----- appel des stations -----
+    def lancer_appel(self, texte=None):
+        ch = self._canal_adrasec()
+        if ch is None:
+            return {"ok": False, "erreur": "Le canal ADRASEC 06 n'est pas configuré sur le nœud companion."}
+        op = (self._store.get_config("operateur", "") or "").strip()
+        texte = (texte or "").strip() or f"APPEL ADRASEC 06 {time.strftime('%H:%M')} de {op or 'PC'} : répondez SVP avec indicatif et position."
+        r = self._poller.envoyer_message(texte, canal=ch["index"])
+        if not r.get("ok"):
+            return r
+        ex = self._store.current_exercise()
+        aid = self._store.start_appel(ch["index"], ch["nom"], texte, ex["id"] if ex else None, op)
+        if ex:
+            self._store.add_journal("", op or "PC", f"Appel des stations lancé sur #{ch['nom'].lstrip('#')} : « {texte} »",
+                                    exercice=ex["id"], emetteur=op or "PC", destinataire="Toutes stations", nature="demande")
+        return {"ok": True, "id": aid}
+
+    def clore_appel(self):
+        a = self._store.appel()
+        if not a or not a["enCours"]:
+            return {"ok": False, "erreur": "Aucun appel en cours."}
+        self._store.stop_appel(a["id"])
+        a = self._store.appel(a["id"])
+        rep = a["reponses"]
+        liste = ", ".join(f"{r['auteur']} ({time.strftime('%H:%M', time.localtime(r['ts']))})" for r in rep)
+        texte = (f"Appel des stations de {time.strftime('%H:%M', time.localtime(a['debut']))} clos : "
+                 f"{len(rep)} station(s) ont répondu" + (f" : {liste}." if rep else "."))
+        op = self._store.get_config("operateur", "")
+        self._store.add_journal("", op or "PC", texte, exercice=a.get("exercice") or None, emetteur=op or "PC",
+                                nature="compte-rendu")
+        return {"ok": True, "texte": texte}
+
+    # ----- liaison et messages -----
+    def tester_liaison(self, node_id):
+        r = self._poller.tester_liaison(node_id, self._store.get_config("operateur", ""))
+        self._noter_requete(node_id, "test liaison", r)
+        return r
+
+    def renvoyer_message(self, mid):
+        return self._poller.renvoyer_message(int(mid))
 
     def historique(self, node_id, jours=7):
         return self._store.history(node_id, int(jours))
@@ -209,7 +353,8 @@ class Api:
     LIBELLES = {"advert": "Envoyer un advert", "reboot": "Redémarrer", "poweroff": "Éteindre",
                 "powersaving on": "Économie d'énergie : activer", "powersaving off": "Économie d'énergie : désactiver",
                 "start ota": "Préparer la mise à jour (OTA)", "ver": "Vérifier la version", "clock sync": "Remettre l'heure",
-                "clock": "Lire l'heure du nœud", "reinit chemin": "Réinitialiser le chemin"}
+                "clock": "Lire l'heure du nœud", "reinit chemin": "Réinitialiser le chemin",
+                "test liaison": "Tester la liaison"}
 
     def _noter_requete(self, node_id, cmd, r):
         try:
@@ -250,6 +395,8 @@ class Api:
             self._store.set_config("reduire_zone", bool(o["reduireZone"]))
         if "notifications" in o:
             self._store.set_config("notifications", bool(o["notifications"]))
+        if "horlogeAuto" in o:
+            self._store.set_config("horloge_auto", bool(o["horlogeAuto"]))
         if "fondCarte" in o:
             self._store.set_config("fond_carte", str(o["fondCarte"]))
         if "demarrageAuto" in o:
@@ -503,8 +650,14 @@ def main():
     window_ref = {}
     tray_ref = {}
 
+    courrier = courriel.Courrier(store)
+
     def alerte(niveau, noeud, texte):
         store.add_alert(niveau, noeud, texte)
+        try:
+            courrier.alerte(niveau, noeud, texte)
+        except Exception:  # noqa: BLE001
+            pass
         if store.get_config("notifications", True):
             titre = {"critique": "Répéteur hors ligne", "attention": "Alerte batterie",
                      "message": "Message MeshCore", "info": "Supervision ADRASEC 06"}.get(niveau, "Supervision ADRASEC 06")
@@ -514,6 +667,8 @@ def main():
     api = Api(store, poller)
     api._taches = taches.Taches(store, alerte, VERSION)
     api._aprs = aprs.AprsIS(store, VERSION)
+    api._courrier = courrier
+    api._web = web.Tableau(store, api.tableau_donnees)
     html = resource_path("ui/index.html")
     reduit = "--reduit" in sys.argv
     window = webview.create_window(

@@ -386,6 +386,17 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
 .hvig .lbl{font-size:.72rem;color:var(--muted);min-width:7.5em}
 .hvig b{font-family:var(--f-mono);font-size:.88rem;font-weight:500;font-variant-numeric:tabular-nums}
 .hvig b small{font-size:.72rem;color:var(--muted)}
+.tendv{font-size:.76rem;color:var(--warn);display:grid;gap:2px}
+.tendv span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tendbox{border:1px solid var(--warn);border-radius:6px;padding:8px 10px;display:grid;gap:4px;color:var(--warn);font-size:.88rem}
+.autobox svg{width:100%;height:70px;display:block}
+.tl-seg{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;font-size:.84rem;padding:3px 0;border-bottom:1px dashed var(--line)}
+.tl-seg span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.appelbox{border:2px solid var(--accent);border-radius:6px;padding:8px 10px;margin:8px 12px 0;display:grid;gap:6px;font-size:.88rem}
+.appelbox ol{margin:0;padding-left:1.4em;display:grid;gap:2px}
+.statut-ok{color:var(--ok)}.statut-ko{color:var(--crit)}
+.weak{display:grid;gap:4px}
+.weak div{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;font-size:.88rem;border-bottom:1px solid var(--line);padding:4px 0}
 .dreq{display:grid;gap:1px;border-top:1px dashed var(--line);padding-top:6px;font-size:.8rem;min-width:0}
 .dreq .lbl{font-size:.72rem;color:var(--muted)}
 .dreq .l1,.dreq .l2{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -516,6 +527,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
       <div class="convs" id="convs"></div>
       <div class="thread">
         <div class="thread-head"><div><h2 id="threadTitle">Messagerie</h2><span class="muted" style="font-size:.82rem" id="threadSub"></span></div><div class="acts" id="threadActs"></div></div>
+        <div class="appelbox" id="appelPanel" hidden></div>
         <div class="msgs" id="msgs"></div>
         <div style="padding:8px 12px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><select id="tplSel" style="width:auto;max-width:100%"><option value="">Message type…</option></select><span class="reading">[heure] et [indicatif] sont remplis automatiquement · la suppression d'un message ne concerne que ce PC</span></div>
         <form class="compose" id="compose">
@@ -615,6 +627,10 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
       <div class="panel-head"><h2>Disponibilité des répéteurs</h2><span class="reading">Part des interrogations réussies</span></div>
       <div class="table-wrap"><table style="min-width:640px"><thead><tr><th>Répéteur</th><th>7 jours</th><th></th><th>30 jours</th><th></th><th>Dernière coupure</th></tr></thead><tbody id="dispoRows"></tbody></table></div>
     </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Maillons faibles</h2><span class="reading">Liaisons des répéteurs ADRASEC sous −5 dB (lues dans les voisins)</span></div>
+      <div class="weak" id="weakList"></div>
+    </section>
     <div class="cols2">
       <section class="panel">
         <div class="panel-head"><h2>Test de couverture</h2></div>
@@ -643,6 +659,34 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
       <p class="hint">Le logiciel démarre réduit près de l'horloge et se reconnecte au dernier nœud utilisé.</p>
       <label class="line"><input type="checkbox" id="optZone"> La croix de la fenêtre réduit près de l'horloge au lieu de quitter</label>
       <p class="hint">Pour quitter complètement : clic droit sur l'icône près de l'horloge, puis « Quitter ».</p>
+      <label class="line"><input type="checkbox" id="optHorloge"> Remettre automatiquement à l'heure les répéteurs décalés de plus de 2 minutes</label>
+      <p class="hint">À chaque interrogation (mot de passe admin requis), l'heure du PC est transmise au nœud companion puis au répéteur. Chaque correction est notée au journal.</p>
+      <div class="panel-head" style="margin-top:6px"><h2>Alertes par e-mail</h2></div>
+      <p style="margin:0">Répéteur hors ligne, batterie faible, alerte précoce… sont aussi envoyés par e-mail (regroupés par minute). Pour Infomaniak : serveur mail.infomaniak.com, port 465, SSL, identifiant = votre adresse complète.</p>
+      <label class="line"><input type="checkbox" id="mlOn"> Envoyer les alertes par e-mail</label>
+      <div class="fgrid">
+        <label>Serveur d'envoi (SMTP)<input id="mlSrv" placeholder="mail.infomaniak.com"></label>
+        <label>Port et sécurité<span style="display:flex;gap:6px"><input id="mlPort" type="number" style="width:6em"><select id="mlSec"><option value="ssl">SSL</option><option value="starttls">STARTTLS</option><option value="aucune">Aucune</option></select></span></label>
+        <label>Identifiant<input id="mlUser" autocomplete="off" placeholder="f4jcf@bouthors.re"></label>
+        <label>Mot de passe<input id="mlPwd" type="password" autocomplete="off"></label>
+        <label>Expéditeur (vide = identifiant)<input id="mlFrom"></label>
+        <label>Destinataires (séparés par des virgules)<input id="mlTo"></label>
+      </div>
+      <label class="line"><input type="checkbox" id="mlMsg"> Envoyer aussi les messages directs reçus</label>
+      <div class="actions"><button class="btn" id="mlSave" type="button">Enregistrer</button><button class="btn" id="mlTest" type="button">Envoyer un e-mail d'essai</button><span class="reading" id="mlState"></span></div>
+      <div class="panel-head" style="margin-top:6px"><h2>Tableau de bord sur tablette ou téléphone</h2></div>
+      <p style="margin:0">Une page en lecture seule (carte, répéteurs, alertes, canal ADRASEC 06, appel des stations) consultable depuis un autre appareil branché sur le même réseau (box, Wi-Fi). Au premier lancement, Windows demande d'autoriser l'accès réseau : acceptez pour les réseaux privés.</p>
+      <label class="line"><input type="checkbox" id="wbOn"> Activer le tableau de bord</label>
+      <div class="fgrid"><label>Port<input id="wbPort" type="number" min="1024" max="65535"></label><label>Code d'accès (vide = sans code)<input id="wbCode" maxlength="20" autocomplete="off"></label></div>
+      <div class="actions"><button class="btn" id="wbSave" type="button">Enregistrer</button><span class="reading" id="wbState"></span></div>
+      <div class="mono" id="wbUrls" style="font-size:.9rem;display:grid;gap:2px"></div>
+      <div class="panel-head" style="margin-top:6px"><h2>Rapport hebdomadaire</h2></div>
+      <p style="margin:0">Un PDF de l'état du réseau (disponibilité, batteries, tendances, alertes) est enregistré chaque semaine ; il peut aussi être envoyé par e-mail.</p>
+      <label class="line"><input type="checkbox" id="rpOn"> Générer le rapport automatiquement</label>
+      <div class="fgrid"><label>Jour<select id="rpJour"><option value="0">lundi</option><option value="1">mardi</option><option value="2">mercredi</option><option value="3">jeudi</option><option value="4">vendredi</option><option value="5">samedi</option><option value="6">dimanche</option></select></label><label>Heure<input id="rpHeure" type="time"></label></div>
+      <label class="line"><input type="checkbox" id="rpMail"> L'envoyer aussi par e-mail (réglages ci-dessus)</label>
+      <div class="actions"><span class="mono" id="rpDir" style="font-size:.85rem;overflow-wrap:anywhere"></span></div>
+      <div class="actions"><button class="btn" id="rpSave" type="button">Enregistrer</button><button class="btn" id="rpDirBtn" type="button">Choisir le dossier…</button><button class="btn" id="rpNow" type="button">Générer maintenant</button><button class="btn small" id="rpOpen" type="button">Ouvrir le dossier</button><span class="reading" id="rpLast"></span></div>
       <div class="panel-head" style="margin-top:6px"><h2>Sauvegarde</h2></div>
       <p style="margin:0">Une copie complète des données est faite chaque jour dans ce dossier (14 copies gardées). Choisissez par exemple un dossier Nextcloud synchronisé avec le NAS.</p>
       <div class="actions"><span class="mono" id="bkDir" style="font-size:.85rem;overflow-wrap:anywhere">Aucun dossier choisi</span></div>
@@ -702,7 +746,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
   let api = null, nodes = [], allNodes = [], journal = [], liaison = {}, rev = -1, loaded = false;
-  let messages = [], alertes = [], exercice = null, exercices = [], reglages = {}, tab = "reseau";
+  let messages = [], alertes = [], exercice = null, exercices = [], reglages = {}, tab = "reseau", appel = null, testBusy = null;
   let aprsDirty = false, heuresEdit = false;
   let aprsData = {etat:{}, reglages:{}, stations:[], traces:{}}, showAprs = true;
   let traces = {}, couvertures = [], dispo = {}, maj = null, showTeams = true, showCov = false, crise = false, crMap = null, crLayer = null;
@@ -738,6 +782,27 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     const d = Math.floor(h/24); return d === 1 ? "hier" : `il y a ${d} j`;
   };
   const fmtDate = iso => { try { return new Date(iso).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"}); } catch(e){ return iso; } };
+  function autonomieHtml(a){
+    const serie = a.serie || [];
+    let svg = "";
+    if (serie.length >= 2) {
+      const vs = serie.map(x => x[1]), lo = Math.min(...vs, 3.3) - .05, hi = Math.max(...vs, 4.2) + .02, W = 300, H = 70;
+      const X = i => 4 + i * (W - 8) / (serie.length - 1), Y = v => H - 6 - (v - lo) / (hi - lo) * (H - 12);
+      const ligne = serie.map((x, i) => `${i ? "L" : "M"}${X(i).toFixed(1)},${Y(x[1]).toFixed(1)}`).join(" ");
+      svg = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+        <line x1="0" x2="${W}" y1="${Y(3.3)}" y2="${Y(3.3)}" stroke="var(--crit)" stroke-dasharray="4 4" stroke-width="1" vector-effect="non-scaling-stroke"/>
+        <path d="${ligne}" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke"/>
+        ${serie.map((x, i) => `<circle cx="${X(i)}" cy="${Y(x[1])}" r="2.4" fill="var(--accent)"><title>${esc(fmtDay(x[0]))} : ${fmtNum(x[1], 2)} V</title></circle>`).join("")}</svg>`;
+    }
+    const p = a.pente * 1000, txt = a.jours != null ? `autonomie estimée <b>≈ ${a.jours} jours</b> avant 3,30 V` : (p >= -5 ? "batterie stable ou en recharge" : "baisse lente");
+    return `<div class="neigh autobox"><strong style="font-size:.9rem">Batterie sur ${serie.length} jours <span class="muted" style="font-weight:400">· minimum de chaque jour</span></strong>${svg}
+      <span style="font-size:.86rem">Dernier minimum ${fmtNum(a.minJour, 2)} V · tendance ${p > 0 ? "+" : ""}${fmtNum(p, 0)} mV/jour · ${txt}</span>
+      <span class="muted" style="font-size:.76rem">Trait rouge : 3,30 V, seuil où l'accu est presque vide. Estimation sur les 7 derniers jours.</span></div>`;
+  }
+  function testLiaisonHtml(t){
+    return `<div style="display:grid;gap:2px;margin-top:6px"><span class="reading">Test du ${fmtDate(t.date)} : ${t.ok ? `<span class="statut-ok">liaison OK</span> en ${fmtNum(t.duree,1)} s` : `<span class="statut-ko">échec</span>`}${t.note ? " · " + esc(t.note) : ""}</span>
+      ${(t.segments||[]).map(sg => `<div class="tl-seg"><span>${esc(sg.de)} → ${esc(sg.vers)}</span><span class="snr" style="--c:${snrColor(+sg.snr)}">${sg.snr != null ? fmtSnr(+sg.snr) : "—"}</span></div>`).join("")}</div>`;
+  }
   function horlogeVignette(n){
     if (!n.horloge) return `<div class="hvig"><span class="lbl">Heure du nœud</span><b class="muted">—</b><span class="muted">${n.aMotDePasse ? "pas encore lue" : "mot de passe admin requis"}</span></div>`;
     const e = +n.horlogeEcart || 0, ae = Math.abs(e), mauvais = ae >= 120;
@@ -872,7 +937,9 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
         ${n.eteint ? `<span class="off">Éteint à distance ${ago(n.eteint)} (${fmtDate(n.eteint)}). Surveillance suspendue.</span>` : `
         <div class="kv"><span>Batterie<b>${fmtNum(n.batterie,2)}${empty(n.batterie)?"":" V"}</b></span><span>Bruit<b>${fmtNum(n.bruit)}${empty(n.bruit)?"":" dBm"}</b></span><span>Dispo 7 j<b>${d.j7 != null ? fmtNum(d.j7,0)+" %" : "—"}</b></span>
           <span>Firmware<b>${esc(n.firmware || "—")}</b></span><span>Err. RX<b>${fmtNum(n.erreursRx)}</b></span><span>Lu<b>${n.maj ? ago(n.maj).replace("il y a ","") : "—"}</b></span></div>
-        ${horlogeVignette(n)}`}
+        ${horlogeVignette(n)}
+        ${n.autonomie && n.autonomie.jours != null ? `<div class="hvig"><span class="lbl">Autonomie</span><b style="color:${n.autonomie.jours < 7 ? "var(--crit)" : n.autonomie.jours < 20 ? "var(--warn)" : "var(--fg)"}">≈ ${n.autonomie.jours} j</b><span class="muted">${fmtNum(n.autonomie.pente*1000,0)} mV/jour</span></div>` : ""}
+        ${(n.tendances||[]).length ? `<div class="tendv">${n.tendances.slice(0,2).map(t => `<span title="${esc(t.texte)} (depuis ${esc(fmtDate(t.depuis))})">⚠ ${esc(t.texte)}</span>`).join("")}</div>` : ""}`}
         ${busy ? `<span class="reading">${esc(busy)}</span>` : ""}
         ${n.derniereRequete ? (q => `<div class="dreq" title="${esc(q.libelle)} — ${esc(fmtDate(q.date))}${q.operateur ? " par " + esc(q.operateur) : ""}\n${esc(q.resultat || "")}">
           <span class="lbl">Dernière requête</span>
@@ -1043,7 +1110,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
       const k = [n.nom,m.nom].sort().join("|"); if (seen.has(k)) return; seen.add(k);
       const on = sel && (sel===n.id || sel===m.id);
       L.polyline([[+n.lat,+n.lon],[+m.lat,+m.lon]], {color:colorOf(snrColor(+v.snr)), weight:on?4:2.5, opacity: sel && !on ? .3 : .85})
-        .bindTooltip(`${esc(n.nom)} ↔ ${esc(m.nom)} : ${fmtSnr(+v.snr)}`).addTo(lLayer);
+        .bindTooltip((() => { const inv = (m.voisins||[]).find(x => x.nom === n.nom); return `${esc(n.nom)} ↔ ${esc(m.nom)}<br>${esc(n.nom.replace(/^FR06-/,""))} entend ${esc(m.nom.replace(/^FR06-/,""))} : ${fmtSnr(+v.snr)}` + (inv ? `<br>${esc(m.nom.replace(/^FR06-/,""))} entend ${esc(n.nom.replace(/^FR06-/,""))} : ${fmtSnr(+inv.snr)}` : ""); })()).addTo(lLayer);
     }));
     const selNode = nodes.find(n => n.id===sel);
     if (selNode && selNode.chemin && selNode.chemin.relais && hasPos(selNode)) {
@@ -1179,7 +1246,7 @@ const HOT_MIN = 360; // 6 heures
       <div class="head"><span>min ${fmtNum(lo,digits)}</span><span>max ${fmtNum(hi,digits)}</span></div></div>`;
   }
   async function loadHistory(id){
-    histFor = id; hist = await api.historique(id, 7);
+    histFor = id; hist = (await api.historique(id, 30)).filter(p => p.ts >= Date.now()/1000 - 7*86400);
     if (histFor === id && !editing) renderFiche();
   }
 
@@ -1232,13 +1299,16 @@ const HOT_MIN = 360; // 6 heures
         ${own ? row("Mot de passe admin", n.aMotDePasse ? "enregistré" : `<span style="color:var(--warn)">non renseigné</span>`) : ""}
       </dl>
       ${sparks}
+      ${(n.tendances||[]).length ? `<div class="tendbox"><strong>Alerte précoce</strong>${n.tendances.map(t => `<span>⚠ ${esc(t.texte)} <span class="muted">(depuis ${fmtDate(t.depuis)})</span></span>`).join("")}</div>` : ""}
+      ${own && n.autonomie ? autonomieHtml(n.autonomie) : ""}
       ${(n.telemetrie||[]).length || n.horloge ? `<div class="neigh"><strong style="font-size:.9rem">Télémétrie${n.telemetrieDate?` <span class="muted" style="font-weight:400">· lue le ${fmtDate(n.telemetrieDate)} (${ago(n.telemetrieDate)})</span>`:""}</strong>
         ${n.horloge ? horlogeHtml(n) : ""}
         ${(n.telemetrie||[]).length ? `<div class="tele">${n.telemetrie.map(t => `<span>${esc(teleLabel(t))}</span>`).join("")}</div>` : ""}</div>` : ""}
       ${n.notesMaintenance ? `<div class="neigh"><strong style="font-size:.9rem">Notes de maintenance</strong><p style="margin:0;white-space:pre-wrap">${esc(n.notesMaintenance)}</p></div>` : ""}
       <div class="neigh"><strong style="font-size:.9rem">Chemin depuis le nœud companion${n.cheminDate?` <span class="muted" style="font-weight:400">· lu le ${fmtDate(n.cheminDate)}</span>`:""}</strong>
         ${n.chemin ? renderPath(n.chemin) : `<span class="reading">Chemin pas encore lu.</span>`}
-        <div class="row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px"><button class="btn small" data-reinitchemin="${esc(n.id)}" ${liaison.connecte && !cheminBusy ? "" : "disabled"} title="Le nœud companion oublie la route mémorisée vers ce nœud et en réapprend une (utile si un relais du chemin est tombé)">${cheminBusy === n.id ? "Réinitialisation…" : "Réinitialiser le chemin"}</button>${!liaison.connecte ? `<span class="reading">Connectez le nœud companion</span>` : ""}</div></div>
+        <div class="row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px"><button class="btn small" data-reinitchemin="${esc(n.id)}" ${liaison.connecte && !cheminBusy ? "" : "disabled"} title="Le nœud companion oublie la route mémorisée vers ce nœud et en réapprend une (utile si un relais du chemin est tombé)">${cheminBusy === n.id ? "Réinitialisation…" : "Réinitialiser le chemin"}</button><button class="btn small" data-testliaison="${esc(n.id)}" ${liaison.connecte && !testBusy ? "" : "disabled"} title="Envoie un paquet de test qui fait l'aller-retour par les relais du chemin et mesure le SNR à chaque saut">${testBusy === n.id ? "Test en cours…" : "Tester la liaison (aller-retour)"}</button>${!liaison.connecte ? `<span class="reading">Connectez le nœud companion</span>` : ""}</div>
+        ${n.testLiaison ? testLiaisonHtml(n.testLiaison) : ""}</div>
       ${own && liaison.connecte ? renderCmds(n) : ""}
       ${neigh ? `<div class="neigh"><strong style="font-size:.9rem">Voisins entendus</strong>${neigh}</div>` : ""}
       ${n.notes ? `<p style="margin:0;white-space:pre-wrap">${esc(n.notes)}</p>` : ""}
@@ -1474,8 +1544,17 @@ const HOT_MIN = 360; // 6 heures
     $("#threadActs").innerHTML = list.length ? (convConfirm
       ? `<span class="reading" style="color:var(--crit)">Supprimer les ${list.length} message(s) de cette conversation sur ce PC ?</span><button class="btn small danger" id="convClearYes">Oui, supprimer</button><button class="btn small" id="convClearNo">Non</button>`
       : `<button class="btn small" id="convClear">Vider la conversation</button>`) : "";
+    const estAdr = isChan && /adrasec ?0?6/i.test((chans.find(c => "c:"+c.index===conv)||{}).nom || "");
+    if (estAdr && liaison.connecte && !(appel && appel.enCours)) $("#threadActs").innerHTML = `<button class="btn small primary" id="appelGo" title="Envoie un appel sur ce canal et coche les stations qui répondent">Appel des stations</button>` + $("#threadActs").innerHTML;
+    const ab = $("#appelPanel");
+    if (estAdr && appel && (appel.enCours || appel.fin > Date.now()/1000 - 3600)) {
+      ab.hidden = false;
+      ab.innerHTML = `<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center"><b>${appel.enCours ? "Appel en cours" : "Dernier appel"} · lancé à ${new Date(appel.debut*1000).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})} · ${appel.reponses.length} réponse(s)</b>
+        ${appel.enCours ? `<button class="btn small" id="appelStop">Clore l'appel et l'inscrire à la main courante</button>` : ""}</div>
+        ${appel.reponses.length ? `<ol>${appel.reponses.map(r => `<li><b>${esc(r.auteur)}</b> à ${new Date(r.ts*1000).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}${r.snr!=null?` · SNR ${fmtSnr(+r.snr)}`:""}${r.sauts!=null?` · ${r.sauts} saut(s)`:""} <span class="muted">— ${esc(r.texte)}</span></li>`).join("")}</ol>` : `<span class="muted">En attente des réponses…</span>`}`;
+    } else ab.hidden = true;
     box.innerHTML = list.length ? list.map(m => `<div class="msg${m.sens==="emis"?" out":""}" data-msgid="${m.id}" title="Cliquer pour voir le parcours du message"><button class="del" data-msgdel="${m.id}" title="Supprimer ce message" aria-label="Supprimer ce message">×</button>${m.sens==="recu" && m.auteur ? `<span class="who">${esc(m.auteur)}</span>` : ""}<span>${esc(m.texte)}</span>
-      <span class="meta"><span>${fmtDate(m.date)}</span>${m.snr!=null?`<span>SNR ${fmtSnr(+m.snr)}</span>`:""}${m.sauts!=null?`<span>${m.sauts} saut(s)</span>`:""}${m.statut?`<span>${esc(m.statut)}</span>`:""}</span></div>`).join("")
+      <span class="meta"><span>${fmtDate(m.date)}</span>${m.snr!=null?`<span>SNR ${fmtSnr(+m.snr)}</span>`:""}${m.sauts!=null?`<span>${m.sauts} saut(s)</span>`:""}${m.statut?`<span class="${/✓/.test(m.statut) ? "statut-ok" : /✗|échec/.test(m.statut) ? "statut-ko" : ""}">${esc(m.statut)}</span>`:""}${m.sens==="emis" && /✗|échec/.test(m.statut||"") ? `<button class="btn small" data-renvoyer="${m.id}" style="padding:0 8px;font-size:.72rem">Renvoyer</button>` : ""}</span></div>`).join("")
       : `<div class="empty">${liaison.connecte ? "Aucun message pour l'instant." : "Connectez le nœud companion pour recevoir et envoyer des messages."}</div>`;
     if (atBottom || lastMsgCount !== messages.length) box.scrollTop = box.scrollHeight;
     lastMsgCount = messages.length;
@@ -1609,6 +1688,17 @@ const HOT_MIN = 360; // 6 heures
         <td class="muted">${c ? `${fmtDate(new Date(c.debut*1000).toISOString())} → ${c.fin ? fmtDate(new Date(c.fin*1000).toISOString()) : "en cours"} (${c.essais} essai(s))` : (st ? "aucune" : "…")}</td></tr>`;
     }).join("") : `<tr><td colspan="6"><div class="empty">Aucun répéteur interrogé pour l'instant.</div></td></tr>`;
     if (!fromLoad) loadStats();
+    const faibles = [], vusL = new Set();
+    nodes.forEach(n => (n.voisins||[]).forEach(v => {
+      const m = byName(v.nom), adr = n.proprio !== "externe" || (m && m.proprio !== "externe");
+      const k = [n.nom, v.nom].sort().join("|");
+      if (!adr || vusL.has(k) || !(+v.snr < -5)) return; vusL.add(k);
+      const inverse = m && (m.voisins||[]).find(x => x.nom === n.nom);
+      faibles.push({a:n.nom, b:v.nom, snr:+v.snr, inv: inverse ? +inverse.snr : null});
+    }));
+    faibles.sort((x, y) => x.snr - y.snr);
+    $("#weakList").innerHTML = faibles.length ? faibles.map(f => `<div><span class="mono" style="font-size:.84rem">${esc(f.a)} ↔ ${esc(f.b)}</span><span><span class="snr" style="--c:${snrColor(f.snr)}">${fmtSnr(f.snr)}</span>${f.inv != null ? ` <span class="muted">/ retour ${fmtSnr(f.inv)}</span>` : ""}</span></div>`).join("")
+      : `<div class="empty">Aucune liaison faible connue (les voisins sont lus avec le mot de passe admin).</div>`;
     const pos = liaison.position;
     if (pos && !$("#covLat").value && document.activeElement?.id !== "covLat") { $("#covLat").value = (+pos.lat).toFixed(5); $("#covLon").value = (+pos.lon).toFixed(5); }
     $("#covGo").disabled = !liaison.connecte || liaison.couvertureEnCours;
@@ -1647,7 +1737,7 @@ const HOT_MIN = 360; // 6 heures
     const norm = x => String(x || "").toLowerCase().replace(/[^a-z0-9]/g, "");
     const chan = (liaison.canaux || []).find(c => norm(c.nom) === "adrasec06") || (liaison.canaux || []).find(c => norm(c.nom).includes("adrasec06"));
     const adr = messages.filter(m => m.canal != null && (chan ? m.canal === chan.index : norm(m.canal_nom).includes("adrasec06")));
-    $("#crMsgTitle").textContent = diese(chan ? chan.nom : "ADRASEC 06");
+    $("#crMsgTitle").textContent = diese(chan ? chan.nom : "ADRASEC 06") + (appel && appel.enCours ? ` · appel en cours : ${appel.reponses.length} réponse(s) (${appel.reponses.map(r => r.auteur).join(", ")})` : "");
     $("#crMsgs").innerHTML = adr.slice(-10).reverse().map(m => `<div data-msgid="${m.id}" title="Cliquer pour voir le parcours"><span class="meta">${fmtDate(m.date)}</span><div>${m.sens==="recu" && m.auteur ? `<b>${esc(m.auteur)}</b> : ` : (m.sens==="emis" ? "<b>Nous</b> : " : "")}${esc(m.texte)}</div></div>`).join("")
       || `<span class="muted">${chan || adr.length ? "Aucun message sur ce canal pour l'instant." : "Le canal ADRASEC 06 n'est pas configuré sur le nœud companion (ajoutez-le dans l'application MeshCore)."}</span>`;
     if (crMap) {
@@ -1676,6 +1766,7 @@ const HOT_MIN = 360; // 6 heures
   }
 
   /* ---------- réglages ---------- */
+  let mailDirty = false, webDirty = false, rapDirty = false;
   function renderSettings(){
     const r = reglages;
     if (document.activeElement !== $("#optSeuil")) $("#optSeuil").value = (r.seuilBatterie ?? 3.5).toFixed(2);
@@ -1690,6 +1781,23 @@ const HOT_MIN = 360; // 6 heures
     if (!inside("#aprsCalls") && !inside("#aprsRayon") && !aprsDirty) { $("#aprsOn").checked = !!ar.actif; $("#aprsCalls").value = (ar.indicatifs || []).join(" "); $("#aprsRayon").value = ar.rayon || 0; }
     $("#aprsState").textContent = (ae.message || "") + (ae.paquets ? ` · ${ae.paquets} position(s) reçue(s)` : "") + ((aprsData.stations||[]).length ? ` · ${aprsData.stations.length} station(s) sur 12 h` : "");
     if (document.activeElement !== $("#tplEdit")) $("#tplEdit").value = (r.modeles || []).join("\n");
+    $("#optHorloge").checked = r.horlogeAuto !== false;
+    const ml = r.mail || {};
+    if (!inside("#tab-reglages .fgrid") && !mailDirty) {
+      $("#mlOn").checked = !!ml.actif; $("#mlSrv").value = ml.serveur || ""; $("#mlPort").value = ml.port || 465; $("#mlSec").value = ml.securite || "ssl";
+      $("#mlUser").value = ml.utilisateur || ""; $("#mlFrom").value = ml.expediteur || ""; $("#mlTo").value = ml.destinataires || ""; $("#mlMsg").checked = !!ml.messages;
+      $("#mlPwd").placeholder = ml.aMotDePasse ? "enregistré · laisser vide pour le garder" : "";
+    }
+    const md = r.mailDernier || {};
+    $("#mlState").textContent = md.date ? `Dernier envoi ${fmtDate(md.date)} : ${md.ok ? "réussi" : "échec — " + (md.erreur || "")}` : "";
+    const wb = r.web || {};
+    if (!inside("#wbPort") && !inside("#wbCode") && !webDirty) { $("#wbOn").checked = !!wb.actif; $("#wbPort").value = wb.port || 8060; $("#wbCode").value = wb.code || ""; }
+    $("#wbState").textContent = (wb.etat || {}).message || "";
+    $("#wbUrls").innerHTML = ((wb.etat || {}).adresses || []).map(u => `<span>${esc(u)}${wb.code ? `?code=${esc(wb.code)}` : ""}</span>`).join("");
+    const rp = r.rapport || {};
+    if (!inside("#rpHeure") && !rapDirty) { $("#rpOn").checked = !!rp.actif; $("#rpJour").value = rp.jour ?? 0; $("#rpHeure").value = rp.heure || "08:00"; $("#rpMail").checked = !!rp.mail; }
+    $("#rpDir").textContent = "Dossier : " + (rp.dossier || (r.dossierSauvegarde ? r.dossierSauvegarde + "\\Rapports" : "dossier des données du logiciel\\rapports"));
+    $("#rpLast").textContent = rp.dernier ? "Dernier rapport : " + rp.dernier.split(/[\\/]/).pop() : "";
   }
 
   /* ---------- données ---------- */
@@ -1699,7 +1807,7 @@ const HOT_MIN = 360; // 6 heures
     if (!force && r === rev) { renderLink(); return; }
     const st = await api.etat();
     rev = st.revision; allNodes = st.noeuds; nodes = allNodes.filter(actif); journal = st.journal; liaison = st.liaison; loaded = true;
-    messages = st.messages || []; exercice = st.exercice; exercices = st.exercices || []; reglages = st.reglages || {};
+    messages = st.messages || []; exercice = st.exercice; exercices = st.exercices || []; reglages = st.reglages || {}; appel = st.appel || null;
     mc = st.mc || {entrees:[], moyens:[]};
     aprsData = st.aprs || aprsData;
     alertes = st.alertes || []; traces = st.traces || {}; couvertures = st.couvertures || []; dispo = st.dispo || {}; maj = st.maj;
@@ -1766,6 +1874,14 @@ const HOT_MIN = 360; // 6 heures
     if (mid && !window.getSelection().toString()) { ouvrirDetail(+mid.dataset.msgid); return; }
     const mc = t.closest("[data-mc]");
     if (mc) { const r = await api.main_courante(+mc.dataset.mc); if (r.ok) toast("Main courante enregistrée : " + r.chemin); else if (r.erreur) toast(r.erreur); return; }
+    const tl = t.closest("[data-testliaison]");
+    if (tl) {
+      testBusy = tl.dataset.testliaison; renderFiche(); toast("Test de liaison aller-retour… (jusqu'à 1 min)");
+      let r; try { r = await api.tester_liaison(testBusy); } catch(err) { r = {ok:false, erreur:String(err)}; }
+      testBusy = null; toast(r.message || r.erreur || "Test terminé"); refresh(true); renderFiche(); return;
+    }
+    const rv = t.closest("[data-renvoyer]");
+    if (rv) { const r = await api.renvoyer_message(+rv.dataset.renvoyer); if (!r.ok) toast(r.erreur); refresh(true); return; }
     const rc = t.closest("[data-reinitchemin]");
     if (rc) {
       cheminBusy = rc.dataset.reinitchemin; renderFiche(); toast("Réinitialisation du chemin… (jusqu'à 30 s)");
@@ -1835,6 +1951,18 @@ const HOT_MIN = 360; // 6 heures
       case "crOpen": openCrise(true); return;
       case "crClose": openCrise(false); return;
       case "bkChoose": { const r = await api.choisir_dossier_sauvegarde(); if (r.ok) toast("Sauvegarde faite : " + r.chemin); else if (r.erreur) toast(r.erreur); refresh(true); return; }
+      case "mlSave": { const o = {actif: $("#mlOn").checked, serveur: $("#mlSrv").value, port: +$("#mlPort").value || 465, securite: $("#mlSec").value,
+          utilisateur: $("#mlUser").value, expediteur: $("#mlFrom").value, destinataires: $("#mlTo").value, messages: $("#mlMsg").checked};
+        if ($("#mlPwd").value) o.mdp = $("#mlPwd").value;
+        await api.regler_mail(o); $("#mlPwd").value = ""; mailDirty = false; toast("Réglages e-mail enregistrés"); refresh(true); return; }
+      case "mlTest": { t.disabled = true; toast("Envoi de l'e-mail d'essai…"); const r = await api.tester_mail(); t.disabled = false; toast(r.ok ? "E-mail d'essai envoyé : vérifiez votre boîte" : r.erreur); refresh(true); return; }
+      case "wbSave": { const r = await api.regler_web($("#wbOn").checked, +$("#wbPort").value || 8060, $("#wbCode").value); webDirty = false; toast(r.ok ? ((r.etat||{}).actif ? "Tableau de bord en service" : (r.etat||{}).message || "Enregistré") : r.erreur); refresh(true); return; }
+      case "rpSave": { await api.regler_rapport({actif: $("#rpOn").checked, jour: +$("#rpJour").value, heure: $("#rpHeure").value || "08:00", mail: $("#rpMail").checked}); rapDirty = false; toast("Rapport hebdomadaire enregistré"); refresh(true); return; }
+      case "rpDirBtn": { await api.choisir_dossier_rapport(); refresh(true); return; }
+      case "rpNow": { t.disabled = true; toast("Création du rapport…"); const r = await api.generer_rapport(); t.disabled = false; toast(r.ok ? "Rapport enregistré : " + r.chemin + (r.mail ? (r.mail.ok ? " · envoyé par e-mail" : " · e-mail : " + r.mail.erreur) : "") : r.erreur); refresh(true); return; }
+      case "rpOpen": { const r = await api.ouvrir_dossier_rapports(); if (!r.ok) toast(r.erreur); return; }
+      case "appelGo": { t.disabled = true; const r = await api.lancer_appel(); t.disabled = false; toast(r.ok ? "Appel envoyé sur le canal ADRASEC 06" : r.erreur); refresh(true); return; }
+      case "appelStop": { const r = await api.clore_appel(); toast(r.ok ? r.texte : r.erreur); refresh(true); return; }
       case "bkNow": { const r = await api.sauvegarder_maintenant(); toast(r.ok ? "Sauvegarde faite : " + r.chemin : r.erreur); refresh(true); return; }
       case "majCheck": { t.disabled = true; const r = await api.verifier_maj(); t.disabled = false; toast(r.ok ? (r.disponible ? `Version ${r.derniere} disponible` : "Le logiciel est à jour") : r.erreur); refresh(true); return; }
       case "majInstall": case "majInstall2": { toast("Téléchargement de la nouvelle version… le logiciel va redémarrer."); const r = await api.installer_maj(); if (!r.ok) toast(r.erreur); return; }
@@ -1893,6 +2021,10 @@ const HOT_MIN = 360; // 6 heures
     if (e.target.id === "optMaj") await api.regler_maj_auto(e.target.checked);
     if (e.target.id === "tplSel" && e.target.value !== "") { const m = (reglages.modeles||[])[+e.target.value]; if (m) { const ta = $("#msgText"); ta.value = fillTemplate(m); ta.dispatchEvent(new Event("input")); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } e.target.value = ""; }
     if (e.target.id === "optNotif") await api.regler_options({notifications: e.target.checked});
+    if (e.target.id === "optHorloge") { await api.regler_options({horlogeAuto: e.target.checked}); refresh(true); }
+    if (["mlOn","mlSrv","mlPort","mlSec","mlUser","mlPwd","mlFrom","mlTo","mlMsg"].includes(e.target.id)) mailDirty = true;
+    if (["wbOn","wbPort","wbCode"].includes(e.target.id)) webDirty = true;
+    if (["rpOn","rpJour","rpHeure","rpMail"].includes(e.target.id)) rapDirty = true;
     if (e.target.id === "optZone") await api.regler_options({reduireZone: e.target.checked});
     if (e.target.id === "optFond") { await api.regler_options({fondCarte: e.target.value}); refresh(true); }
     if (e.target.id === "optSeuil") { await api.regler_options({seuilBatterie: +e.target.value}); toast("Seuil enregistré"); }

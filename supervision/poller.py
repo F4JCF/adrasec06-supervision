@@ -236,6 +236,10 @@ class Poller:
                     self.position = {"lat": p["adv_lat"], "lon": p["adv_lon"]}
         except Exception:
             pass
+        try:  # le nœud companion prend l'heure du PC : c'est elle que « clock sync » transmet aux répéteurs
+            await mc.commands.set_time(int(time.time()))
+        except Exception:  # noqa: BLE001
+            pass
         try:
             mc.subscribe(EventType.CHANNEL_MSG_RECV, self._on_channel_msg)
             mc.subscribe(EventType.CONTACT_MSG_RECV, self._on_contact_msg)
@@ -470,7 +474,25 @@ class Poller:
                     if node.get("otaDebut"):
                         self._confirmer_ota(node, fields["firmware"], "AUTO")
                         fields["otaDebut"] = ""
-            fields.update(self._horloge(await self._cli(contact, "clock")))
+            h = self._horloge(await self._cli(contact, "clock"))
+            if h and abs(h.get("horlogeEcart", 0)) >= 120 and self.store.get_config("horloge_auto", True):
+                ecart = h["horlogeEcart"]
+                try:
+                    await mc.commands.set_time(int(time.time()))
+                except Exception:  # noqa: BLE001
+                    pass
+                rep_sync = await self._cli(contact, "clock sync")
+                h2 = self._horloge(await self._cli(contact, "clock"))
+                bon = bool(h2) and abs(h2.get("horlogeEcart", 999)) < 120
+                sens = "en avance" if ecart > 0 else "en retard"
+                texte = (f"Heure remise automatiquement ({sens} de {abs(ecart) // 60} min)"
+                         + (" : corrigée." if bon else " : la correction n'a pas pu être vérifiée."))
+                self.store.add_journal(name, "AUTO", texte, auto=True)
+                fields["derniereRequete"] = {"libelle": "Remise à l'heure automatique", "date": now_iso(), "ok": bon,
+                                             "resultat": (rep_sync or "").strip()[:160] or ("corrigée" if bon else "non vérifiée"),
+                                             "operateur": "AUTO"}
+                h = h2 or h
+            fields.update(h)
             tx = await self._cli(contact, "get tx")
             if tx:
                 m = re.search(r"(-?\d+)", tx)
@@ -483,6 +505,10 @@ class Poller:
             self.store.add_journal(name, "AUTO", f"{name} répond de nouveau (était {old}).", auto=True)
             if old == "hors-ligne":
                 self.alerte("info", name, f"{name} répond de nouveau.")
+        try:
+            fields.update(self._analyse(node, fields))
+        except Exception as e:  # noqa: BLE001
+            log.warning("analyse des tendances %s : %s", name, e)
         self.store.patch_node(node["id"], fields)
 
     async def _statut_robuste(self, contact):
@@ -785,10 +811,10 @@ class Poller:
             c = next((c for c in self._contacts.values() if c.get("public_key") == contact_cle), None)
             if c is None:
                 return {"ok": False, "erreur": "Contact introuvable dans le nœud companion."}
-            ev = await self.mc.commands.send_msg(c, texte)
-            ok = ev is not None and ev.type != EventType.ERROR
-            self.store.add_message({"sens": "emis", "contact": c.get("adv_name"), "contact_cle": contact_cle[:12],
-                                    "auteur": moi, "texte": texte, "statut": "envoyé" if ok else "échec"})
+            mid = self.store.add_message({"sens": "emis", "contact": c.get("adv_name"), "contact_cle": contact_cle[:12],
+                                          "auteur": moi, "texte": texte, "statut": "envoi…"})
+            asyncio.ensure_future(self._suivre_accuse(mid, c, texte))
+            ok = True
         else:
             idx = int(canal or 0)
             ev = await self.mc.commands.send_chan_msg(idx, texte)
@@ -796,6 +822,29 @@ class Poller:
             self.store.add_message({"sens": "emis", "canal": idx, "canal_nom": self._canal_nom(idx), "auteur": moi,
                                     "texte": texte, "statut": "envoyé" if ok else "échec"})
         return {"ok": ok} if ok else {"ok": False, "erreur": "Le nœud companion a refusé l'envoi."}
+
+    async def _suivre_accuse(self, mid: int, contact: dict, texte: str):
+        """Envoi avec jusqu'à 3 essais (les derniers en inondation) et attente de l'accusé de réception."""
+        try:
+            ev = await self.mc.commands.send_msg_with_retry(contact, texte, max_attempts=3, flood_after=2,
+                                                            max_flood_attempts=2, min_timeout=8)
+            self.store.set_message_status(mid, "reçu ✓" if ev is not None else "non confirmé ✗")
+        except Exception as e:  # noqa: BLE001
+            log.warning("accusé de réception : %s", e)
+            self.store.set_message_status(mid, "non confirmé ✗")
+
+    def renvoyer_message(self, mid: int) -> dict:
+        m = self.store.get_message(int(mid))
+        if not m or m.get("sens") != "emis":
+            return {"ok": False, "erreur": "Message introuvable."}
+        if m.get("canal") is not None:
+            return self.envoyer_message(m["texte"], canal=m["canal"])
+        c = next((c for c in self._contacts.values()
+                  if (c.get("public_key") or "").startswith(m.get("contact_cle") or "~")), None)
+        if c is None:
+            return {"ok": False, "erreur": "Contact introuvable dans le nœud companion."}
+        self.store.delete_message(int(mid))
+        return self.envoyer_message(m["texte"], contact_cle=c["public_key"])
 
     # ---------- commandes à distance ----------
     COMMANDES = {
@@ -1103,6 +1152,152 @@ class Poller:
 
 
     # ---------- position GPS du nœud companion ----------
+    # ---------- alerte précoce et autonomie ----------
+    def _analyse(self, node: dict, fields: dict) -> dict:
+        """Tendances sur l'historique : bruit, erreurs RX, batterie, liaisons ; autonomie des nœuds sur batterie."""
+        hist = self.store.history(node["id"], 30)
+        now = time.time()
+        out, alertes = {}, []
+
+        def med(v):
+            v = sorted(x for x in v if x is not None)
+            return v[len(v) // 2] if v else None
+
+        recent = [h for h in hist if h["ts"] >= now - 86400]
+        base = [h for h in hist if now - 8 * 86400 <= h["ts"] < now - 86400]
+        if len(recent) >= 2 and len(base) >= 4:
+            r, b = med([h["bruit"] for h in recent]), med([h["bruit"] for h in base])
+            if r is not None and b is not None and r - b >= 6:
+                alertes.append(("bruit", f"Bruit en hausse : {r:.0f} dBm (habituel {b:.0f} dBm), brouillage ou antenne à vérifier"))
+
+        def taux(lst):
+            n, dt = 0, 0.0
+            for a, b2 in zip(lst, lst[1:]):
+                if a["erreurs"] is None or b2["erreurs"] is None:
+                    continue
+                d = b2["erreurs"] - a["erreurs"]
+                if d >= 0:
+                    n += d
+                    dt += b2["ts"] - a["ts"]
+            return n / (dt / 3600) if dt > 600 else None
+        tr, tb = taux(recent), taux(base)
+        if tr is not None and tr >= 20 and (tb is None or tr >= 3 * max(tb, 1)):
+            alertes.append(("erreurs", f"Erreurs de réception en forte hausse : {tr:.0f}/h"
+                            + (f" (habituel {tb:.0f}/h)" if tb is not None else "")))
+
+        jours = {}
+        for h in hist:
+            if h["bat_mv"]:
+                j = time.strftime("%Y-%m-%d", time.localtime(h["ts"]))
+                jours[j] = min(jours.get(j, 99999), h["bat_mv"])
+        serie = [(j, v / 1000) for j, v in sorted(jours.items())]
+        if len(serie) >= 3:
+            der = serie[-7:]
+            xs = list(range(len(der)))
+            ys = [v for _, v in der]
+            mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
+            den = sum((x - mx) ** 2 for x in xs) or 1
+            pente = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / den
+            plancher = 3.3
+            jours_restants = None
+            if pente < -0.005 and ys[-1] > plancher:
+                jours_restants = int((ys[-1] - plancher) / -pente)
+            out["autonomie"] = {"pente": round(pente, 4), "jours": jours_restants, "minJour": round(ys[-1], 2),
+                                "serie": [[j, round(v, 3)] for j, v in serie[-30:]], "calcule": now_iso()}
+            baisse = len(ys) >= 4 and all(b2 <= a + 0.005 for a, b2 in zip(ys[-4:], ys[-3:])) and ys[-4] - ys[-1] >= 0.08
+            if baisse and pente <= -0.03:
+                alertes.append(("batterie", f"Batterie en baisse continue : {pente * 1000:+.0f} mV/jour"
+                                + (f", autonomie estimée ≈ {jours_restants} j" if jours_restants is not None else "")))
+
+        ref = dict(node.get("voisinsRef") or {})
+        for v in fields.get("voisins") or []:
+            nom, snr = v.get("nom"), v.get("snr")
+            if nom is None or snr is None:
+                continue
+            avant = ref.get(nom)
+            if avant is not None and avant - snr >= 6:
+                alertes.append((f"lien:{nom}", f"Liaison avec {nom} affaiblie : {snr:+.1f} dB (habituel {avant:+.1f} dB)"))
+            ref[nom] = round(snr if avant is None else 0.8 * avant + 0.2 * snr, 2)
+        if fields.get("voisins") is not None:
+            out["voisinsRef"] = ref
+
+        anciennes = {t["cle"]: t for t in (node.get("tendances") or [])}
+        tend = []
+        for cle, texte in alertes:
+            depuis = anciennes.get(cle, {}).get("depuis") or now_iso()
+            tend.append({"cle": cle, "texte": texte, "depuis": depuis})
+            if cle not in anciennes:
+                nom = node.get("nom", "")
+                self.store.add_journal(nom, "AUTO", "Alerte précoce : " + texte + ".", auto=True)
+                self.alerte("attention", nom, f"{nom} : {texte}.")
+        out["tendances"] = tend
+        return out
+
+    # ---------- test de liaison (trace aller-retour) ----------
+    def tester_liaison(self, node_id: str, operateur: str = "") -> dict:
+        if self.mc is None:
+            return {"ok": False, "erreur": "Aucun nœud connecté."}
+        node = self.store.get_node(node_id)
+        if node is None:
+            return {"ok": False, "erreur": "Nœud inconnu."}
+        self.prioritaire += 1
+        try:
+            return self._submit(self._tester_liaison(node, operateur), timeout=150)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "erreur": f"Test impossible : {e}"}
+        finally:
+            self.prioritaire = max(0, self.prioritaire - 1)
+
+    async def _tester_liaison(self, node: dict, operateur: str) -> dict:
+        if not await self._attendre_la_main("Test de liaison"):
+            return {"ok": False, "erreur": "L'interrogation en cours ne s'est pas terminée à temps. Réessayez."}
+        mc, name = self.mc, node.get("nom", "")
+        contact = self._contact_for(name)
+        if contact is None:
+            return {"ok": False, "erreur": f"{name} n'est pas dans les contacts du nœud companion."}
+        n = contact.get("out_path_len", -1)
+        taille = max(1, (contact.get("out_path_hash_mode") or 0) + 1)
+        if n is None or n < 0:
+            hops, note = [], "Route inconnue : test en direct (sans relais)."
+        else:
+            hexpath = contact.get("out_path") or ""
+            hops = [hexpath[i:i + 2 * taille] for i in range(0, len(hexpath), 2 * taille)][:n]
+            note = ""
+        cible = contact.get("public_key", "")[:2 * taille]
+        chemin = hops + [cible] + list(reversed(hops))
+        noms = self._chemin(contact).get("relais", []) if hops else []
+        moi = self.local_name or "Ce nœud"
+        etiquettes = [moi] + noms + [name] + list(reversed(noms)) + [moi]
+        tag = random.randint(1, 0xFFFFFFFF)
+        waiter = asyncio.ensure_future(mc.dispatcher.wait_for_event(
+            EventType.TRACE_DATA, attribute_filters={"tag": tag}, timeout=20 + 6 * len(chemin)))
+        await asyncio.sleep(0)
+        t0 = time.time()
+        sent = await mc.commands.send_trace(tag=tag, path=",".join(chemin))
+        if sent is None or sent.type == EventType.ERROR:
+            waiter.cancel()
+            res = {"ok": False, "date": now_iso(), "note": "Le nœud companion a refusé l'envoi du test.", "segments": []}
+        else:
+            ev = await waiter
+            path = ((ev.payload or {}).get("path") or []) if ev else []
+            if not ev or len(path) < 2:
+                res = {"ok": False, "date": now_iso(), "segments": [],
+                       "note": (note + " " if note else "") + "Pas de retour : la liaison est coupée quelque part sur le trajet."}
+            else:
+                segs = [{"de": etiquettes[i] if i < len(etiquettes) else "?",
+                         "vers": etiquettes[i + 1] if i + 1 < len(etiquettes) else "?", "snr": pnt.get("snr")}
+                        for i, pnt in enumerate(path)]
+                pire = min((x["snr"] for x in segs if x["snr"] is not None), default=None)
+                res = {"ok": True, "date": now_iso(), "segments": segs, "duree": round(time.time() - t0, 1),
+                       "note": note, "pire": pire}
+        self.store.patch_node(node["id"], {"testLiaison": res})
+        if res["ok"] and res.get("pire") is not None:
+            resume = f"OK en {res['duree']} s, maillon le plus faible {res['pire']:+.1f} dB"
+        else:
+            resume = res.get("note") or "échec"
+        self.store.add_journal(name, operateur or "AUTO", f"Test de liaison aller-retour : {resume}.")
+        return {"ok": res["ok"], "message": resume, "test": res}
+
     @staticmethod
     def _pct_batterie(mv: int) -> int:
         """Pourcentage approximatif d'un accu Li-ion d'après sa tension."""

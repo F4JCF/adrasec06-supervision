@@ -116,6 +116,19 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 - Fiche d'un nœud : date et heure de lecture de la télémétrie et du chemin.
 - **Réinitialiser le chemin** (toutes les fiches, nœud companion connecté, sans mot de passe) : le nœud companion oublie la route mémorisée vers ce nœud ; pour un répéteur, il l'interroge aussitôt pour réapprendre un chemin. Avant/après noté au journal.
 
+### Nouveautés de la version 1.12
+
+- **Remise à l'heure automatique** des répéteurs décalés de plus de 2 min (mot de passe admin requis), notée au journal ; le nœud companion prend l'heure du PC à la connexion.
+- **Alerte précoce** : bruit en hausse, erreurs RX en forte hausse, batterie en baisse continue, liaison voisine affaiblie → notification, journal, encadré dans la fiche et la vignette.
+- **Autonomie** : courbe du minimum de batterie de chaque jour (30 j) et estimation des jours restants avant 3,30 V.
+- **Maillons faibles** (onglet Statistiques) et infobulle des liaisons dans les deux sens sur la carte.
+- **Tester la liaison (aller-retour)** depuis la fiche : SNR mesuré à chaque saut.
+- **Appel des stations** sur #ADRASEC 06 : réponses cochées automatiquement, clôture inscrite à la main courante.
+- **Accusé de réception** des messages directs (✓ reçu / ✗ non confirmé, 3 essais) et bouton Renvoyer.
+- **Alertes par e-mail** (SMTP, ex. Infomaniak) regroupées par minute, e-mail d'essai.
+- **Tableau de bord sur tablette/téléphone** (lecture seule, réseau local, code d'accès facultatif).
+- **Rapport hebdomadaire** PDF automatique (jour et heure au choix), envoi possible par e-mail.
+
 ### Les données
 
 Tout est enregistré sur le PC dans `%APPDATA%\ADRASEC06-Supervision\supervision.db`, y compris les mots de passe des répéteurs et le PIN Bluetooth (en clair, dans ce fichier local uniquement). Le journal technique est dans `supervision.log` au même endroit.

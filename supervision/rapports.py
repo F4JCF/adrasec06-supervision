@@ -173,6 +173,23 @@ def pdf_etat(store: Store, chemin: str, voisins: bool = False):
         data = [["Nœud", "À faire"]] + [[Paragraph(_x(r["nom"]), st["cell"]), Paragraph(_x(r["aFaire"]), st["cell"])] for r in todo]
         elems.append(_table(data, [60 * mm, 207 * mm]))
 
+    suivi = []
+    for n in store.list_nodes():
+        if n.get("proprio") == "externe" or n.get("statut") in ("prevu", "supprime"):
+            continue
+        au = n.get("autonomie") or {}
+        tend = "; ".join(t.get("texte", "") for t in (n.get("tendances") or []))
+        if tend or au:
+            pente = au.get("pente")
+            bat = (f"{au.get('minJour', '')} V min. · {pente * 1000:+.0f} mV/j" if pente is not None else "")
+            auto = f"≈ {au['jours']} j" if au.get("jours") is not None else ("stable" if au else "")
+            suivi.append([Paragraph(_x(n.get("nom", "")), st["cell"]), Paragraph(_x(bat), st["cell"]),
+                          Paragraph(_x(auto), st["cell"]), Paragraph(_x(tend or "—"), st["cell"])])
+    if suivi:
+        elems.append(Paragraph("Tendances et autonomie", st["h2"]))
+        elems.append(_table([["Nœud", "Batterie (7 j)", "Autonomie", "Alertes précoces"]] + suivi,
+                            [55 * mm, 45 * mm, 25 * mm, 142 * mm]))
+
     alertes = store.list_alerts(20)
     if alertes:
         elems.append(Paragraph("Dernières alertes", st["h2"]))

@@ -10,6 +10,7 @@ import threading
 import time
 import urllib.request
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
 from .store import Store, data_dir
 
@@ -165,6 +166,10 @@ class Taches:
                 self.rappels_maintenance()
             except Exception as e:  # noqa: BLE001
                 log.warning("Rappels de maintenance : %s", e)
+            try:
+                self.rapport_si_besoin()
+            except Exception as e:  # noqa: BLE001
+                log.warning("Rapport hebdomadaire : %s", e)
             if self.store.get_config("maj_auto", True) and time.time() - derniere_verif > 6 * 3600:
                 derniere_verif = time.time()
                 r = verifier_maj(self.version)
@@ -190,6 +195,58 @@ class Taches:
         chemin = self.store.backup(dossier)
         log.info("Sauvegarde automatique : %s", chemin)
         return chemin
+
+    # ----- rapport hebdomadaire -----
+    def reglages_rapport(self) -> dict:
+        return {"actif": bool(self.store.get_config("rapport_auto", False)),
+                "jour": int(self.store.get_config("rapport_jour", 0) or 0),
+                "heure": self.store.get_config("rapport_heure", "08:00") or "08:00",
+                "dossier": self.store.get_config("rapport_dossier", "") or "",
+                "mail": bool(self.store.get_config("rapport_mail", False)),
+                "dernier": self.store.get_config("rapport_dernier_fichier", "") or ""}
+
+    def dossier_rapports(self) -> Path:
+        d = self.store.get_config("rapport_dossier", "") or ""
+        if not d:
+            b = self.store.get_config("dossier_sauvegarde", "") or ""
+            d = str(Path(b) / "Rapports") if b else str(data_dir() / "rapports")
+        Path(d).mkdir(parents=True, exist_ok=True)
+        return Path(d)
+
+    def generer_rapport(self, envoyer_mail: bool | None = None) -> dict:
+        from . import courriel, rapports
+        chemin = self.dossier_rapports() / f"Rapport-reseau-ADRASEC06-{datetime.now().strftime('%Y-%m-%d')}.pdf"
+        rapports.pdf_etat(self.store, str(chemin))
+        self.store.set_config("rapport_dernier_fichier", str(chemin))
+        res = {"ok": True, "chemin": str(chemin)}
+        if envoyer_mail if envoyer_mail is not None else self.store.get_config("rapport_mail", False):
+            m = courriel.envoyer(self.store, f"[ADRASEC 06] Rapport hebdomadaire du réseau MeshCore — {datetime.now().strftime('%d/%m/%Y')}",
+                                 "Ci-joint le rapport hebdomadaire de l'état du réseau MeshCore ADRASEC 06 "
+                                 "(disponibilité, batteries, tendances, alertes).\n\n— Message automatique du logiciel de supervision.",
+                                 [str(chemin)])
+            res["mail"] = m
+        self.store._bump()
+        return res
+
+    def rapport_si_besoin(self):
+        r = self.reglages_rapport()
+        if not r["actif"]:
+            return
+        maintenant = datetime.now()
+        semaine = maintenant.strftime("%G-S%V")
+        if self.store.get_config("rapport_semaine", "") == semaine or maintenant.weekday() != r["jour"]:
+            return
+        try:
+            hh, mm = [int(x) for x in r["heure"].replace("h", ":").split(":")[:2]]
+        except ValueError:
+            hh, mm = 8, 0
+        if (maintenant.hour, maintenant.minute) < (hh, mm):
+            return
+        self.store.set_config("rapport_semaine", semaine)
+        res = self.generer_rapport()
+        log.info("Rapport hebdomadaire : %s", res)
+        self.alerte("info", "", f"Rapport hebdomadaire enregistré : {res['chemin']}"
+                    + ("" if not res.get("mail") else (" (envoyé par e-mail)" if res["mail"].get("ok") else " (e-mail non envoyé)")))
 
     def rappels_maintenance(self):
         limite = date.today() + timedelta(days=7)

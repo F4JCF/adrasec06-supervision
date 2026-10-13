@@ -699,3 +699,61 @@ def _attach_aprs():
 
 
 _attach_aprs()
+
+
+# ---------- appel des stations ----------
+def _attach_appels():
+    def _table_appels(self):
+        self._cx.execute("""CREATE TABLE IF NOT EXISTS appels (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, debut REAL NOT NULL, fin REAL, canal INTEGER, canal_nom TEXT,
+            texte TEXT, exercice INTEGER, operateur TEXT)""")
+
+    def start_appel(self, canal: int, canal_nom: str, texte: str, exercice, operateur: str) -> int:
+        with self._lock:
+            _table_appels(self)
+            self._cx.execute("UPDATE appels SET fin=? WHERE fin IS NULL", (time.time(),))
+            c = self._cx.execute("INSERT INTO appels(debut, canal, canal_nom, texte, exercice, operateur) VALUES(?,?,?,?,?,?)",
+                                 (time.time(), canal, canal_nom, texte, exercice, operateur))
+            self._cx.commit()
+            aid = c.lastrowid
+        self._bump()
+        return aid
+
+    def stop_appel(self, aid: int):
+        with self._lock:
+            _table_appels(self)
+            self._cx.execute("UPDATE appels SET fin=? WHERE id=? AND fin IS NULL", (time.time(), int(aid)))
+            self._cx.commit()
+        self._bump()
+
+    def appel(self, aid: int | None = None) -> dict | None:
+        """Appel en cours (ou celui demandé) avec la liste des stations qui ont répondu sur le canal."""
+        with self._lock:
+            _table_appels(self)
+            if aid is None:
+                r = self._cx.execute("SELECT * FROM appels ORDER BY id DESC LIMIT 1").fetchone()
+            else:
+                r = self._cx.execute("SELECT * FROM appels WHERE id=?", (int(aid),)).fetchone()
+            if not r:
+                return None
+            a = dict(r)
+            fin = a["fin"] or time.time()
+            rows = self._cx.execute(
+                "SELECT auteur, ts, texte, snr, sauts FROM messages WHERE sens='recu' AND canal=? AND ts>=? AND ts<=? ORDER BY ts",
+                (a["canal"], a["debut"], fin)).fetchall()
+        vus, rep = set(), []
+        for m in rows:
+            k = (m["auteur"] or "").strip().upper()
+            if not k or k in vus:
+                continue
+            vus.add(k)
+            rep.append({"auteur": m["auteur"], "ts": m["ts"], "texte": m["texte"], "snr": m["snr"], "sauts": m["sauts"]})
+        a["reponses"] = rep
+        a["enCours"] = a["fin"] is None
+        return a
+
+    for f in (start_appel, stop_appel, appel):
+        setattr(Store, f.__name__, f)
+
+
+_attach_appels()

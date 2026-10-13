@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADRASEC 06 · Tableau de bord</title>
+<link rel="stylesheet" href="/leaflet/leaflet.css">
+<style>
+:root{--bg:#0f161d;--panel:#16202a;--sunk:#1d2935;--line:#2a3846;--fg:#e6edf3;--muted:#8fa1b3;--accent:#f07b14;
+  --ok:#4fbf72;--warn:#e2a43a;--crit:#ee6262;--test:#6aa6e8;--plan:#6f7f8e;--navy:#8db4e6;
+  --mono:ui-monospace,"Cascadia Mono",Consolas,monospace}
+@media (prefers-color-scheme:light){:root{--bg:#eef1f4;--panel:#fff;--sunk:#f2f5f8;--line:#d5dde5;--fg:#1b2733;--muted:#5d6e7e;
+  --ok:#2f8a4c;--warn:#b7790d;--crit:#c23434;--test:#2f6fb5;--plan:#8794a1;--navy:#1f3a5f}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 system-ui,"Segoe UI",sans-serif;padding:0 16px 32px}
+header{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:3px solid var(--accent);flex-wrap:wrap}
+header img{height:64px;width:auto}
+header h1{margin:0;font-size:clamp(1.15rem,3.5vw,1.8rem);line-height:1.1}
+header .eb{font:600 .7rem/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+header .r{margin-left:auto;text-align:right;font-family:var(--mono);font-size:.82rem;color:var(--muted)}
+header .r b{display:block;font-size:1.4rem;color:var(--fg)}
+.lect{display:inline-block;font-size:.7rem;border:1px solid var(--line);border-radius:3px;padding:1px 6px;margin-top:2px}
+main{display:grid;gap:14px;margin-top:14px;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)}
+@media (max-width:900px){main{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px;min-width:0}
+h2{margin:0 0 8px;font-size:.85rem;letter-spacing:.08em;text-transform:uppercase;color:var(--navy)}
+#map{height:min(60vh,560px);min-height:300px;border-radius:6px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr));gap:10px}
+.card{border:1px solid var(--line);border-left:5px solid var(--c);border-radius:6px;padding:8px 10px;background:var(--bg);display:grid;gap:4px}
+.card .nm{display:flex;justify-content:space-between;gap:8px;font-family:var(--mono);font-weight:700;font-size:.86rem}
+.card .nm span:last-child{color:var(--c);font-family:system-ui;font-weight:600;font-size:.78rem;white-space:nowrap}
+.kv{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:2px 8px;font-size:.7rem;color:var(--muted)}
+.kv b{display:block;font:500 .86rem var(--mono);color:var(--fg)}
+.tend{font-size:.78rem;color:var(--warn)}
+.list{display:grid;gap:6px;max-height:340px;overflow:auto}
+.list div{font-size:.88rem;border-bottom:1px solid var(--line);padding-bottom:5px}
+.list .m{font:.72rem var(--mono);color:var(--muted)}
+.crit{color:var(--crit)}.att{color:var(--warn)}
+.appel{border:2px solid var(--accent)}
+.appel ol{margin:6px 0 0;padding-left:1.4em}
+.muted{color:var(--muted)}
+footer{margin-top:16px;font-size:.78rem;color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <img src="/logo.png" alt="Logo MeshCore Sécurité civile ADRASEC">
+  <div><span class="eb">Tableau de bord · lecture seule</span><h1>Supervision Réseau Meshcore Adrasec 06</h1><span class="lect" id="liaison">—</span></div>
+  <div class="r"><b id="heure">--:--</b><span id="maj">connexion…</span></div>
+</header>
+<div id="exo"></div>
+<main>
+  <div style="display:grid;gap:14px;min-width:0">
+    <section class="panel"><h2>Répéteurs ADRASEC</h2><div class="cards" id="cards"></div></section>
+    <section class="panel"><h2>Carte</h2><div id="map"></div></section>
+  </div>
+  <div style="display:grid;gap:14px;align-content:start;min-width:0">
+    <section class="panel appel" id="appelBox" hidden><h2>Appel des stations</h2><div id="appel"></div></section>
+    <section class="panel"><h2>Alertes</h2><div class="list" id="alertes"></div></section>
+    <section class="panel"><h2 id="canalTitre">#ADRASEC 06</h2><div class="list" id="msgs"></div></section>
+  </div>
+</main>
+<footer>Page mise à jour toutes les 10 s depuis le PC de supervision. Aucune commande n'est possible depuis cette page.</footer>
+<script src="/leaflet/leaflet.js"></script>
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+  const ST = {"en-ligne":["En ligne","var(--ok)"],"degrade":["Dégradé","var(--warn)"],"hors-ligne":["Hors ligne","var(--crit)"],
+              "test":["En test","var(--test)"],"prevu":["Prévu","var(--plan)"]};
+  const css = v => getComputedStyle(document.documentElement).getPropertyValue(v.slice(4,-1)).trim();
+  const fmt = iso => { try { return new Date(iso).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}); } catch(e){ return ""; } };
+  const hm = t => new Date(typeof t === "number" ? t*1000 : t).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
+  const ago = iso => { const s = (Date.now() - new Date(iso).getTime())/1000; if (!(s>=0)) return ""; if (s<90) return "à l'instant";
+    if (s<3600) return Math.round(s/60)+" min"; if (s<86400) return Math.round(s/3600)+" h"; return Math.round(s/86400)+" j"; };
+  const num = (v, d=0, u="") => (v === "" || v == null || isNaN(+v)) ? "—" : (+v).toLocaleString("fr-FR",{maximumFractionDigits:d}) + u;
+  let map = null, layer = null, premier = true;
+  setInterval(() => { $("#heure").textContent = new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit",second:"2-digit"}); }, 1000);
+
+  function carte(d){
+    if (!window.L) return;
+    if (!map) {
+      map = L.map("map").setView([43.62, 7.0], 10);
+      L.tileLayer("https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png", {attribution:"© OpenStreetMap · OSM France", maxZoom:19, subdomains:"abc"}).addTo(map);
+      layer = L.layerGroup().addTo(map);
+    }
+    layer.clearLayers();
+    const pos = n => n.lat !== "" && n.lat != null && n.lon !== "" && n.lon != null && !isNaN(+n.lat);
+    const parNom = {}; d.noeuds.forEach(n => parNom[n.nom] = n);
+    const vu = new Set(), pts = [];
+    d.noeuds.filter(pos).forEach(n => (n.voisins || []).forEach(v => {
+      const m = parNom[v.nom]; if (!m || !pos(m)) return;
+      const k = [n.nom, m.nom].sort().join("|"); if (vu.has(k)) return; vu.add(k);
+      const c = v.snr >= 5 ? "var(--ok)" : v.snr >= -5 ? "var(--warn)" : "var(--crit)";
+      L.polyline([[+n.lat,+n.lon],[+m.lat,+m.lon]], {color:css(c), weight:2.5, opacity:.8}).bindTooltip(`${esc(n.nom)} ↔ ${esc(m.nom)} : ${num(v.snr,1," dB")}`).addTo(layer);
+    }));
+    d.noeuds.filter(pos).forEach(n => {
+      const own = n.proprio !== "externe", s = ST[n.statut] || ST["en-ligne"];
+      const c = own ? css(s[1]) : "#9b4fd0";
+      L.circleMarker([+n.lat,+n.lon], {radius: own ? 8 : 4, color:"#fff", weight: own ? 2 : 1, fillColor:c, fillOpacity:1})
+        .bindTooltip(`${esc(n.nom)}${own ? " · " + s[0] : ""}`).addTo(layer);
+      if (own) pts.push([+n.lat,+n.lon]);
+    });
+    (d.equipes || []).forEach(t => L.circleMarker([t.lat,t.lon], {radius:6, color:"#fff", weight:2, fillColor:"#9b59d0", fillOpacity:1}).bindTooltip(esc(t.nom)).addTo(layer));
+    if (d.liaison.position) L.circleMarker([d.liaison.position.lat, d.liaison.position.lon], {radius:7, color:"#fff", weight:2, fillColor:"#18a058", fillOpacity:1}).bindTooltip("PC de supervision").addTo(layer);
+    if (premier && pts.length) { map.fitBounds(pts, {padding:[30,30], maxZoom:12}); premier = false; }
+  }
+
+  async function charger(){
+    let d;
+    try { const r = await fetch("/api/etat", {cache:"no-store"}); d = await r.json(); }
+    catch(e) { $("#maj").textContent = "PC de supervision injoignable"; return; }
+    $("#maj").textContent = "mis à jour " + new Date().toLocaleTimeString("fr-FR");
+    const li = d.liaison || {};
+    $("#liaison").textContent = li.connecte ? `Nœud ${li.noeudLocal || ""} connecté` + (li.batterie ? ` · batterie ${num(li.batterie.mv/1000,2," V")}` : "") : "Nœud companion non connecté";
+    $("#liaison").style.color = li.connecte ? "var(--ok)" : "var(--crit)";
+    $("#exo").innerHTML = d.exercice ? `<p style="margin:10px 0 0;color:var(--crit);font-weight:600">${esc(d.exercice.type === "intervention" ? "Intervention" : "Exercice")} en cours : ${esc(d.exercice.nom)}</p>` : "";
+    const own = d.noeuds.filter(n => n.encart);
+    $("#cards").innerHTML = own.map(n => {
+      const s = n.eteint ? ["Éteint","var(--muted)"] : (ST[n.statut] || ST["en-ligne"]), di = (d.dispo || {})[n.id] || {};
+      const h = n.horloge ? new Date(new Date(n.horloge).getTime() + Math.max(0, Date.now() - new Date(n.horlogeLue).getTime())) : null;
+      return `<div class="card" style="--c:${s[1]}"><div class="nm"><span>${esc(n.nom.replace(/^FR06-/,""))}</span><span>${s[0]}</span></div>
+        <div class="kv"><span>Batterie<b>${num(n.batterie,2," V")}</b></span><span>Bruit<b>${num(n.bruit,0," dBm")}</b></span><span>Dispo 7 j<b>${di.j7 != null ? num(di.j7,0," %") : "—"}</b></span>
+        <span>Heure nœud<b>${h ? h.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}) : "—"}</b></span><span>Autonomie<b>${n.autonomie && n.autonomie.jours != null ? "≈ " + n.autonomie.jours + " j" : "—"}</b></span><span>Lu<b>${n.maj ? ago(n.maj) : "—"}</b></span></div>
+        ${(n.tendances || []).map(t => `<span class="tend">⚠ ${esc(t.texte)}</span>`).join("")}</div>`;
+    }).join("") || `<span class="muted">Aucun répéteur ADRASEC.</span>`;
+    $("#alertes").innerHTML = (d.alertes || []).map(a => `<div class="${a.niveau === "critique" ? "crit" : a.niveau === "attention" ? "att" : ""}"><span class="m">${fmt(a.date)}</span><br>${esc(a.texte)}</div>`).join("") || `<span class="muted">Aucune alerte.</span>`;
+    $("#canalTitre").textContent = d.canal ? (d.canal.startsWith("#") ? d.canal : "#" + d.canal) : "#ADRASEC 06";
+    $("#msgs").innerHTML = (d.messages || []).map(m => `<div><span class="m">${fmt(m.date)}</span><br><b>${esc(m.sens === "emis" ? "PC" : (m.auteur || "?"))}</b> : ${esc(m.texte)}</div>`).join("") || `<span class="muted">Aucun message.</span>`;
+    const a = d.appel;
+    $("#appelBox").hidden = !(a && a.enCours);
+    if (a && a.enCours) $("#appel").innerHTML = `<span class="muted">Lancé à ${hm(a.debut)} · ${a.reponses.length} réponse(s)</span><ol>${a.reponses.map(r => `<li><b>${esc(r.auteur)}</b> à ${hm(r.ts)}</li>`).join("")}</ol>`;
+    carte(d);
+  }
+  charger(); setInterval(charger, 10000);
+})();
+</script>
+</body>
+</html>
