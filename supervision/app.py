@@ -16,7 +16,7 @@ from . import aprs, courriel, rapports, systeme, taches, web
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.12.0"
+VERSION = "1.13.0"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -73,6 +73,7 @@ class Api:
                 "mailDernier": self._courrier.dernier if self._courrier else None,
                 "web": {**(self._web.reglages() if self._web else {}), "etat": self._web.etat if self._web else {}},
                 "rapport": self._taches.reglages_rapport() if self._taches else {},
+                "dossierArchives": self._store.get_config("dossier_archives", "") or "",
                 "modeles": self.modeles(),
             },
             "maj": self._taches.maj if self._taches else None,
@@ -157,7 +158,7 @@ class Api:
     def choisir_dossier_rapport(self):
         if not self._window:
             return {"ok": False}
-        r = self._window.create_file_dialog(webview.FOLDER_DIALOG)
+        r = self._window.create_file_dialog(webview.FileDialog.FOLDER)
         if not r:
             return {"ok": False}
         self._store.set_config("rapport_dossier", r[0] if isinstance(r, (list, tuple)) else r)
@@ -617,6 +618,71 @@ class Api:
             logging.exception("main courante")
             return {"ok": False, "erreur": f"Main courante impossible : {e}"}
         return {"ok": True, "chemin": p}
+
+    # ----- suppression et archivage des mains courantes -----
+    def supprimer_main_courante(self, ex_id):
+        ex = self._store.get_exercise(int(ex_id))
+        if not ex:
+            return {"ok": False, "erreur": "Main courante introuvable."}
+        if not ex.get("fin"):
+            return {"ok": False, "erreur": "Clôturez d'abord cette main courante avant de la supprimer."}
+        self._store.delete_exercise(ex["id"])
+        self._store.add_journal("", self._store.get_config("operateur", "") or "PC",
+                                f"Main courante « {ex['nom']} » supprimée.", exercice=None)
+        return {"ok": True}
+
+    def choisir_dossier_archives(self):
+        if not self._window:
+            return {"ok": False}
+        r = self._window.create_file_dialog(webview.FileDialog.FOLDER)
+        if not r:
+            return {"ok": False, "annule": True}
+        self._store.set_config("dossier_archives", r if isinstance(r, str) else r[0])
+        self._store._bump()
+        return {"ok": True}
+
+    def archiver_main_courante(self, ex_id):
+        ex = self._store.get_exercise(int(ex_id))
+        if not ex:
+            return {"ok": False, "erreur": "Main courante introuvable."}
+        if not ex.get("fin"):
+            return {"ok": False, "erreur": "Clôturez d'abord cette main courante avant de l'archiver."}
+        dossier = self._store.get_config("dossier_archives", "") or ""
+        if not dossier or not Path(dossier).is_dir():
+            r = self.choisir_dossier_archives()
+            if not r.get("ok"):
+                return {"ok": False, "annule": True}
+            dossier = self._store.get_config("dossier_archives", "")
+        jour = str(ex.get("debut") or now_iso())[:10]
+        base = Path(dossier) / f"MainCourante-{jour}-{slug(ex['nom'])}"
+        try:
+            rapports.pdf_main_courante(self._store, ex["id"], str(base) + ".pdf")
+            donnees = {"exercice": ex, "registre": self._store.journal_of_exercise(ex["id"]),
+                       "moyens": self._store.list_moyens(ex["id"])}
+            Path(str(base) + ".json").write_text(json.dumps(donnees, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+        except Exception as e:  # noqa: BLE001
+            logging.getLogger("supervision").exception("archivage")
+            return {"ok": False, "erreur": f"Archivage impossible : {e}"}
+        self._store.update_exercise(ex["id"], {"archive": str(base) + ".pdf", "archiveDate": now_iso()})
+        return {"ok": True, "chemin": str(base) + ".pdf"}
+
+    def desarchiver_main_courante(self, ex_id):
+        self._store.update_exercise(int(ex_id), {"archive": "", "archiveDate": ""})
+        return {"ok": True}
+
+    def ouvrir_dossier_archives(self):
+        d = self._store.get_config("dossier_archives", "") or ""
+        if not d:
+            return {"ok": False, "erreur": "Aucun dossier d'archives choisi."}
+        try:
+            os.startfile(d)  # type: ignore[attr-defined]
+            return {"ok": True}
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "erreur": str(e)}
+
+    # ----- analyse du nœud companion -----
+    def analyser_companion(self):
+        return self._poller.analyser_companion()
 
     # ----- fichiers -----
     def exporter(self):

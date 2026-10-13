@@ -403,6 +403,23 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
 .dreq .l2{font-family:var(--f-mono);font-size:.76rem}
 .combo{display:grid;gap:6px;min-width:0;align-content:start}
 #moyForm .fgrid{align-items:start}
+.hclock{display:grid;justify-items:end;line-height:1.1}
+.hclock b{font-family:var(--f-mono);font-size:clamp(1.5rem,2.6vw,2.2rem);font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.hclock span{font-size:.85rem;color:var(--muted)}
+header.top{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px 24px}
+header.top .hright{grid-column:1 / -1}
+.ecard .kv b small{font-size:.74rem;color:var(--muted);font-weight:400}
+#mcomp{position:fixed;inset:0;z-index:2500;background:rgba(5,10,15,.55);display:grid;place-items:center;padding:16px}
+#mcomp[hidden]{display:none}
+.comp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:12px;padding:16px;overflow:auto;min-height:0}
+.comp-sec{border:1px solid var(--line);border-radius:6px;padding:10px 12px;display:grid;gap:4px;align-content:start}
+.comp-sec h3{margin:0 0 4px;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;color:var(--navy)}
+.comp-sec dl{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;margin:0;font-size:.88rem}
+.comp-sec dt{color:var(--muted)}.comp-sec dd{margin:0;font-family:var(--f-mono);overflow-wrap:anywhere}
+.diag{display:grid;gap:4px;padding:0 16px}
+.diag div{font-size:.9rem;padding:5px 8px;border-left:4px solid var(--c);background:var(--sunk);border-radius:3px}
+.exlist .exa{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.exlist .exw{color:var(--crit);font-size:.85rem}
 </style>
 </head>
 <body>
@@ -413,7 +430,8 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
       <div class="brand-txt"><span class="eyebrow">Protection civile · Réseau LoRa</span>
       <h1>Supervision Réseau Meshcore Adrasec 06</h1></div>
     </div>
-    <div style="display:grid;gap:8px;justify-items:end;margin-left:auto">
+    <div class="hclock" aria-live="off"><b id="hClock">--:--:--</b><span id="hDate"></span></div>
+    <div class="hright" style="display:flex;gap:8px;justify-content:flex-end;align-items:center;flex-wrap:wrap">
       <div class="radio" id="radio" aria-label="Paramètres radio du réseau"></div>
       <button class="btn small" id="crOpen" type="button">Salle de crise (plein écran)</button>
     </div>
@@ -434,6 +452,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
         <button class="btn primary" id="connect" type="button">Connecter</button>
         <button class="btn" id="disconnect" type="button" hidden>Déconnecter</button>
         <button class="btn" id="pollNow" type="button" disabled>Interroger maintenant</button>
+        <button class="btn" id="compOpen" type="button" disabled title="Paramètres, télémétrie, batterie, mémoire, statistiques radio de votre nœud companion">Analyser mon nœud</button>
         <label>Collecte <select id="interval"><option value="5">toutes les 5 min</option><option value="60">toutes les heures</option><option value="180">toutes les 3 h</option><option value="360">toutes les 6 h</option><option value="720">toutes les 12 h</option><option value="1440">toutes les 24 h</option><option value="0">à heures fixes…</option></select></label>
         <span class="grp" id="grpHeures" hidden><input id="heures" placeholder="08:00, 20:00" style="width:11em" aria-label="Heures de collecte"><button class="btn small" id="heuresOk" type="button">Valider</button></span>
         <label><input type="checkbox" id="discover"> Ajouter les répéteurs entendus</label>
@@ -618,6 +637,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
 
     <section class="panel">
       <div class="panel-head"><h2>Mains courantes</h2></div>
+      <div class="actions" id="exTools" style="flex-wrap:wrap"></div>
       <div class="exlist" id="exList"></div>
     </section>
   </div>
@@ -714,6 +734,12 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     <span id="footInfo">Données enregistrées sur ce PC.</span>
     <span class="actions"><button class="btn small" id="export" type="button">Exporter les données</button><button class="btn small" id="import" type="button">Importer un export</button></span>
   </footer>
+</div>
+<div id="mcomp" hidden role="dialog" aria-modal="true" aria-labelledby="mcompTitle">
+  <div class="mdet-box" style="width:min(1200px,100%)">
+    <div class="mdet-head"><h2 id="mcompTitle">Mon nœud companion</h2><div style="display:flex;gap:8px"><button class="btn small" id="compRun" type="button">Relancer l'analyse</button><button class="btn small" id="compClose" type="button">Fermer (Échap)</button></div></div>
+    <div style="display:grid;grid-template-rows:auto 1fr;min-height:0;overflow:auto"><div class="diag" id="compDiag" style="padding-top:12px"></div><div class="comp-grid" id="compBody"></div></div>
+  </div>
 </div>
 <div id="mdet" hidden role="dialog" aria-modal="true" aria-labelledby="mdetTitle">
   <div class="mdet-box">
@@ -842,6 +868,20 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     return `<span class="batt" style="--bc:${c};border-color:${faible ? c : ""}" title="Batterie du nœud companion ${esc(liaison.noeudLocal || "")} : ${v} V (environ ${b.pct} %), lue le ${esc(fmtDate(b.date))}. Relue chaque minute.">
       <b>Batterie</b><i class="bico" aria-hidden="true"><i style="width:${w}%"></i></i><span style="color:${c}">${v} V · ${b.pct} %</span></span>`;
   }
+  /* ---------- horloge de l'en-tête ---------- */
+  function tickHorloge(){
+    const d = new Date();
+    $("#hClock").textContent = d.toLocaleTimeString("fr-FR", {hour:"2-digit", minute:"2-digit", second:"2-digit"});
+    $("#hDate").textContent = d.toLocaleDateString("fr-FR", {weekday:"long", day:"numeric", month:"long", year:"numeric"});
+  }
+  tickHorloge(); setInterval(tickHorloge, 1000);
+  /* pourcentage approximatif d'un accu Li-ion d'après sa tension (même table que le logiciel) */
+  function pctLiion(v){
+    const pts = [[3.3,0],[3.5,8],[3.6,18],[3.7,35],[3.8,52],[3.9,66],[4.0,80],[4.1,91],[4.2,100]];
+    v = +v; if (!(v > 0)) return null; if (v <= 3.3) return 0; if (v >= 4.2) return 100;
+    for (let i = 1; i < pts.length; i++) if (v <= pts[i][0]) { const [a, pa] = pts[i-1], [b, pb] = pts[i]; return Math.round(pa + (pb - pa) * (v - a) / (b - a)); }
+    return 100;
+  }
   /* ---------- en-tête radio ---------- */
   function renderRadio(){
     const r = liaison.radio || {};
@@ -904,6 +944,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
     document.querySelectorAll("#mode button").forEach(b => b.disabled = !!L.connecte);
     if (L.connecte && L.mode && L.mode !== mode) setMode(L.mode);
     $("#pollNow").disabled = !L.connecte || L.occupe;
+    $("#compOpen").disabled = !L.connecte;
     if (document.activeElement !== $("#interval") && !heuresEdit) {
       const v = String(L.intervalle ?? 15), sel = $("#interval");
       if (![...sel.options].some(o => o.value === v)) sel.insertAdjacentHTML("afterbegin", `<option value="${v}">toutes les ${v} min</option>`);
@@ -935,7 +976,7 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
       return `<article class="ecard${n.id===sel?" sel":""}" style="--c:${s.c}">
         <div class="hd"><span class="nm">${pylSvg(n.eteint ? "#8794a1" : "#f07b14", 14)}<b title="${esc(n.nom)}">${esc(n.nom.replace(/^FR06-/,""))}</b></span>${pastille}</div>
         ${n.eteint ? `<span class="off">Éteint à distance ${ago(n.eteint)} (${fmtDate(n.eteint)}). Surveillance suspendue.</span>` : `
-        <div class="kv"><span>Batterie<b>${fmtNum(n.batterie,2)}${empty(n.batterie)?"":" V"}</b></span><span>Bruit<b>${fmtNum(n.bruit)}${empty(n.bruit)?"":" dBm"}</b></span><span>Dispo 7 j<b>${d.j7 != null ? fmtNum(d.j7,0)+" %" : "—"}</b></span>
+        <div class="kv"><span>Batterie<b style="color:${!empty(n.batterie) && pctLiion(n.batterie) < 20 ? "var(--crit)" : "inherit"}">${fmtNum(n.batterie,2)}${empty(n.batterie)?"":` V <small>· ${pctLiion(n.batterie)} %</small>`}</b></span><span>Bruit<b>${fmtNum(n.bruit)}${empty(n.bruit)?"":" dBm"}</b></span><span>Dispo 7 j<b>${d.j7 != null ? fmtNum(d.j7,0)+" %" : "—"}</b></span>
           <span>Firmware<b>${esc(n.firmware || "—")}</b></span><span>Err. RX<b>${fmtNum(n.erreursRx)}</b></span><span>Lu<b>${n.maj ? ago(n.maj).replace("il y a ","") : "—"}</b></span></div>
         ${horlogeVignette(n)}
         ${n.autonomie && n.autonomie.jours != null ? `<div class="hvig"><span class="lbl">Autonomie</span><b style="color:${n.autonomie.jours < 7 ? "var(--crit)" : n.autonomie.jours < 20 ? "var(--warn)" : "var(--fg)"}">≈ ${n.autonomie.jours} j</b><span class="muted">${fmtNum(n.autonomie.pente*1000,0)} mV/jour</span></div>` : ""}
@@ -982,6 +1023,50 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
 
   /* ---------- carte réelle (Leaflet) ---------- */
   let lmap = null, lLayer = null, lBase = null, lBaseKey = null, lFitted = false;
+  /* ---------- analyse du nœud companion ---------- */
+  let compBusy = false;
+  async function analyserCompanion(force){
+    $("#mcomp").hidden = false;
+    const deja = liaison.analyseCompanion;
+    if (deja && !force) { renderCompanion(deja); return; }
+    compBusy = true; $("#compRun").disabled = true;
+    $("#compDiag").innerHTML = `<p class="reading">Lecture des paramètres du nœud… (jusqu'à 30 s)</p>`; $("#compBody").innerHTML = "";
+    let r; try { r = await api.analyser_companion(); } catch(e) { r = {ok:false, erreur:String(e)}; }
+    compBusy = false; $("#compRun").disabled = false;
+    if (!r.ok) { $("#compDiag").innerHTML = `<p style="color:var(--crit)">${esc(r.erreur || "Analyse impossible")}</p>`; return; }
+    renderCompanion(r.analyse);
+  }
+  function renderCompanion(a){
+    const idt = a.identite || {}, app = a.appareil || {}, bat = a.batterie || {}, core = a.core || {}, rad = a.radio || {}, pk = a.paquets || {}, tun = a.reglage || {}, ct = a.contacts || {};
+    const sec = (titre, lignes) => { const l = lignes.filter(x => x && x[1] !== undefined && x[1] !== null && x[1] !== ""); return l.length ? `<div class="comp-sec"><h3>${titre}</h3><dl>${l.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl></div>` : ""; };
+    const NIV = {ok:"var(--ok)", attention:"var(--warn)", critique:"var(--crit)"};
+    const oui = v => v === undefined || v === null ? null : (v ? "oui" : "non");
+    const modes = ["désactivé", "sur demande", "pour tous", "?"];
+    const mo = kb => kb == null ? null : (kb >= 1024 ? fmtNum(kb/1024,1) + " Mo" : fmtNum(kb) + " ko");
+    $("#mcompTitle").textContent = "Mon nœud companion · " + (idt.name || liaison.noeudLocal || "");
+    $("#compDiag").innerHTML = `<span class="reading">Analyse du ${fmtDate(a.date)}</span>` + (a.diagnostic || []).map(d => `<div style="--c:${NIV[d.niveau] || "var(--muted)"}">${d.niveau === "ok" ? "✓" : "⚠"} ${esc(d.texte)}</div>`).join("");
+    $("#compBody").innerHTML = [
+      sec("Identité", [["Nom", esc(idt.name)], ["Clé publique", idt.public_key ? `${esc(idt.public_key.slice(0,12))}…` : null], ["Type", {1:"Compagnon",2:"Répéteur",3:"Salon",4:"Capteur"}[idt.adv_type] || idt.adv_type],
+        ["Position", abs(idt.adv_lat) > .01 ? `${(+idt.adv_lat).toFixed(5)}° ${idt.adv_lat >= 0 ? "N" : "S"} · ${abs(+idt.adv_lon).toFixed(5)}° ${idt.adv_lon >= 0 ? "E" : "O"}` : "non renseignée"]]),
+      sec("Appareil", [["Modèle", esc(app.model)], ["Firmware", esc([app.ver, app.fw_build].filter(Boolean).join(" · "))], ["Protocole", app["fw ver"]], ["Contacts max.", app.max_contacts], ["Canaux max.", app.max_channels], ["PIN Bluetooth", app.ble_pin ? String(app.ble_pin).padStart(6,"0") : null], ["Mode répéteur", oui(app.repeat)]]),
+      sec("Radio", [["Fréquence", idt.radio_freq ? fmtNum(idt.radio_freq,3) + " MHz" : null], ["Bande", idt.radio_bw ? fmtNum(idt.radio_bw,1) + " kHz" : null], ["SF / CR", idt.radio_sf ? `${idt.radio_sf} / 4/${idt.radio_cr}` : null],
+        ["Puissance", idt.tx_power != null ? `${idt.tx_power} dBm (max. ${idt.max_tx_power} dBm)` : null], ["Bruit de fond", rad.noise_floor != null ? rad.noise_floor + " dBm" : null], ["Dernier RSSI / SNR", rad.last_rssi != null ? `${rad.last_rssi} dBm / ${fmtSnr(+rad.last_snr)}` : null],
+        ["Temps d'émission", rad.tx_air_secs != null ? fmtUptime(rad.tx_air_secs) || "0 h 00" : null], ["Temps de réception", rad.rx_air_secs != null ? fmtUptime(rad.rx_air_secs) || "0 h 00" : null],
+        ["Délai RX / facteur", tun.rx_delay != null ? `${tun.rx_delay} / ${tun.airtime_factor}` : null]]),
+      sec("Alimentation et mémoire", [["Batterie", bat.level ? `${fmtNum(bat.level/1000,2)} V · ${pctLiion(bat.level/1000)} %` : null], ["Mémoire utilisée", bat.total_kb ? `${mo(bat.used_kb)} / ${mo(bat.total_kb)} (${fmtNum(100*bat.used_kb/bat.total_kb,0)} %)` : null],
+        ["En marche depuis", core.uptime_secs != null ? fmtUptime(core.uptime_secs) : null], ["Erreurs", core.errors], ["File d'émission", core.queue_len],
+        ["Horloge", a.heure && a.heure.time ? `${new Date(a.heure.time*1000).toLocaleString("fr-FR")} (écart ${a.heureEcart >= 0 ? "+" : ""}${a.heureEcart} s)` : null]]),
+      sec("Trafic", [["Paquets reçus / émis", pk.recv != null ? `${fmtNum(pk.recv)} / ${fmtNum(pk.sent)}` : null], ["Inondation émis / reçus", pk.flood_tx != null ? `${fmtNum(pk.flood_tx)} / ${fmtNum(pk.flood_rx)}` : null],
+        ["Direct émis / reçus", pk.direct_tx != null ? `${fmtNum(pk.direct_tx)} / ${fmtNum(pk.direct_rx)}` : null], ["Erreurs de réception", pk.recv_errors]]),
+      sec("Partage et contacts", [["Télémétrie de base", modes[idt.telemetry_mode_base] ?? null], ["Position partagée", modes[idt.telemetry_mode_loc] ?? null], ["Capteurs", modes[idt.telemetry_mode_env] ?? null],
+        ["Position dans les annonces", idt.adv_loc_policy != null ? (idt.adv_loc_policy ? "oui" : "non") : null], ["Accusés multiples", idt.multi_acks != null ? (idt.multi_acks ? "oui" : "non") : null], ["Ajout manuel des contacts", oui(idt.manual_add_contacts)],
+        ["Contacts", ct.total != null ? `${ct.total} (${ct.repeteurs} répéteurs, ${ct.compagnons} compagnons, ${ct.salons} salons${ct.capteurs ? `, ${ct.capteurs} capteurs` : ""})` : null],
+        ["Canaux", (a.canaux || []).map(c => esc(diese(c.nom))).join(", ")]]),
+      (a.telemetrie || []).length ? `<div class="comp-sec"><h3>Télémétrie</h3><div class="tele">${a.telemetrie.map(t => `<span>${esc(teleLabel(t))}</span>`).join("")}</div></div>` : "",
+      Object.keys(a.variables || {}).length ? sec("Variables du firmware", Object.entries(a.variables).map(([k, v]) => [esc(k), esc(v)])) : "",
+    ].join("");
+  }
+  const abs = Math.abs;
   /* ---------- détail d'un message : parcours et carte ---------- */
   const ROUTE_COUL = ["#e8590c", "#1c7ed6", "#2f9e44", "#ae3ec9", "#f59f00", "#0ca678"];
   let detMap = null, detLayer = null, detRetour = null;
@@ -1565,7 +1650,7 @@ const HOT_MIN = 360; // 6 heures
   /* ---------- main courante ---------- */
   const NAT = {"info":["Information","var(--navy)"], "demande":["Demande","var(--test)"], "ordre":["Ordre","var(--accent)"],
                "compte-rendu":["Compte rendu","var(--ok)"], "evenement":["Événement","var(--muted)"]};
-  let mc = {entrees:[], moyens:[]}, mcFiltre = "tout", suiteFor = null;
+  let mc = {entrees:[], moyens:[]}, mcFiltre = "tout", suiteFor = null, voirArchives = false, exDelConfirm = null;
   /* menus déroulants des moyens engagés : listes de base + valeurs déjà utilisées + « Autre… » */
   const LISTES_MOY = {
     fonction: ["Chef de PC", "Chef d'équipe", "Opérateur radio", "Opérateur PC", "Opérateur MeshCore", "Secrétariat / main courante", "Logisticien", "Chauffeur", "Observateur"],
@@ -1626,8 +1711,15 @@ const HOT_MIN = 360; // 6 heures
     } else {
       const rp = $("#repPanel"); if (rp && rp.parentElement !== $("#mcStart")) $("#mcStart").appendChild(rp);
     }
-    $("#exList").innerHTML = exercices.length ? exercices.map(x => `<div><span><b>${esc(x.nom)}</b> <span class="muted">· ${esc(x.type||"")}${x.lieu?` · ${esc(x.lieu)}`:""} · ${fmtDate(x.debut)} → ${x.fin ? fmtDate(x.fin) : "en cours"}</span></span><button class="btn small" data-mc="${x.id}">PDF</button></div>`).join("")
-      : `<div class="empty">Aucune main courante pour l'instant.</div>`;
+    const nbArch = exercices.filter(x => x.archive).length, vis = exercices.filter(x => voirArchives || !x.archive);
+    $("#exTools").innerHTML = `<span class="reading">Archives : ${esc(reglages.dossierArchives || "aucun dossier choisi")}</span>
+      <button class="btn small" id="exArchDir" type="button">Choisir le dossier…</button>${reglages.dossierArchives ? `<button class="btn small" id="exArchOpen" type="button">Ouvrir</button>` : ""}
+      ${nbArch ? `<button class="btn small" id="exArchShow" type="button" aria-pressed="${voirArchives}">${voirArchives ? "Masquer" : "Afficher"} les archivées (${nbArch})</button>` : ""}`;
+    $("#exList").innerHTML = vis.length ? vis.map(x => `<div style="display:grid;gap:4px"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center"><span><b>${esc(x.nom)}</b> <span class="muted">· ${esc(x.type||"")}${x.lieu?` · ${esc(x.lieu)}`:""} · ${fmtDate(x.debut)} → ${x.fin ? fmtDate(x.fin) : "en cours"}</span>${x.archive ? ` <span class="pill" style="--c:var(--muted)">archivée le ${fmtDate(x.archiveDate)}</span>` : ""}</span>
+      <span class="exa"><button class="btn small" data-mc="${x.id}">PDF</button>${x.fin ? (x.archive ? `<button class="btn small" data-exdesarch="${x.id}">Désarchiver</button>` : `<button class="btn small" data-exarch="${x.id}" title="Enregistre le PDF et les données dans le dossier d'archives, puis la retire de la liste">Archiver</button>`) + `<button class="btn small danger" data-exdel="${x.id}">Supprimer</button>` : ""}</span></div>
+      ${exDelConfirm === x.id ? `<div class="exw" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">Supprimer définitivement « ${esc(x.nom)} », son registre et ses moyens ? ${x.archive ? "" : "Pensez à l'archiver avant. "}<button class="btn small danger" data-exdelok="${x.id}">Oui, supprimer</button><button class="btn small" data-exdelno="1">Annuler</button></div>` : ""}
+      ${x.archive ? `<span class="reading" style="overflow-wrap:anywhere">${esc(x.archive)}</span>` : ""}</div>`).join("")
+      : `<div class="empty">${exercices.length ? "Toutes les mains courantes sont archivées." : "Aucune main courante pour l'instant."}</div>`;
   }
   function renderRegistre(){
     let list = [...mc.entrees].reverse();
@@ -1752,7 +1844,7 @@ const HOT_MIN = 360; // 6 heures
     }
   }
   setInterval(() => { if (crise) $("#crClock").textContent = new Date().toLocaleTimeString("fr-FR"); }, 1000);
-  document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#mdet").hidden) { fermerDetail(); return; } if (e.key === "Escape" && crise) openCrise(false); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#mcomp").hidden) { $("#mcomp").hidden = true; return; } if (e.key === "Escape" && !$("#mdet").hidden) { fermerDetail(); return; } if (e.key === "Escape" && crise) openCrise(false); });
 
   /* ---------- messages types ---------- */
   function fillTemplate(t){
@@ -1872,6 +1964,12 @@ const HOT_MIN = 360; // 6 heures
     if (t.closest("#mdetClose") || t.id === "mdet") { fermerDetail(); return; }
     const mid = t.closest("[data-msgid]");
     if (mid && !window.getSelection().toString()) { ouvrirDetail(+mid.dataset.msgid); return; }
+    const xa = t.closest("[data-exarch]"), xd = t.closest("[data-exdesarch]"), xs = t.closest("[data-exdel]"), xo = t.closest("[data-exdelok]");
+    if (xa) { toast("Archivage…"); const r = await api.archiver_main_courante(+xa.dataset.exarch); if (r.ok) toast("Archivée : " + r.chemin); else if (r.erreur) toast(r.erreur); refresh(true); return; }
+    if (xd) { await api.desarchiver_main_courante(+xd.dataset.exdesarch); refresh(true); return; }
+    if (xs) { exDelConfirm = +xs.dataset.exdel; renderCourante(); return; }
+    if (t.closest("[data-exdelno]")) { exDelConfirm = null; renderCourante(); return; }
+    if (xo) { const r = await api.supprimer_main_courante(+xo.dataset.exdelok); exDelConfirm = null; toast(r.ok ? "Main courante supprimée" : r.erreur); refresh(true); return; }
     const mc = t.closest("[data-mc]");
     if (mc) { const r = await api.main_courante(+mc.dataset.mc); if (r.ok) toast("Main courante enregistrée : " + r.chemin); else if (r.erreur) toast(r.erreur); return; }
     const tl = t.closest("[data-testliaison]");
@@ -1961,6 +2059,12 @@ const HOT_MIN = 360; // 6 heures
       case "rpDirBtn": { await api.choisir_dossier_rapport(); refresh(true); return; }
       case "rpNow": { t.disabled = true; toast("Création du rapport…"); const r = await api.generer_rapport(); t.disabled = false; toast(r.ok ? "Rapport enregistré : " + r.chemin + (r.mail ? (r.mail.ok ? " · envoyé par e-mail" : " · e-mail : " + r.mail.erreur) : "") : r.erreur); refresh(true); return; }
       case "rpOpen": { const r = await api.ouvrir_dossier_rapports(); if (!r.ok) toast(r.erreur); return; }
+      case "compOpen": analyserCompanion(false); return;
+      case "compRun": analyserCompanion(true); return;
+      case "compClose": $("#mcomp").hidden = true; return;
+      case "exArchDir": { await api.choisir_dossier_archives(); refresh(true); return; }
+      case "exArchOpen": { const r = await api.ouvrir_dossier_archives(); if (!r.ok) toast(r.erreur); return; }
+      case "exArchShow": voirArchives = !voirArchives; renderCourante(); return;
       case "appelGo": { t.disabled = true; const r = await api.lancer_appel(); t.disabled = false; toast(r.ok ? "Appel envoyé sur le canal ADRASEC 06" : r.erreur); refresh(true); return; }
       case "appelStop": { const r = await api.clore_appel(); toast(r.ok ? r.texte : r.erreur); refresh(true); return; }
       case "bkNow": { const r = await api.sauvegarder_maintenant(); toast(r.ok ? "Sauvegarde faite : " + r.chemin : r.erreur); refresh(true); return; }

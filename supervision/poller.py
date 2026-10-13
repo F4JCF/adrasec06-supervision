@@ -56,6 +56,7 @@ class Poller:
         self.equipes: list[dict] = []
         self.position = None
         self.batterie = None  # batterie du nœud companion : {"mv", "pct", "date"}
+        self.analyse_companion = None
         self._batt_alerte = False
         self._eq_task = None
         self.couverture_en_cours = False
@@ -113,6 +114,7 @@ class Poller:
             "equipes": self.equipes,
             "position": self.position,
             "batterie": self.batterie if self.mc is not None else None,
+            "analyseCompanion": self.analyse_companion if self.mc is not None else None,
             "couvertureEnCours": self.couverture_en_cours,
             "contactsMessagerie": self.contacts_messagerie() if self.mc is not None else [],
         }
@@ -1297,6 +1299,135 @@ class Poller:
             resume = res.get("note") or "échec"
         self.store.add_journal(name, operateur or "AUTO", f"Test de liaison aller-retour : {resume}.")
         return {"ok": res["ok"], "message": resume, "test": res}
+
+    # ---------- analyse du nœud companion ----------
+    RESEAU = {"radio_freq": 869.618, "radio_bw": 62.5, "radio_sf": 8, "radio_cr": 8}
+
+    def analyser_companion(self) -> dict:
+        if self.mc is None:
+            return {"ok": False, "erreur": "Aucun nœud connecté."}
+        self.prioritaire += 1
+        try:
+            return self._submit(self._analyser_companion(), timeout=120)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "erreur": f"Analyse impossible : {e}"}
+        finally:
+            self.prioritaire = max(0, self.prioritaire - 1)
+
+    async def _analyser_companion(self) -> dict:
+        if not await self._attendre_la_main("Analyse du nœud companion"):
+            return {"ok": False, "erreur": "L'interrogation en cours ne s'est pas terminée à temps. Réessayez."}
+        mc = self.mc
+        r: dict = {"date": now_iso()}
+
+        async def lire(cle, coro):
+            try:
+                ev = await coro
+                if ev is not None and ev.type != EventType.ERROR:
+                    r[cle] = ev.payload
+            except Exception as e:  # noqa: BLE001
+                log.debug("analyse %s : %s", cle, e)
+
+        await lire("identite", mc.commands.send_appstart())
+        await lire("appareil", mc.commands.send_device_query())
+        await lire("batterie", mc.commands.get_bat())
+        await lire("heure", mc.commands.get_time())
+        h = (r.get("heure") or {}).get("time")
+        if h and abs(h - time.time()) > 120:  # horloge du companion décalée : on la remet à l'heure du PC
+            try:
+                await mc.commands.set_time(int(time.time()))
+                r["heureCorrigee"] = int(h - time.time())
+                await lire("heure", mc.commands.get_time())
+            except Exception:  # noqa: BLE001
+                pass
+        await lire("core", mc.commands.get_stats_core())
+        await lire("radio", mc.commands.get_stats_radio())
+        await lire("paquets", mc.commands.get_stats_packets())
+        await lire("reglage", mc.commands.get_tuning())
+        await lire("telemetrie", mc.commands.get_self_telemetry())
+        await lire("variables", mc.commands.get_custom_vars())
+        try:
+            res = await mc.commands.get_contacts()
+            if res is not None and res.type != EventType.ERROR:
+                self._contacts = dict(res.payload or {})
+        except Exception:  # noqa: BLE001
+            pass
+        types = {1: "compagnons", 2: "repeteurs", 3: "salons", 4: "capteurs"}
+        cpt = {v: 0 for v in types.values()}
+        for c in self._contacts.values():
+            k = types.get(c.get("type"))
+            if k:
+                cpt[k] += 1
+        r["contacts"] = {**cpt, "total": len(self._contacts)}
+        r["canaux"] = self.canaux
+        # télémétrie Cayenne LPP → liste lisible
+        tel = r.get("telemetrie")
+        if isinstance(tel, dict):
+            tel = tel.get("lpp") or tel.get("data") or []
+        r["telemetrie"] = [{"canal": x.get("channel"), "type": x.get("type"), "valeur": x.get("value")}
+                           for x in (tel or []) if isinstance(x, dict)]
+        for k in ("identite",):
+            if isinstance(r.get(k), dict):
+                r[k] = {kk: vv for kk, vv in r[k].items() if not isinstance(vv, (bytes, bytearray))}
+        r["diagnostic"] = self._diagnostic_companion(r)
+        if isinstance(r.get("batterie"), dict) and r["batterie"].get("level"):
+            mv = int(r["batterie"]["level"])
+            self.batterie = {"mv": mv, "pct": self._pct_batterie(mv), "date": now_iso()}
+        self.analyse_companion = r
+        self.store._bump()
+        return {"ok": True, "analyse": r}
+
+    def _diagnostic_companion(self, r: dict) -> list[dict]:
+        """Points à vérifier : (niveau, texte). niveau = ok / attention / critique."""
+        out = []
+        idt, app, bat = r.get("identite") or {}, r.get("appareil") or {}, r.get("batterie") or {}
+        def ajoute(niv, txt):
+            out.append({"niveau": niv, "texte": txt})
+        if idt:
+            ecarts = [k for k, v in self.RESEAU.items() if idt.get(k) is not None and abs(float(idt[k]) - v) > 0.01]
+            if ecarts:
+                ajoute("critique", "Paramètres radio différents du réseau ADRASEC 06 (869,618 MHz · BW 62,5 kHz · SF 8 · CR 4/8) : "
+                       f"{idt.get('radio_freq')} MHz · BW {idt.get('radio_bw')} kHz · SF {idt.get('radio_sf')} · CR 4/{idt.get('radio_cr')}.")
+            else:
+                ajoute("ok", "Paramètres radio conformes au réseau ADRASEC 06.")
+            if idt.get("tx_power") is not None and idt.get("max_tx_power") and idt["tx_power"] < idt["max_tx_power"] - 3:
+                ajoute("attention", f"Puissance d'émission {idt['tx_power']} dBm (maximum de la carte {idt['max_tx_power']} dBm).")
+            if not idt.get("telemetry_mode_loc"):
+                ajoute("attention", "La position n'est pas partagée en télémétrie : les autres ne verront pas votre position.")
+            if not (abs(idt.get("adv_lat") or 0) > 0.01):
+                ajoute("attention", "Aucune position enregistrée dans le nœud (annonces sans coordonnées).")
+            if idt.get("manual_add_contacts"):
+                ajoute("attention", "Ajout manuel des contacts activé : les nouveaux répéteurs entendus ne sont pas ajoutés automatiquement.")
+        if bat.get("level"):
+            v = bat["level"] / 1000
+            seuil = float(self.store.get_config("seuil_batterie", 3.5) or 3.5)
+            ajoute("critique" if v < seuil else "ok", f"Batterie {v:.2f} V (≈ {self._pct_batterie(bat['level'])} %).".replace(".", ",", 1))
+        if bat.get("total_kb"):
+            pct = 100 * (bat.get("used_kb") or 0) / bat["total_kb"]
+            if pct > 85:
+                ajoute("attention", f"Mémoire du nœud occupée à {pct:.0f} % : supprimez des contacts inutiles.")
+        if r.get("heureCorrigee"):
+            e = r["heureCorrigee"]
+            ajoute("attention", f"Horloge du nœud {'en avance' if e > 0 else 'en retard'} de {abs(e) // 60} min : remise à l'heure du PC.")
+        heure = (r.get("heure") or {}).get("time")
+        if heure:
+            ecart = int(heure - time.time())
+            r["heureEcart"] = ecart
+            ajoute("attention" if abs(ecart) > 120 else "ok",
+                   f"Horloge du nœud {'à l’heure' if abs(ecart) <= 120 else ('en avance' if ecart > 0 else 'en retard') + f' de {abs(ecart) // 60} min'}.")
+        mx = app.get("max_contacts")
+        tot = (r.get("contacts") or {}).get("total", 0)
+        if mx:
+            niv = "critique" if tot >= mx else "attention" if tot >= 0.9 * mx else "ok"
+            ajoute(niv, f"{tot} contacts sur {mx} possibles.")
+        rad = r.get("radio") or {}
+        if rad.get("noise_floor") is not None:
+            nf = rad["noise_floor"]
+            ajoute("attention" if nf > -100 else "ok", f"Bruit de fond {nf} dBm" + (" : élevé, environnement brouillé." if nf > -100 else "."))
+        core = r.get("core") or {}
+        if core.get("queue_len"):
+            ajoute("attention", f"{core['queue_len']} paquet(s) en attente d'émission.")
+        return out
 
     @staticmethod
     def _pct_batterie(mv: int) -> int:

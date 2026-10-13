@@ -129,6 +129,13 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 - **Tableau de bord sur tablette/téléphone** (lecture seule, réseau local, code d'accès facultatif).
 - **Rapport hebdomadaire** PDF automatique (jour et heure au choix), envoi possible par e-mail.
 
+### Nouveautés de la version 1.13
+
+- **Mains courantes** : bouton **Archiver** (PDF + données .json enregistrés dans le dossier d'archives choisi, puis retirée de la liste ; « Afficher les archivées » / « Désarchiver ») et bouton **Supprimer** (avec confirmation ; seulement une main courante clôturée).
+- **Analyser mon nœud** (panneau Liaison) : identité, appareil et firmware, paramètres radio comparés au réseau ADRASEC 06, puissance, batterie et mémoire, horloge (remise à l'heure si décalée), statistiques radio et trafic, partage de position et télémétrie, contacts et canaux, avec un diagnostic des points à vérifier.
+- Vignettes ADRASEC : **pourcentage de batterie** à côté de la tension.
+- **Horloge** HH:MM:SS et date en haut à droite.
+
 ### Les données
 
 Tout est enregistré sur le PC dans `%APPDATA%\ADRASEC06-Supervision\supervision.db`, y compris les mots de passe des répéteurs et le PIN Bluetooth (en clair, dans ce fichier local uniquement). Le journal technique est dans `supervision.log` au même endroit.

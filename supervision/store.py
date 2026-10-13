@@ -93,7 +93,7 @@ class Store:
                                          " nature=COALESCE(nature, CASE WHEN auto=1 OR UPPER(auteur)='AUTO' THEN 'evenement' ELSE 'info' END)"
                                          " WHERE id=?", (i, jid))
             ecols = {r[1] for r in self._cx.execute("PRAGMA table_info(exercices)")}
-            for col in ("lieu", "autorite", "description", "bilan", "signataire"):
+            for col in ("lieu", "autorite", "description", "bilan", "signataire", "archive", "archiveDate"):
                 if col not in ecols:
                     self._cx.execute(f"ALTER TABLE exercices ADD COLUMN {col} TEXT")
             mcols = {r[1] for r in self._cx.execute("PRAGMA table_info(messages)")}
@@ -265,7 +265,7 @@ class Store:
 
     def update_exercise(self, ex_id: int, fields: dict):
         allowed = {k: v for k, v in fields.items()
-                   if k in ("nom", "type", "lieu", "autorite", "description", "bilan", "responsable", "signataire")}
+                   if k in ("nom", "type", "lieu", "autorite", "description", "bilan", "responsable", "signataire", "archive", "archiveDate")}
         if not allowed:
             return
         with self._lock:
@@ -301,6 +301,19 @@ class Store:
         with self._lock:
             rows = self._cx.execute("SELECT * FROM exercices ORDER BY id DESC").fetchall()
         return [dict(r) for r in rows]
+
+    def delete_exercise(self, ex_id: int):
+        """Supprime une main courante et tout ce qui lui est rattaché (registre, moyens)."""
+        with self._lock:
+            self._cx.execute("DELETE FROM journal WHERE exercice=?", (int(ex_id),))
+            self._cx.execute("DELETE FROM moyens WHERE exercice=?", (int(ex_id),))
+            try:
+                self._cx.execute("UPDATE appels SET exercice=NULL WHERE exercice=?", (int(ex_id),))
+            except sqlite3.OperationalError:
+                pass
+            self._cx.execute("DELETE FROM exercices WHERE id=?", (int(ex_id),))
+            self._cx.commit()
+        self._bump()
 
     # ---------- messagerie ----------
     def add_message(self, m: dict) -> int:
