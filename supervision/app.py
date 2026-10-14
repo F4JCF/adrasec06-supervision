@@ -16,7 +16,7 @@ from . import aprs, courriel, rapports, systeme, taches, web
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.14.4"
+VERSION = "1.15.0"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -255,6 +255,12 @@ class Api:
         r = self._poller.tester_liaison(node_id, self._store.get_config("operateur", ""))
         self._noter_requete(node_id, "test liaison", r)
         return r
+
+    def chemin_contact(self, cle):
+        return self._poller.chemin_contact(cle)
+
+    def definir_chemin(self, cle, mode, relais=None):
+        return self._poller.definir_chemin(cle, mode, relais or [], self._store.get_config("operateur", ""))
 
     def renvoyer_message(self, mid):
         return self._poller.renvoyer_message(int(mid))

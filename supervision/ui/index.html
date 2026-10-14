@@ -429,6 +429,11 @@ header.top .hright{grid-column:1 / -1}
 .apgrp label span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .apatt{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,230px),1fr));gap:4px 14px;margin:0;padding:0;list-style:none}
 .apatt li{font-size:.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#mchemin[hidden]{display:none}
+#chListe li{font-size:.9rem}
+#chListe li .row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+#chListe li .row span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#chListe li button{padding:1px 8px}
 </style>
 </head>
 <body>
@@ -766,6 +771,23 @@ header.top .hright{grid-column:1 / -1}
     </div>
   </div>
 </div>
+<div id="mchemin" hidden role="dialog" aria-modal="true" aria-labelledby="mcheminTitle" style="position:fixed;inset:0;z-index:2600;background:rgba(5,10,15,.55);display:grid;place-items:center;padding:16px">
+  <div class="mdet-box" style="width:min(820px,100%)">
+    <div class="mdet-head"><h2 id="mcheminTitle">Chemin vers le contact</h2><button class="btn small" id="chAnnuler" type="button">Annuler (Échap)</button></div>
+    <div style="display:grid;gap:12px;padding:16px;overflow:auto;min-height:0">
+      <span class="reading" id="chActuel"></span>
+      <div class="seg" id="chMode" role="group" aria-label="Type de chemin" style="justify-self:start">
+        <button type="button" data-chmode="relais" aria-pressed="true">Par des relais</button><button type="button" data-chmode="direct" aria-pressed="false">Direct</button><button type="button" data-chmode="inondation" aria-pressed="false">Inondation</button></div>
+      <p class="hint" id="chAide" style="margin:0"></p>
+      <div id="chRelaisZone" style="display:grid;gap:8px">
+        <ol id="chListe" style="margin:0;padding-left:1.6em;display:grid;gap:6px"></ol>
+        <div style="display:flex;gap:6px;flex-wrap:wrap"><input id="chAjout" list="chRepeteurs" placeholder="Nom du répéteur ou identifiant (ex. 47a0)" style="flex:1;min-width:240px"><datalist id="chRepeteurs"></datalist><button class="btn small" id="chAjoutBtn" type="button">Ajouter ce relais</button></div>
+      </div>
+      <div class="path" id="chApercu" style="flex-wrap:wrap"></div>
+      <div class="actions"><button class="btn primary" id="chAppliquer" type="button">Appliquer le chemin</button><span class="reading" id="chMsg"></span></div>
+    </div>
+  </div>
+</div>
 <div id="mdet" hidden role="dialog" aria-modal="true" aria-labelledby="mdetTitle">
   <div class="mdet-box">
     <div class="mdet-head"><h2 id="mdetTitle">Détail du message</h2><div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end"><span id="mdetActs" style="display:flex;gap:8px;flex-wrap:wrap"></span><button class="btn small" id="mdetClose" type="button">Fermer (Échap)</button></div></div>
@@ -1086,6 +1108,43 @@ header.top .hright{grid-column:1 / -1}
     const r = await api.candidats_appel(); apStations = r.stations || []; apOp = r.operateur || "";
     apRendre(); $("#apGo").focus();
   }
+  /* ---------- chemin manuel vers un contact ---------- */
+  let chData = null, chMode = "relais", chRelais = [];
+  const AIDE_CH = {relais: "Les messages directs passeront par ces répéteurs, dans cet ordre (le premier doit être entendu par votre nœud, le dernier doit entendre le contact).",
+    direct: "Le contact est à portée directe de votre nœud : aucun relais.", inondation: "Le chemin mémorisé est effacé : le prochain message part en inondation et le réseau trouve la route tout seul."};
+  async function ouvrirChemin(cle){
+    $("#mchemin").hidden = false; $("#chMsg").textContent = ""; $("#chListe").innerHTML = `<li class="reading">Chargement…</li>`;
+    const r = await api.chemin_contact(cle);
+    if (!r.ok) { $("#chListe").innerHTML = ""; $("#chMsg").textContent = r.erreur; return; }
+    chData = r; chMode = r.mode === "inondation" ? "relais" : r.mode;
+    chRelais = r.actuels.map(a => ({cle: a.cle || a.hash, nom: a.nom}));
+    $("#mcheminTitle").textContent = "Chemin vers " + r.nom;
+    $("#chActuel").textContent = "Chemin actuel : " + (r.mode === "inondation" ? "inconnu (inondation)" : r.mode === "direct" ? "direct, sans relais" : r.actuels.map(a => a.nom + (a.ambigu ? " (?)" : "")).join(" → "));
+    $("#chRepeteurs").innerHTML = r.relais.map(x => `<option value="${esc(x.nom)} [${esc(x.cle.slice(0, 2*r.taille))}]">`).join("");
+    chRendre(); $("#chAjout").focus();
+  }
+  function chRendre(){
+    document.querySelectorAll("#chMode button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.chmode === chMode)));
+    $("#chAide").textContent = AIDE_CH[chMode];
+    $("#chRelaisZone").hidden = chMode !== "relais";
+    const t = (chData && chData.taille) || 1;
+    $("#chListe").innerHTML = chRelais.length ? chRelais.map((x, i) => `<li><div class="row"><span><b>${esc(x.nom)}</b> <span class="muted mono">${esc(String(x.cle).slice(0, 2*t).toUpperCase())}</span></span>
+      <button class="btn small" data-chup="${i}" ${i ? "" : "disabled"} title="Monter">↑</button><button class="btn small" data-chdown="${i}" ${i < chRelais.length - 1 ? "" : "disabled"} title="Descendre">↓</button><button class="btn small danger" data-chdel="${i}" title="Retirer">×</button></div></li>`).join("")
+      : `<li class="muted" style="list-style:none;margin-left:-1.6em">Aucun relais : ajoutez-les dans l'ordre, depuis votre nœud vers le contact.</li>`;
+    const moi = esc(liaison.noeudLocal || "Ce nœud"), dest = esc(chData ? chData.nom : "contact");
+    $("#chApercu").innerHTML = chMode === "inondation" ? `<span>${moi}</span><i>⇢</i><span>inondation</span><i>⇢</i><span><b>${dest}</b></span>`
+      : `<span>${moi}</span>${(chMode === "relais" ? chRelais : []).map(x => `<i>→</i><span>${esc(x.nom)}</span>`).join("")}<i>→</i><span><b>${dest}</b></span>`;
+    $("#chAppliquer").disabled = chMode === "relais" && !chRelais.length;
+  }
+  function chAjouter(){
+    const v = $("#chAjout").value.trim(); if (!v || !chData) return;
+    const m = v.match(/\[([0-9a-fA-F]+)\]\s*$/);
+    let r = m ? chData.relais.find(x => x.cle.toLowerCase().startsWith(m[1].toLowerCase()) && v.startsWith(x.nom)) : null;
+    if (!r) r = chData.relais.find(x => x.nom.toLowerCase() === v.toLowerCase());
+    if (!r && /^[0-9a-fA-F]{2,8}$/.test(v)) { const c = chData.relais.filter(x => x.cle.toLowerCase().startsWith(v.toLowerCase())); r = c.length === 1 ? c[0] : {cle: v.toLowerCase(), nom: c.length ? `${c[0].nom} (?)` : "Relais " + v.toUpperCase()}; }
+    if (!r) { $("#chMsg").textContent = "Répéteur inconnu : choisissez-le dans la liste ou tapez son identifiant hexadécimal."; return; }
+    chRelais.push({cle: r.cle, nom: r.nom}); $("#chAjout").value = ""; $("#chMsg").textContent = ""; chRendre(); $("#chAjout").focus();
+  }
   /* ---------- analyse du nœud companion ---------- */
   let compBusy = false;
   async function analyserCompanion(force){
@@ -1145,6 +1204,8 @@ header.top .hright{grid-column:1 / -1}
     if (!d || !d.ok) { $("#mdetInfo").innerHTML = `<p style="color:var(--crit)">${esc((d && d.erreur) || "Détail indisponible.")}</p>`; return; }
     const m = d.message, emis = m.sens === "emis", canal = m.canal != null;
     // boutons « Répondre » : sur le même canal (mention @[auteur]) ou en message direct si l'auteur est un contact
+    const cleChemin = (() => { const k = m.canal == null ? (m.contact_cle || "") : ""; const nm = emis ? m.contact : (m.auteur || m.contact || "");
+      const c = (liaison.contactsMessagerie || []).find(c => (k && c.cle.startsWith(k)) || (nm && c.nom === nm)); return c ? c.cle : ""; })();
     if (!emis) {
       const auteurNom = m.auteur || m.contact || "";
       const contact = (liaison.contactsMessagerie || []).find(c => c.nom === auteurNom || (m.contact_cle && c.cle.startsWith(m.contact_cle)));
@@ -1153,6 +1214,7 @@ header.top .hright{grid-column:1 / -1}
       if (contact) acts.push(`<button class="btn small${canal ? "" : " primary"}" data-repondre="d:${esc(contact.cle.slice(0,12))}" title="Message direct chiffré à ${esc(contact.nom)}">Répondre en privé</button>`);
       $("#mdetActs").innerHTML = liaison.connecte ? acts.join("") : (acts.length ? `<span class="reading">Connectez le nœud companion pour répondre</span>` : "");
     }
+    if (cleChemin && liaison.connecte) $("#mdetActs").insertAdjacentHTML("beforeend", `<button class="btn small" data-cheminedit="${esc(cleChemin)}" title="Choisir vous-même les relais par lesquels passent les messages directs vers ce contact">Définir le chemin…</button>`);
     const auteur = emis ? (d.moi.nom + " (nous)") : (m.auteur || m.contact || "Inconnu");
     let html = `<div class="mdet-txt">${esc(m.texte)}</div>
       <dl class="mdet-kv"><dt>De</dt><dd><b>${esc(auteur)}</b>${d.auteur.source && !emis ? ` <span class="muted">· ${esc(d.auteur.source)}</span>` : ""}</dd>
@@ -1921,7 +1983,7 @@ const HOT_MIN = 360; // 6 heures
     }
   }
   setInterval(() => { if (crise) $("#crClock").textContent = new Date().toLocaleTimeString("fr-FR"); }, 1000);
-  document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.id === "apAjout") { e.preventDefault(); $("#apAjoutBtn").click(); return; } if (e.key === "Escape" && !$("#mappel").hidden) { $("#mappel").hidden = true; return; } if (e.key === "Escape" && !$("#mcomp").hidden) { $("#mcomp").hidden = true; return; } if (e.key === "Escape" && !$("#mdet").hidden) { fermerDetail(); return; } if (e.key === "Escape" && crise) openCrise(false); });
+  document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.id === "chAjout") { e.preventDefault(); chAjouter(); return; } if (e.key === "Escape" && !$("#mchemin").hidden) { $("#mchemin").hidden = true; return; } if (e.key === "Enter" && e.target.id === "apAjout") { e.preventDefault(); $("#apAjoutBtn").click(); return; } if (e.key === "Escape" && !$("#mappel").hidden) { $("#mappel").hidden = true; return; } if (e.key === "Escape" && !$("#mcomp").hidden) { $("#mcomp").hidden = true; return; } if (e.key === "Escape" && !$("#mdet").hidden) { fermerDetail(); return; } if (e.key === "Escape" && crise) openCrise(false); });
 
   /* ---------- messages types ---------- */
   function fillTemplate(t){
@@ -2042,6 +2104,13 @@ const HOT_MIN = 360; // 6 heures
     const mdel = t.closest("[data-msgdel]");
     if (mdel) { await api.supprimer_message(+mdel.dataset.msgdel); refresh(true); return; }
     if (t.closest("#mdetClose") || t.id === "mdet") { fermerDetail(); return; }
+    const ce = t.closest("[data-cheminedit]");
+    if (ce) { ouvrirChemin(ce.dataset.cheminedit); return; }
+    const chm = t.closest("[data-chmode]"); if (chm) { chMode = chm.dataset.chmode; chRendre(); return; }
+    const cu = t.closest("[data-chup]"), cdn = t.closest("[data-chdown]"), cx = t.closest("[data-chdel]");
+    if (cu) { const i = +cu.dataset.chup; [chRelais[i-1], chRelais[i]] = [chRelais[i], chRelais[i-1]]; chRendre(); return; }
+    if (cdn) { const i = +cdn.dataset.chdown; [chRelais[i+1], chRelais[i]] = [chRelais[i], chRelais[i+1]]; chRendre(); return; }
+    if (cx) { chRelais.splice(+cx.dataset.chdel, 1); chRendre(); return; }
     const rp = t.closest("[data-repondre]");
     if (rp) {
       fermerDetail(); tab = "messages"; conv = rp.dataset.repondre; convConfirm = false; lastMsgCount = -2; editing = null; renderAll();
@@ -2147,6 +2216,11 @@ const HOT_MIN = 360; // 6 heures
       case "rpDirBtn": { await api.choisir_dossier_rapport(); refresh(true); return; }
       case "rpNow": { t.disabled = true; toast("Création du rapport…"); const r = await api.generer_rapport(); t.disabled = false; toast(r.ok ? "Rapport enregistré : " + r.chemin + (r.mail ? (r.mail.ok ? " · envoyé par e-mail" : " · e-mail : " + r.mail.erreur) : "") : r.erreur); refresh(true); return; }
       case "rpOpen": { const r = await api.ouvrir_dossier_rapports(); if (!r.ok) toast(r.erreur); return; }
+      case "chAnnuler": $("#mchemin").hidden = true; return;
+      case "chAjoutBtn": chAjouter(); return;
+      case "chAppliquer": { t.disabled = true; $("#chMsg").textContent = "Enregistrement dans le nœud companion…";
+        const r = await api.definir_chemin(chData.cle, chMode, chRelais.map(x => x.cle)); t.disabled = false;
+        if (r.ok) { $("#mchemin").hidden = true; toast(r.message); refresh(true); } else $("#chMsg").textContent = r.erreur; return; }
       case "compOpen": analyserCompanion(false); return;
       case "compRun": analyserCompanion(true); return;
       case "compClose": $("#mcomp").hidden = true; return;

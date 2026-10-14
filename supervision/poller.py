@@ -1302,6 +1302,83 @@ class Poller:
         self.store.add_journal(name, operateur or "AUTO", f"Test de liaison aller-retour : {resume}.")
         return {"ok": res["ok"], "message": resume, "test": res}
 
+    # ---------- chemin manuel vers un contact ----------
+    def _contact_par_cle(self, cle: str):
+        cle = (cle or "").lower()
+        return next((c for c in self._contacts.values() if cle and (c.get("public_key") or "").lower().startswith(cle)), None)
+
+    def chemin_contact(self, cle: str) -> dict:
+        """Route actuelle vers un contact et liste des relais possibles (répéteurs et salons connus)."""
+        c = self._contact_par_cle(cle)
+        if c is None:
+            return {"ok": False, "erreur": "Contact introuvable dans le nœud companion."}
+        taille = max(1, (c.get("out_path_hash_mode") or 0) + 1)
+        n = c.get("out_path_len", -1)
+        hexpath = c.get("out_path") or ""
+        hops = [hexpath[i:i + 2 * taille] for i in range(0, len(hexpath), 2 * taille)][:max(0, n or 0)] if n and n > 0 else []
+        relais = []
+        for c2 in self._contacts.values():
+            if c2.get("type") in (2, 3) and c2.get("public_key"):
+                relais.append({"cle": c2["public_key"], "nom": c2.get("adv_name") or c2["public_key"][:8],
+                               "lat": c2.get("adv_lat") if abs(c2.get("adv_lat") or 0) > .01 else None,
+                               "lon": c2.get("adv_lon") if abs(c2.get("adv_lon") or 0) > .01 else None})
+        relais.sort(key=lambda x: x["nom"].lower())
+        actuels = []
+        for h in hops:
+            cand = [r for r in relais if r["cle"].lower().startswith(h.lower())]
+            actuels.append({"hash": h, "cle": cand[0]["cle"] if len(cand) == 1 else None,
+                            "nom": cand[0]["nom"] if cand else f"? {h.upper()}", "ambigu": len(cand) > 1})
+        return {"ok": True, "nom": c.get("adv_name"), "cle": c.get("public_key"),
+                "mode": "inondation" if n is None or n < 0 else ("direct" if n == 0 else "relais"),
+                "actuels": actuels, "taille": taille, "relais": relais}
+
+    def definir_chemin(self, cle: str, mode: str, relais: list, operateur: str = "") -> dict:
+        if self.mc is None:
+            return {"ok": False, "erreur": "Aucun nœud connecté."}
+        try:
+            return self._submit(self._definir_chemin(cle, mode, relais or [], operateur), timeout=60)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "erreur": f"Chemin impossible à enregistrer : {e}"}
+
+    async def _definir_chemin(self, cle: str, mode: str, relais: list, operateur: str) -> dict:
+        c = self._contact_par_cle(cle)
+        if c is None:
+            return {"ok": False, "erreur": "Contact introuvable dans le nœud companion."}
+        nom = c.get("adv_name", "")
+        if mode == "inondation":
+            ev = await self.mc.commands.reset_path(c)
+            if ev is None or ev.type == EventType.ERROR:
+                return {"ok": False, "erreur": "Le nœud companion a refusé la réinitialisation."}
+            c["out_path_len"], c["out_path"] = -1, ""
+            texte = "inondation (le réseau cherchera la route)"
+        else:
+            hmode = 0
+            try:
+                dq = await self.mc.commands.send_device_query()
+                if dq is not None and dq.type != EventType.ERROR:
+                    hmode = int((dq.payload or {}).get("path_hash_mode") or 0)
+            except Exception:  # noqa: BLE001
+                pass
+            taille = hmode + 1
+            hops = []
+            if mode != "direct":
+                for r in relais:
+                    r = re.sub(r"[^0-9a-fA-F]", "", str(r)).lower()
+                    if len(r) < 2 * taille:
+                        return {"ok": False, "erreur": f"Identifiant de relais trop court : {r or '?'} ({2 * taille} caractères hexadécimaux attendus)."}
+                    hops.append(r[:2 * taille])
+                if not hops:
+                    return {"ok": False, "erreur": "Choisissez au moins un relais, ou le mode direct."}
+                if len(hops) * taille > 64:
+                    return {"ok": False, "erreur": "Chemin trop long (64 octets au maximum)."}
+            ev = await self.mc.commands.change_contact_path(c, "".join(hops), path_hash_mode=hmode)
+            if ev is None or ev.type == EventType.ERROR:
+                return {"ok": False, "erreur": "Le nœud companion a refusé le nouveau chemin."}
+            texte = "direct (sans relais)" if not hops else " → ".join(self._chemin(c).get("relais") or hops)
+        self.store.add_journal(nom, operateur or "PC", f"Chemin vers {nom} défini manuellement : {texte}.")
+        self.store._bump()
+        return {"ok": True, "message": f"Chemin vers {nom} : {texte}", "chemin": self._chemin(c)}
+
     # ---------- analyse du nœud companion ----------
     RESEAU = {"radio_freq": 869.618, "radio_bw": 62.5, "radio_sf": 8, "radio_cr": 8}
 
