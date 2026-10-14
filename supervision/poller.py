@@ -886,6 +886,73 @@ class Poller:
         finally:
             self.prioritaire = max(0, self.prioritaire - 1)
 
+    # ---------- console distante ----------
+    def console(self, node_id: str, cmd: str, operateur: str = "") -> dict:
+        """Envoie une commande console libre à un nœud (droits admin) et renvoie sa réponse."""
+        if self.mc is None:
+            return {"ok": False, "erreur": "Aucun nœud connecté."}
+        cmd = (cmd or "").strip()
+        if not cmd:
+            return {"ok": False, "erreur": "Commande vide."}
+        if len(cmd.encode("utf-8")) > 140:
+            return {"ok": False, "erreur": "Commande trop longue (140 octets maximum)."}
+        node = self.store.get_node(node_id)
+        if node is None:
+            return {"ok": False, "erreur": "Nœud inconnu."}
+        if not self.store.password(node_id):
+            return {"ok": False, "erreur": "Saisissez d'abord le mot de passe admin de ce nœud (Modifier)."}
+        if cmd.lower() in ("reboot", "poweroff", "shutdown"):
+            return self.commande(node_id, "poweroff" if cmd.lower() == "shutdown" else cmd.lower(), operateur)
+        self.prioritaire += 1
+        try:
+            return self._submit(self._console(node, cmd, operateur), timeout=120)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "erreur": f"Commande impossible : {e}"}
+        finally:
+            self.prioritaire = max(0, self.prioritaire - 1)
+
+    async def _console(self, node: dict, cmd: str, operateur: str) -> dict:
+        if not await self._attendre_la_main("Console distante"):
+            return {"ok": False, "erreur": "L'interrogation en cours ne s'est pas terminée à temps. Réessayez."}
+        name = node.get("nom", "")
+        contact = self._contact_for(name)
+        if contact is None:
+            res = await self.mc.commands.get_contacts()
+            if res is not None and res.type != EventType.ERROR:
+                self._contacts = dict(res.payload or {})
+            contact = self._contact_for(name)
+        if contact is None:
+            return {"ok": False, "erreur": f"{name} n'est pas dans les contacts du nœud companion."}
+        t0 = time.time()
+        sessions = getattr(self, "_sessions_console", {})
+        self._sessions_console = sessions
+        if time.time() - sessions.get(node["id"], 0) > 120:  # reconnexion admin toutes les 2 minutes au plus
+            login = await self.mc.commands.send_login_sync(contact, self.store.password(node["id"]), min_timeout=8)
+            if not (login and login.type == EventType.LOGIN_SUCCESS):
+                sessions.pop(node["id"], None)
+                return {"ok": False, "erreur": f"Connexion admin refusée par {name} (mot de passe ou portée)."}
+        sessions[node["id"]] = time.time()
+        reponse = await self._cli(contact, cmd, timeout=25)
+        if reponse is None:  # la session a peut-être expiré : une reconnexion et un 2e essai
+            login = await self.mc.commands.send_login_sync(contact, self.store.password(node["id"]), min_timeout=8)
+            if login and login.type == EventType.LOGIN_SUCCESS:
+                sessions[node["id"]] = time.time()
+                reponse = await self._cli(contact, cmd, timeout=25)
+        duree = round(time.time() - t0, 1)
+        histo = list(node.get("console") or [])[-49:]
+        histo.append({"date": now_iso(), "cmd": cmd, "reponse": reponse, "operateur": operateur or ""})
+        self.store.patch_node(node["id"], {"console": histo})
+        self.store.add_journal(name, operateur or "PC", f"Console : « {cmd} »" + (f" → {reponse.strip()[:200]}" if reponse else " → pas de réponse"))
+        h = self._horloge(reponse) if cmd.strip().lower() == "clock" and reponse else {}
+        if h:
+            self.store.patch_node(node["id"], h)
+        if cmd.strip().lower() == "ver" and reponse:
+            m = re.search(r"v?(\d+\.\d+(?:\.\d+)?)", reponse)
+            if m:
+                self.store.patch_node(node["id"], {"firmware": "v" + m.group(1)})
+        return {"ok": reponse is not None, "reponse": reponse or "", "duree": duree,
+                **({} if reponse is not None else {"erreur": "Pas de réponse du nœud (portée, ou commande inconnue)."})}
+
     # ---------- réinitialisation du chemin ----------
     def reinit_chemin(self, node_id: str, operateur: str = "") -> dict:
         """Oublie la route mémorisée par le nœud companion vers ce nœud ; la suivante est réapprise en inondation."""

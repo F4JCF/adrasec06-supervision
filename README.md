@@ -152,6 +152,10 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 - L'onglet « Main courante & rapports » s'appelle désormais **ADRASEC 06**.
 - **Test mensuel de résilience** (sous « Rapports d'état du réseau ») : diffuse sur #ADRASEC 06 « [EXERCICE ADRASEC 06 - TEST MENSUEL DE RESILIENCE - NE PAS REPONDRE - ACK AUTO] », interroge les répéteurs et écoute 10 minutes (répéteurs qui relaient, accusés automatiques, état des répéteurs ADRASEC) ; suivi en direct, compte rendu PDF rangé avec les rapports (et envoyé par e-mail si activé), historique ; lancement automatique possible chaque mois (jour et heure au choix).
 
+### Nouveautés de la version 1.17
+
+- **Console distante** (bouton dans chaque fiche nœud, mot de passe admin requis) : envoyer n'importe quelle commande console MeshCore au nœud et lire sa réponse ; boutons rapides (ver, clock, get radio, get tx, neighbors…), historique avec ↑ ↓, confirmation pour les commandes sensibles (set, reboot, password, erase…), chaque commande notée au journal et gardée dans la fiche.
+
 ### Les données
 
 Tout est enregistré sur le PC dans `%APPDATA%\ADRASEC06-Supervision\supervision.db`, y compris les mots de passe des répéteurs et le PIN Bluetooth (en clair, dans ce fichier local uniquement). Le journal technique est dans `supervision.log` au même endroit.

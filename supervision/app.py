@@ -17,7 +17,7 @@ from . import aprs, courriel, rapports, resilience, systeme, taches, web
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.16.3"
+VERSION = "1.17.0"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -477,7 +477,8 @@ class Api:
     def _noter_requete(self, node_id, cmd, r):
         try:
             c = (cmd or "").strip().lower()
-            libelle = self.LIBELLES.get(c) or (f"Puissance TX {c.split()[-1]} dBm" if c.startswith("set tx") else c)
+            libelle = self.LIBELLES.get(c) or (f"Puissance TX {c.split()[-1]} dBm" if c.startswith("set tx")
+                                                else f"Console : {cmd.strip()[8:]}" if c.startswith("console ") else c)
             r = r or {}
             resultat = (r.get("reponse") or r.get("message") or "").strip() if r.get("ok") else (r.get("erreur") or "échec")
             self._store.patch_node(node_id, {"derniereRequete": {
@@ -490,6 +491,11 @@ class Api:
     def reinit_chemin(self, node_id):
         r = self._poller.reinit_chemin(node_id, self._store.get_config("operateur", ""))
         self._noter_requete(node_id, "reinit chemin", r)
+        return r
+
+    def console(self, node_id, cmd):
+        r = self._poller.console(node_id, cmd, self._store.get_config("operateur", ""))
+        self._noter_requete(node_id, "console " + (cmd or "").strip(), r)
         return r
 
     def commande(self, node_id, cmd):

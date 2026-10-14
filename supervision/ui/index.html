@@ -438,6 +438,9 @@ header.top .hright{grid-column:1 / -1}
 .thsort{border:0;background:none;color:inherit;font:inherit;letter-spacing:inherit;text-transform:inherit;padding:0;cursor:pointer;text-decoration:underline dotted}
 .thsort[aria-pressed="true"]{color:var(--accent)}
 .thsort[aria-pressed="true"]::after{content:" ▲"}
+#mconsole[hidden]{display:none}
+.term{background:#0a0f14;color:#cfe3d4;border:1px solid var(--line);border-radius:6px;padding:10px 12px;overflow:auto;font-family:var(--f-mono);font-size:.86rem;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;min-height:0}
+.term .c{color:#ffb35c}.term .e{color:#ff8080}.term .i{color:#7f93a6}
 </style>
 </head>
 <body>
@@ -797,6 +800,16 @@ header.top .hright{grid-column:1 / -1}
       </div>
       <div class="path" id="chApercu" style="flex-wrap:wrap"></div>
       <div class="actions"><button class="btn primary" id="chAppliquer" type="button">Appliquer le chemin</button><span class="reading" id="chMsg"></span></div>
+    </div>
+  </div>
+</div>
+<div id="mconsole" hidden role="dialog" aria-modal="true" aria-labelledby="mconsoleTitle" style="position:fixed;inset:0;z-index:2600;background:rgba(5,10,15,.55);display:grid;place-items:center;padding:16px">
+  <div class="mdet-box" style="width:min(980px,100%);height:min(720px,calc(100vh - 32px))">
+    <div class="mdet-head"><h2 id="mconsoleTitle">Console distante</h2><div style="display:flex;gap:8px"><button class="btn small" id="coEffacer" type="button">Effacer l'écran</button><button class="btn small" id="coFermer" type="button">Fermer (Échap)</button></div></div>
+    <div style="display:grid;grid-template-rows:auto 1fr auto;gap:10px;padding:12px 16px 16px;min-height:0">
+      <div class="actions" id="coRapides" style="gap:6px"></div>
+      <div class="term" id="coTerm" aria-live="polite"></div>
+      <form id="coForm" style="display:flex;gap:8px"><span class="mono" style="align-self:center;color:var(--accent)">&gt;</span><input id="coCmd" class="mono" autocomplete="off" spellcheck="false" placeholder="Commande (ex. ver, clock, get radio, neighbors) — ↑ ↓ : historique" style="flex:1"><button class="btn primary" type="submit" id="coGo">Envoyer</button></form>
     </div>
   </div>
 </div>
@@ -1173,6 +1186,34 @@ header.top .hright{grid-column:1 / -1}
     const h = (r.historique || []).filter(t => t.resultats);
     $("#trHist").innerHTML = h.length ? h.map(t => `<div><span><b>${fmtDate(new Date(t.debut*1000).toISOString())}</b>${t.auto ? ` <span class="muted">(automatique)</span>` : ""}<br><span class="muted" style="font-size:.85rem">${syn(t.resultats.synthese)}</span></span><button class="btn small" data-trpdf="${t.id}">PDF</button></div>`).join("")
       : `<div class="empty" style="padding:8px">Aucun test réalisé pour l'instant.</div>`;
+  }
+  /* ---------- console distante ---------- */
+  const CO_RAPIDES = ["ver", "clock", "get name", "get radio", "get tx", "get repeat", "get advert.interval", "get flood.advert.interval", "get lat", "get lon", "neighbors"];
+  const CO_SENSIBLES = /^(reboot|poweroff|shutdown|erase|start ota|password\b|set\b|clear\b|factory)/i;
+  let coNode = null, coHisto = [], coPos = -1, coAttente = null, coBusy = false;
+  function coLigne(cls, txt){ const t = $("#coTerm"); t.insertAdjacentHTML("beforeend", `<div class="${cls}">${esc(txt)}</div>`); t.scrollTop = t.scrollHeight; }
+  function ouvrirConsole(id){
+    const n = allNodes.find(x => x.id === id); if (!n) return;
+    coNode = n; coAttente = null; $("#mconsole").hidden = false; $("#mconsoleTitle").textContent = "Console distante · " + n.nom;
+    $("#coRapides").innerHTML = CO_RAPIDES.map(c => `<button class="btn small" type="button" data-corapide="${esc(c)}">${esc(c)}</button>`).join("");
+    $("#coTerm").innerHTML = "";
+    coLigne("i", `Console de ${n.nom}${n.aMotDePasse ? "" : " — ATTENTION : aucun mot de passe admin enregistré (Modifier la fiche)."}`);
+    coLigne("i", "Les commandes sont envoyées par radio : comptez quelques secondes par réponse. Chaque commande est notée au journal.");
+    (n.console || []).slice(-15).forEach(h => { coLigne("i", `— ${fmtDate(h.date)}`); coLigne("c", "> " + h.cmd); coLigne(h.reponse ? "" : "e", h.reponse || "(pas de réponse)"); });
+    coHisto = [...new Set((n.console || []).map(h => h.cmd))]; coPos = coHisto.length;
+    $("#coCmd").value = ""; $("#coCmd").focus();
+  }
+  async function coEnvoyer(cmd){
+    cmd = (cmd || "").trim(); if (!cmd || coBusy || !coNode) return;
+    if (CO_SENSIBLES.test(cmd) && coAttente !== cmd) { coAttente = cmd; coLigne("e", `« ${cmd} » est une commande sensible (modification, redémarrage, effacement…). Appuyez de nouveau sur Entrée pour confirmer.`); return; }
+    coAttente = null; coBusy = true; $("#coGo").disabled = true;
+    coLigne("c", "> " + cmd); coLigne("i", "… envoi par radio");
+    coHisto = coHisto.filter(x => x !== cmd).concat(cmd); coPos = coHisto.length; $("#coCmd").value = "";
+    let r; try { r = await api.console(coNode.id, cmd); } catch(e) { r = {ok:false, erreur:String(e)}; }
+    const t = $("#coTerm"); if (t.lastElementChild && t.lastElementChild.textContent === "… envoi par radio") t.lastElementChild.remove();
+    if (r.ok) coLigne("", (r.reponse || r.message || "(réponse vide)") + (r.duree ? `` : "")); else coLigne("e", r.erreur || r.message || "Échec");
+    if (r.duree) coLigne("i", `(${fmtNum(r.duree, 1)} s)`);
+    coBusy = false; $("#coGo").disabled = false; $("#coCmd").focus();
   }
   /* ---------- analyse du nœud companion ---------- */
   let compBusy = false;
@@ -1563,7 +1604,7 @@ const HOT_MIN = 360; // 6 heures
       ${own && liaison.connecte ? renderCmds(n) : ""}
       ${neigh ? `<div class="neigh"><strong style="font-size:.9rem">Voisins entendus</strong>${neigh}</div>` : ""}
       ${n.notes ? `<p style="margin:0;white-space:pre-wrap">${esc(n.notes)}</p>` : ""}
-      <div class="actions"><button class="btn" id="edit">Modifier</button><button class="btn" id="checked">Marquer vérifié</button><span class="msg" id="ficheMsg"></span></div>`;
+      <div class="actions"><button class="btn" id="edit">Modifier</button><button class="btn" id="checked">Marquer vérifié</button>${n.role !== "companion" ? `<button class="btn" data-console="${esc(n.id)}" ${liaison.connecte ? "" : "disabled"} title="${liaison.connecte ? "Envoyer des commandes console à ce nœud (mot de passe admin requis)" : "Connectez le nœud companion"}">Console distante…</button>` : ""}<span class="msg" id="ficheMsg"></span></div>`;
   }
 
   /* propriétaire : saisi dans la fiche, sinon indicatif trouvé dans le nom du nœud */
@@ -2056,7 +2097,7 @@ const HOT_MIN = 360; // 6 heures
     }
   }
   setInterval(() => { if (crise) $("#crClock").textContent = new Date().toLocaleTimeString("fr-FR"); }, 1000);
-  document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.id === "chAjout") { e.preventDefault(); chAjouter(); return; } if (e.key === "Escape" && !$("#mchemin").hidden) { $("#mchemin").hidden = true; return; } if (e.key === "Enter" && e.target.id === "apAjout") { e.preventDefault(); $("#apAjoutBtn").click(); return; } if (e.key === "Escape" && !$("#mappel").hidden) { $("#mappel").hidden = true; return; } if (e.key === "Escape" && !$("#mcomp").hidden) { $("#mcomp").hidden = true; return; } if (e.key === "Escape" && !$("#mdet").hidden) { fermerDetail(); return; } if (e.key === "Escape" && crise) openCrise(false); });
+  document.addEventListener("keydown", e => { if (e.target.id === "coCmd" && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); coPos = Math.max(0, Math.min(coHisto.length, coPos + (e.key === "ArrowUp" ? -1 : 1))); e.target.value = coHisto[coPos] || ""; return; } if (e.key === "Escape" && !$("#mconsole").hidden) { $("#mconsole").hidden = true; return; } if (e.key === "Enter" && e.target.id === "chAjout") { e.preventDefault(); chAjouter(); return; } if (e.key === "Escape" && !$("#mchemin").hidden) { $("#mchemin").hidden = true; return; } if (e.key === "Enter" && e.target.id === "apAjout") { e.preventDefault(); $("#apAjoutBtn").click(); return; } if (e.key === "Escape" && !$("#mappel").hidden) { $("#mappel").hidden = true; return; } if (e.key === "Escape" && !$("#mcomp").hidden) { $("#mcomp").hidden = true; return; } if (e.key === "Escape" && !$("#mdet").hidden) { fermerDetail(); return; } if (e.key === "Escape" && crise) openCrise(false); });
 
   /* ---------- messages types ---------- */
   function fillTemplate(t){
@@ -2177,6 +2218,8 @@ const HOT_MIN = 360; // 6 heures
     const mdel = t.closest("[data-msgdel]");
     if (mdel) { await api.supprimer_message(+mdel.dataset.msgdel); refresh(true); return; }
     if (t.closest("#mdetClose") || t.id === "mdet") { fermerDetail(); return; }
+    const co = t.closest("[data-console]"); if (co) { ouvrirConsole(co.dataset.console); return; }
+    const cr = t.closest("[data-corapide]"); if (cr) { coEnvoyer(cr.dataset.corapide); return; }
     const ce = t.closest("[data-cheminedit]");
     if (ce) { ouvrirChemin(ce.dataset.cheminedit); return; }
     const chm = t.closest("[data-chmode]"); if (chm) { chMode = chm.dataset.chmode; chRendre(); return; }
@@ -2299,6 +2342,8 @@ const HOT_MIN = 360; // 6 heures
       case "trGo": { t.disabled = true; const r = await api.test_resilience(); t.disabled = false; toast(r.ok ? "Test de résilience lancé : écoute pendant 10 minutes" : r.erreur); refresh(true); return; }
       case "trStop": { await api.terminer_test_resilience(); toast("Fin du test : compte rendu en cours de création"); refresh(true); return; }
       case "triDist": triDistance = !triDistance; t.setAttribute("aria-pressed", String(triDistance)); renderTable(); return;
+      case "coFermer": $("#mconsole").hidden = true; return;
+      case "coEffacer": $("#coTerm").innerHTML = ""; return;
       case "compOpen": analyserCompanion(false); return;
       case "compRun": analyserCompanion(true); return;
       case "compClose": $("#mcomp").hidden = true; return;
@@ -2450,6 +2495,7 @@ const HOT_MIN = 360; // 6 heures
       await api.mc_suite(+e.target.dataset.suiteform, $("#suiteTxt").value, clore); suiteFor = null; refresh(true);
       return;
     }
+    if (e.target.id === "coForm") { coEnvoyer($("#coCmd").value); return; }
     if (e.target.id === "cadreForm") {
       await api.modifier_exercice(exercice.id, {nom: $("#cdNom").value.trim() || exercice.nom, lieu: $("#cdLieu").value, autorite: $("#cdAutorite").value, description: $("#cdDesc").value, signataire: $("#cdSign").value});
       $("#mcCadre").hidden = true; toast("Cadre enregistré"); refresh(true);
