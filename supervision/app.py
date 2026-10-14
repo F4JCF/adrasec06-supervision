@@ -16,7 +16,7 @@ from . import aprs, courriel, rapports, systeme, taches, web
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.13.0"
+VERSION = "1.14.0"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -69,6 +69,7 @@ class Api:
                 "derniereSauvegarde": self._store.get_config("derniere_sauvegarde", ""),
                 "majAuto": bool(self._store.get_config("maj_auto", True)),
                 "horlogeAuto": bool(self._store.get_config("horloge_auto", True)),
+                "corrBattCompanion": float(self._store.get_config("corr_batt_companion", 0) or 0),
                 "mail": courriel.reglages(self._store),
                 "mailDernier": self._courrier.dernier if self._courrier else None,
                 "web": {**(self._web.reglages() if self._web else {}), "etat": self._web.etat if self._web else {}},
@@ -96,7 +97,7 @@ class Api:
 
     def tableau_donnees(self):
         nodes = [n for n in self._store.list_nodes() if n.get("statut") != "supprime"]
-        garder = ("id", "nom", "statut", "proprio", "lat", "lon", "batterie", "bruit", "firmware", "maj", "eteint",
+        garder = ("id", "nom", "statut", "proprio", "lat", "lon", "batterie", "bruit", "firmware", "maj", "eteint", "telemetrie",
                   "horloge", "horlogeEcart", "horlogeLue", "tendances", "autonomie", "voisins", "role")
         norm = lambda x: re.sub(r"[^a-z0-9]", "", (x or "").lower())
         out = []
@@ -180,19 +181,47 @@ class Api:
             return {"ok": False, "erreur": str(e)}
 
     # ----- appel des stations -----
-    def lancer_appel(self, texte=None):
+    def candidats_appel(self):
+        """Stations qu'on peut appeler : moyens engagés, stations ayant répondu ou écrit sur le canal, compagnons connus."""
+        out, vus = [], set()
+
+        def ajoute(nom, source, coche):
+            k = re.sub(r"[^A-Z0-9]", "", (nom or "").upper())
+            if not k or k in vus:
+                return
+            vus.add(k)
+            out.append({"nom": nom.strip(), "source": source, "coche": coche})
+        ex = self._store.current_exercise()
+        if ex:
+            for m in self._store.list_moyens(ex["id"]):
+                if m.get("indicatif") and not m.get("depart"):
+                    ajoute(m["indicatif"], "Moyen engagé", True)
+        ch = self._canal_adrasec()
+        limite = time.time() - 30 * 86400
+        for m in self._store.list_messages(2000):
+            if m.get("sens") == "recu" and m.get("auteur") and (m.get("ts") or 0) >= limite and ch and m.get("canal") == ch["index"]:
+                ajoute(m["auteur"], "A écrit sur le canal (30 j)", True)
+        for c in self._poller.contacts_messagerie():
+            ajoute(c["nom"], "Contact du nœud companion", False)
+        return {"ok": True, "stations": out, "operateur": self._store.get_config("operateur", "") or ""}
+
+    def lancer_appel(self, texte=None, stations=None):
         ch = self._canal_adrasec()
         if ch is None:
             return {"ok": False, "erreur": "Le canal ADRASEC 06 n'est pas configuré sur le nœud companion."}
         op = (self._store.get_config("operateur", "") or "").strip()
         texte = (texte or "").strip() or f"APPEL ADRASEC 06 {time.strftime('%H:%M')} de {op or 'PC'} : répondez SVP avec indicatif et position."
+        if len(texte.encode("utf-8")) > 150:
+            return {"ok": False, "erreur": "Message d'appel trop long (150 octets maximum)."}
+        stations = [str(x).strip() for x in (stations or []) if str(x).strip()]
         r = self._poller.envoyer_message(texte, canal=ch["index"])
         if not r.get("ok"):
             return r
         ex = self._store.current_exercise()
-        aid = self._store.start_appel(ch["index"], ch["nom"], texte, ex["id"] if ex else None, op)
+        aid = self._store.start_appel(ch["index"], ch["nom"], texte, ex["id"] if ex else None, op, stations)
         if ex:
-            self._store.add_journal("", op or "PC", f"Appel des stations lancé sur #{ch['nom'].lstrip('#')} : « {texte} »",
+            self._store.add_journal("", op or "PC", f"Appel des stations lancé sur #{ch['nom'].lstrip('#')} : « {texte} »"
+                                    + (f" — stations appelées : {', '.join(stations)}" if stations else ""),
                                     exercice=ex["id"], emetteur=op or "PC", destinataire="Toutes stations", nature="demande")
         return {"ok": True, "id": aid}
 
@@ -203,9 +232,19 @@ class Api:
         self._store.stop_appel(a["id"])
         a = self._store.appel(a["id"])
         rep = a["reponses"]
-        liste = ", ".join(f"{r['auteur']} ({time.strftime('%H:%M', time.localtime(r['ts']))})" for r in rep)
-        texte = (f"Appel des stations de {time.strftime('%H:%M', time.localtime(a['debut']))} clos : "
-                 f"{len(rep)} station(s) ont répondu" + (f" : {liste}." if rep else "."))
+        hm = lambda ts: time.strftime('%H:%M', time.localtime(ts))
+        if a.get("attendus"):
+            ok = [f"{x['nom']} ({hm(x['ts'])})" for x in a["attendus"] if x["repondu"]]
+            ko = [x["nom"] for x in a["attendus"] if not x["repondu"]]
+            autres = [f"{r['auteur']} ({hm(r['ts'])})" for r in a.get("autres") or []]
+            texte = (f"Appel des stations de {hm(a['debut'])} clos : {len(ok)}/{len(a['attendus'])} station(s) appelée(s) ont répondu"
+                     + (f" : {', '.join(ok)}" if ok else "") + "."
+                     + (f" Sans réponse : {', '.join(ko)}." if ko else "")
+                     + (f" Autres réponses : {', '.join(autres)}." if autres else ""))
+        else:
+            liste = ", ".join(f"{r['auteur']} ({hm(r['ts'])})" for r in rep)
+            texte = (f"Appel des stations de {hm(a['debut'])} clos : "
+                     f"{len(rep)} station(s) ont répondu" + (f" : {liste}." if rep else "."))
         op = self._store.get_config("operateur", "")
         self._store.add_journal("", op or "PC", texte, exercice=a.get("exercice") or None, emetteur=op or "PC",
                                 nature="compte-rendu")
@@ -396,6 +435,11 @@ class Api:
             self._store.set_config("reduire_zone", bool(o["reduireZone"]))
         if "notifications" in o:
             self._store.set_config("notifications", bool(o["notifications"]))
+        if "corrBattCompanion" in o:
+            try:
+                self._store.set_config("corr_batt_companion", max(-1.0, min(1.0, float(o["corrBattCompanion"]))))
+            except (TypeError, ValueError):
+                pass
         if "horlogeAuto" in o:
             self._store.set_config("horloge_auto", bool(o["horlogeAuto"]))
         if "fondCarte" in o:

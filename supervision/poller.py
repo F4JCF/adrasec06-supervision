@@ -1369,10 +1369,13 @@ class Poller:
         for k in ("identite",):
             if isinstance(r.get(k), dict):
                 r[k] = {kk: vv for kk, vv in r[k].items() if not isinstance(vv, (bytes, bytearray))}
+        if isinstance(r.get("batterie"), dict) and r["batterie"].get("level"):
+            r["batterie"]["corrigee"] = self._corr_batterie(int(r["batterie"]["level"]))
         r["diagnostic"] = self._diagnostic_companion(r)
         if isinstance(r.get("batterie"), dict) and r["batterie"].get("level"):
-            mv = int(r["batterie"]["level"])
-            self.batterie = {"mv": mv, "pct": self._pct_batterie(mv), "date": now_iso()}
+            brut = int(r["batterie"]["level"])
+            mv = self._corr_batterie(brut)
+            self.batterie = {"mv": mv, "brut": brut, "pct": self._pct_batterie(mv), "date": now_iso()}
         self.analyse_companion = r
         self.store._bump()
         return {"ok": True, "analyse": r}
@@ -1399,9 +1402,17 @@ class Poller:
             if idt.get("manual_add_contacts"):
                 ajoute("attention", "Ajout manuel des contacts activé : les nouveaux répéteurs entendus ne sont pas ajoutés automatiquement.")
         if bat.get("level"):
-            v = bat["level"] / 1000
+            mv = bat.get("corrigee") or bat["level"]
+            v = mv / 1000
             seuil = float(self.store.get_config("seuil_batterie", 3.5) or 3.5)
-            ajoute("critique" if v < seuil else "ok", f"Batterie {v:.2f} V (≈ {self._pct_batterie(bat['level'])} %).".replace(".", ",", 1))
+            corr = "" if mv == bat["level"] else f" après correction de {(mv - bat['level']) / 1000:+.2f} V"
+            ajoute("critique" if v < seuil else "ok",
+                   f"Batterie {v:.2f} V, {self._pct_batterie(mv)} % (même calcul que l'écran du nœud){corr}.".replace(".", ",", 2 if corr else 1))
+            tel_v = next((t.get("valeur") for t in r.get("telemetrie") or [] if t.get("type") == "voltage" and isinstance(t.get("valeur"), (int, float))), None)
+            if tel_v and abs(tel_v - bat["level"] / 1000) > 0.1:
+                fr = lambda x: f"{x:.2f}".replace(".", ",")
+                ajoute("attention", f"La télémétrie indique {fr(tel_v)} V alors que la mesure batterie donne {fr(bat['level'] / 1000)} V : "
+                       "mesurez la batterie et réglez la correction dans Réglages si besoin.")
         if bat.get("total_kb"):
             pct = 100 * (bat.get("used_kb") or 0) / bat["total_kb"]
             if pct > 85:
@@ -1431,14 +1442,15 @@ class Poller:
 
     @staticmethod
     def _pct_batterie(mv: int) -> int:
-        """Pourcentage approximatif d'un accu Li-ion d'après sa tension."""
-        pts = [(3300, 0), (3500, 8), (3600, 18), (3700, 35), (3800, 52), (3900, 66), (4000, 80), (4100, 91), (4200, 100)]
-        if mv <= pts[0][0]:
-            return 0
-        for (v1, p1), (v2, p2) in zip(pts, pts[1:]):
-            if mv <= v2:
-                return round(p1 + (p2 - p1) * (mv - v1) / (v2 - v1))
-        return 100
+        """Pourcentage calculé comme l'écran des nœuds MeshCore : linéaire de 3,00 V (0 %) à 4,20 V (100 %)."""
+        return max(0, min(100, int((int(mv) - 3000) * 100 / 1200)))
+
+    def _corr_batterie(self, mv: int) -> int:
+        """Correction réglable (Réglages) si la tension lue par le nœud companion est décalée."""
+        try:
+            return int(mv + float(self.store.get_config("corr_batt_companion", 0) or 0) * 1000)
+        except (TypeError, ValueError):
+            return int(mv)
 
     async def _maj_batterie(self):
         """Tension de la batterie du nœud companion (commande get_bat)."""
@@ -1452,10 +1464,11 @@ class Poller:
             return
         if ev is None or ev.type == EventType.ERROR:
             return
-        mv = int((ev.payload or {}).get("level") or 0)
-        if mv <= 0:
+        brut = int((ev.payload or {}).get("level") or 0)
+        if brut <= 0:
             return
-        self.batterie = {"mv": mv, "pct": self._pct_batterie(mv), "date": now_iso()}
+        mv = self._corr_batterie(brut)
+        self.batterie = {"mv": mv, "brut": brut, "pct": self._pct_batterie(mv), "date": now_iso()}
         seuil = float(self.store.get_config("seuil_batterie", 3.5) or 3.5) * 1000
         if mv < seuil and not self._batt_alerte:
             self._batt_alerte = True

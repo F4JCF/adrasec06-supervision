@@ -120,8 +120,9 @@ footer{margin-top:16px;font-size:.78rem;color:var(--muted)}
       const s = n.eteint ? ["Éteint","var(--muted)"] : (ST[n.statut] || ST["en-ligne"]), di = (d.dispo || {})[n.id] || {};
       const h = n.horloge ? new Date(new Date(n.horloge).getTime() + Math.max(0, Date.now() - new Date(n.horlogeLue).getTime())) : null;
       return `<div class="card" style="--c:${s[1]}"><div class="nm"><span>${esc(n.nom.replace(/^FR06-/,""))}</span><span>${s[0]}</span></div>
-        <div class="kv"><span>Batterie<b>${num(n.batterie,2," V")}</b></span><span>Bruit<b>${num(n.bruit,0," dBm")}</b></span><span>Dispo 7 j<b>${di.j7 != null ? num(di.j7,0," %") : "—"}</b></span>
-        <span>Heure nœud<b>${h ? h.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}) : "—"}</b></span><span>Autonomie<b>${n.autonomie && n.autonomie.jours != null ? "≈ " + n.autonomie.jours + " j" : "—"}</b></span><span>Lu<b>${n.maj ? ago(n.maj) : "—"}</b></span></div>
+        <div class="kv"><span>Batterie<b>${num(n.batterie,2," V")}${n.batterie ? " · " + Math.max(0, Math.min(100, Math.trunc((Math.round(n.batterie*1000) - 3000) / 12))) + " %" : ""}</b></span><span>Bruit<b>${num(n.bruit,0," dBm")}</b></span><span>Dispo 7 j<b>${di.j7 != null ? num(di.j7,0," %") : "—"}</b></span>
+        <span>Heure nœud<b>${h ? h.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}) : "—"}</b></span><span>Température<b>${(() => { const t = (n.telemetrie || []).find(x => x.type === "temperature" && typeof x.valeur === "number"); return t ? num(t.valeur, 1, " °C") : "—"; })()}</b></span><span>Lu<b>${n.maj ? ago(n.maj) : "—"}</b></span></div>
+        ${n.autonomie && n.autonomie.jours != null ? `<span class="muted" style="font-size:.76rem">Autonomie estimée ≈ ${n.autonomie.jours} j</span>` : ""}
         ${(n.tendances || []).map(t => `<span class="tend">⚠ ${esc(t.texte)}</span>`).join("")}</div>`;
     }).join("") || `<span class="muted">Aucun répéteur ADRASEC.</span>`;
     $("#alertes").innerHTML = (d.alertes || []).map(a => `<div class="${a.niveau === "critique" ? "crit" : a.niveau === "attention" ? "att" : ""}"><span class="m">${fmt(a.date)}</span><br>${esc(a.texte)}</div>`).join("") || `<span class="muted">Aucune alerte.</span>`;

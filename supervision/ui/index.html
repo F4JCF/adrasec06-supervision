@@ -420,6 +420,15 @@ header.top .hright{grid-column:1 / -1}
 .diag div{font-size:.9rem;padding:5px 8px;border-left:4px solid var(--c);background:var(--sunk);border-radius:3px}
 .exlist .exa{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .exlist .exw{color:var(--crit);font-size:.85rem}
+#mappel[hidden]{display:none}
+.apgrp{display:grid;gap:4px}
+.apgrp h4{margin:0;font-size:.76rem;letter-spacing:.08em;text-transform:uppercase;color:var(--navy)}
+.apgrp .apl{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,200px),1fr));gap:4px 12px}
+.apgrp label{display:flex;flex-direction:row;align-items:center;gap:6px;color:var(--fg);font-size:.88rem;min-width:0}
+.apgrp label input{width:16px;height:16px;flex:none}
+.apgrp label span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.apatt{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,230px),1fr));gap:4px 14px;margin:0;padding:0;list-style:none}
+.apatt li{font-size:.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -675,6 +684,8 @@ header.top .hright{grid-column:1 / -1}
       <label class="line"><input type="checkbox" id="optSon"> Son d'alerte dans le logiciel</label>
       <label class="line">Seuil d'alerte batterie <input id="optSeuil" type="number" step="0.05" min="2.8" max="4.3" style="width:6em"> V</label>
       <p class="hint">Une alerte est émise quand la batterie d'un répéteur passe sous ce seuil (3,50 V conseillé pour une Li-ion 18650).</p>
+      <label class="line">Correction de la tension du nœud companion <input id="optCorr" type="number" step="0.01" min="-1" max="1" style="width:6em"> V</label>
+      <p class="hint">Les pourcentages sont calculés comme sur l'écran des nœuds MeshCore (3,00 V = 0 %, 4,20 V = 100 %). Si la tension lue par votre nœud companion est fausse, mesurez la batterie au multimètre et indiquez l'écart ici (ex. +0,08 si le nœud annonce 3,87 V pour 3,95 V réels). <span id="corrInfo"></span></p>
       <label class="line"><input type="checkbox" id="optAuto"> Démarrer la supervision avec Windows</label>
       <p class="hint">Le logiciel démarre réduit près de l'horloge et se reconnecte au dernier nœud utilisé.</p>
       <label class="line"><input type="checkbox" id="optZone"> La croix de la fenêtre réduit près de l'horloge au lieu de quitter</label>
@@ -739,6 +750,20 @@ header.top .hright{grid-column:1 / -1}
   <div class="mdet-box" style="width:min(1200px,100%)">
     <div class="mdet-head"><h2 id="mcompTitle">Mon nœud companion</h2><div style="display:flex;gap:8px"><button class="btn small" id="compRun" type="button">Relancer l'analyse</button><button class="btn small" id="compClose" type="button">Fermer (Échap)</button></div></div>
     <div style="display:grid;grid-template-rows:auto 1fr;min-height:0;overflow:auto"><div class="diag" id="compDiag" style="padding-top:12px"></div><div class="comp-grid" id="compBody"></div></div>
+  </div>
+</div>
+<div id="mappel" hidden role="dialog" aria-modal="true" aria-labelledby="mappelTitle" style="position:fixed;inset:0;z-index:2500;background:rgba(5,10,15,.55);display:grid;place-items:center;padding:16px">
+  <div class="mdet-box" style="width:min(760px,100%)">
+    <div class="mdet-head"><h2 id="mappelTitle">Appel des stations</h2><button class="btn small" id="appelCancel" type="button">Annuler (Échap)</button></div>
+    <div style="display:grid;gap:10px;padding:16px;overflow:auto;min-height:0">
+      <p style="margin:0">Cochez les stations appelées. Leurs réponses seront pointées automatiquement (nom du nœud ou indicatif cité dans la réponse).</p>
+      <div class="actions"><button class="btn small" id="apTous" type="button">Tout cocher</button><button class="btn small" id="apAucun" type="button">Tout décocher</button>
+        <span style="display:flex;gap:6px;flex:1;min-width:220px"><input id="apAjout" placeholder="Ajouter un indicatif (ex. F4ABC)" maxlength="30"><button class="btn small" id="apAjoutBtn" type="button">Ajouter</button></span></div>
+      <div id="apListe" style="display:grid;gap:10px"></div>
+      <label style="display:flex;flex-direction:row;align-items:center;gap:8px;color:var(--fg);font-size:.9rem"><input type="checkbox" id="apCiter" style="width:16px;height:16px;flex:none"> Citer les indicatifs dans le message (si la place le permet)</label>
+      <label>Message envoyé sur #ADRASEC 06<textarea id="apTexte" style="min-height:60px" maxlength="300"></textarea></label>
+      <div class="actions"><span class="reading" id="apOctets"></span><button class="btn primary" id="apGo" type="button">Lancer l'appel</button></div>
+    </div>
   </div>
 </div>
 <div id="mdet" hidden role="dialog" aria-modal="true" aria-labelledby="mdetTitle">
@@ -875,12 +900,14 @@ header.top .hright{grid-column:1 / -1}
     $("#hDate").textContent = d.toLocaleDateString("fr-FR", {weekday:"long", day:"numeric", month:"long", year:"numeric"});
   }
   tickHorloge(); setInterval(tickHorloge, 1000);
-  /* pourcentage approximatif d'un accu Li-ion d'après sa tension (même table que le logiciel) */
+  /* pourcentage calculé comme l'écran des nœuds MeshCore : linéaire de 3,00 V (0 %) à 4,20 V (100 %) */
   function pctLiion(v){
-    const pts = [[3.3,0],[3.5,8],[3.6,18],[3.7,35],[3.8,52],[3.9,66],[4.0,80],[4.1,91],[4.2,100]];
-    v = +v; if (!(v > 0)) return null; if (v <= 3.3) return 0; if (v >= 4.2) return 100;
-    for (let i = 1; i < pts.length; i++) if (v <= pts[i][0]) { const [a, pa] = pts[i-1], [b, pb] = pts[i]; return Math.round(pa + (pb - pa) * (v - a) / (b - a)); }
-    return 100;
+    v = +v; if (!(v > 0)) return null;
+    return Math.max(0, Math.min(100, Math.trunc((Math.round(v * 1000) - 3000) * 100 / 1200)));
+  }
+  function temperature(n){
+    const t = (n.telemetrie || []).find(x => x.type === "temperature" && typeof x.valeur === "number");
+    return t ? t.valeur : null;
   }
   /* ---------- en-tête radio ---------- */
   function renderRadio(){
@@ -979,6 +1006,7 @@ header.top .hright{grid-column:1 / -1}
         <div class="kv"><span>Batterie<b style="color:${!empty(n.batterie) && pctLiion(n.batterie) < 20 ? "var(--crit)" : "inherit"}">${fmtNum(n.batterie,2)}${empty(n.batterie)?"":` V <small>· ${pctLiion(n.batterie)} %</small>`}</b></span><span>Bruit<b>${fmtNum(n.bruit)}${empty(n.bruit)?"":" dBm"}</b></span><span>Dispo 7 j<b>${d.j7 != null ? fmtNum(d.j7,0)+" %" : "—"}</b></span>
           <span>Firmware<b>${esc(n.firmware || "—")}</b></span><span>Err. RX<b>${fmtNum(n.erreursRx)}</b></span><span>Lu<b>${n.maj ? ago(n.maj).replace("il y a ","") : "—"}</b></span></div>
         ${horlogeVignette(n)}
+        ${(() => { const tp = temperature(n); return `<div class="hvig" title="${n.telemetrieDate ? "Télémétrie lue le " + esc(fmtDate(n.telemetrieDate)) : "Le répéteur ne transmet pas sa température"}"><span class="lbl">Température</span>${tp == null ? `<b class="muted">—</b><span class="muted">non transmise</span>` : `<b style="color:${tp >= 60 ? "var(--crit)" : tp >= 45 ? "var(--warn)" : tp <= -5 ? "var(--test)" : "inherit"}">${fmtNum(tp, 1)} °C</b>${n.telemetrieDate ? `<span class="muted">${ago(n.telemetrieDate)}</span>` : ""}`}</div>`; })()}
         ${n.autonomie && n.autonomie.jours != null ? `<div class="hvig"><span class="lbl">Autonomie</span><b style="color:${n.autonomie.jours < 7 ? "var(--crit)" : n.autonomie.jours < 20 ? "var(--warn)" : "var(--fg)"}">≈ ${n.autonomie.jours} j</b><span class="muted">${fmtNum(n.autonomie.pente*1000,0)} mV/jour</span></div>` : ""}
         ${(n.tendances||[]).length ? `<div class="tendv">${n.tendances.slice(0,2).map(t => `<span title="${esc(t.texte)} (depuis ${esc(fmtDate(t.depuis))})">⚠ ${esc(t.texte)}</span>`).join("")}</div>` : ""}`}
         ${busy ? `<span class="reading">${esc(busy)}</span>` : ""}
@@ -1023,6 +1051,41 @@ header.top .hright{grid-column:1 / -1}
 
   /* ---------- carte réelle (Leaflet) ---------- */
   let lmap = null, lLayer = null, lBase = null, lBaseKey = null, lFitted = false;
+  /* ---------- appel des stations : choix des stations appelées ---------- */
+  let apStations = [], apOp = "";
+  const octets = t => new TextEncoder().encode(t).length;
+  function apCochees(){ return [...document.querySelectorAll("#apListe input[data-st]:checked")].map(x => x.dataset.st); }
+  function apTexteAuto(){
+    const h = new Date().toLocaleTimeString("fr-FR", {hour:"2-digit", minute:"2-digit"});
+    const base = `APPEL ADRASEC 06 ${h} de ${apOp || "PC"}`, fin = " : répondez SVP avec indicatif et position.";
+    if ($("#apCiter").checked) {
+      const noms = apCochees();
+      for (let n = noms.length; n > 0; n--) {
+        const t = `${base} pour ${noms.slice(0, n).join(" ")}${n < noms.length ? " +" + (noms.length - n) : ""}${fin}`;
+        if (octets(t) <= 150) return t;
+      }
+    }
+    return base + fin;
+  }
+  function apMaj(auto){
+    if (auto) $("#apTexte").value = apTexteAuto();
+    const n = octets($("#apTexte").value);
+    $("#apOctets").textContent = `${apCochees().length} station(s) appelée(s) · message ${n}/150 octets`;
+    $("#apOctets").style.color = n > 150 ? "var(--crit)" : "";
+    $("#apGo").disabled = n > 150 || !$("#apTexte").value.trim();
+  }
+  function apRendre(){
+    const grp = {};
+    apStations.forEach(x => (grp[x.source] = grp[x.source] || []).push(x));
+    $("#apListe").innerHTML = Object.keys(grp).length ? Object.entries(grp).map(([src, l]) => `<div class="apgrp"><h4>${esc(src)} (${l.length})</h4><div class="apl">${l.map(x => `<label title="${esc(x.nom)}"><input type="checkbox" data-st="${esc(x.nom)}" ${x.coche ? "checked" : ""}><span>${esc(x.nom)}</span></label>`).join("")}</div></div>`).join("")
+      : `<div class="empty">Aucune station connue : ajoutez des indicatifs ci-dessus, ou lancez un appel général.</div>`;
+    apMaj(true);
+  }
+  async function ouvrirAppel(){
+    $("#mappel").hidden = false; $("#apListe").innerHTML = `<p class="reading">Chargement des stations…</p>`;
+    const r = await api.candidats_appel(); apStations = r.stations || []; apOp = r.operateur || "";
+    apRendre(); $("#apGo").focus();
+  }
   /* ---------- analyse du nœud companion ---------- */
   let compBusy = false;
   async function analyserCompanion(force){
@@ -1053,7 +1116,7 @@ header.top .hright{grid-column:1 / -1}
         ["Puissance", idt.tx_power != null ? `${idt.tx_power} dBm (max. ${idt.max_tx_power} dBm)` : null], ["Bruit de fond", rad.noise_floor != null ? rad.noise_floor + " dBm" : null], ["Dernier RSSI / SNR", rad.last_rssi != null ? `${rad.last_rssi} dBm / ${fmtSnr(+rad.last_snr)}` : null],
         ["Temps d'émission", rad.tx_air_secs != null ? fmtUptime(rad.tx_air_secs) || "0 h 00" : null], ["Temps de réception", rad.rx_air_secs != null ? fmtUptime(rad.rx_air_secs) || "0 h 00" : null],
         ["Délai RX / facteur", tun.rx_delay != null ? `${tun.rx_delay} / ${tun.airtime_factor}` : null]]),
-      sec("Alimentation et mémoire", [["Batterie", bat.level ? `${fmtNum(bat.level/1000,2)} V · ${pctLiion(bat.level/1000)} %` : null], ["Mémoire utilisée", bat.total_kb ? `${mo(bat.used_kb)} / ${mo(bat.total_kb)} (${fmtNum(100*bat.used_kb/bat.total_kb,0)} %)` : null],
+      sec("Alimentation et mémoire", [["Batterie", bat.level ? `${fmtNum((bat.corrigee||bat.level)/1000,2)} V · ${pctLiion((bat.corrigee||bat.level)/1000)} %` + (bat.corrigee && bat.corrigee !== bat.level ? ` (brut ${fmtNum(bat.level/1000,2)} V)` : "") : null], ["Mémoire utilisée", bat.total_kb ? `${mo(bat.used_kb)} / ${mo(bat.total_kb)} (${fmtNum(100*bat.used_kb/bat.total_kb,0)} %)` : null],
         ["En marche depuis", core.uptime_secs != null ? fmtUptime(core.uptime_secs) : null], ["Erreurs", core.errors], ["File d'émission", core.queue_len],
         ["Horloge", a.heure && a.heure.time ? `${new Date(a.heure.time*1000).toLocaleString("fr-FR")} (écart ${a.heureEcart >= 0 ? "+" : ""}${a.heureEcart} s)` : null]]),
       sec("Trafic", [["Paquets reçus / émis", pk.recv != null ? `${fmtNum(pk.recv)} / ${fmtNum(pk.sent)}` : null], ["Inondation émis / reçus", pk.flood_tx != null ? `${fmtNum(pk.flood_tx)} / ${fmtNum(pk.flood_rx)}` : null],
@@ -1605,6 +1668,7 @@ const HOT_MIN = 360; // 6 heures
 
   /* ---------- messagerie ---------- */
   function convKey(m){ return m.canal != null ? "c:"+m.canal : "d:"+(m.contact_cle||"").slice(0,12); }
+  const hmTs = ts => ts ? new Date(ts*1000).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}) : "";
   function renderChat(){
     renderTemplates();
     const chans = (liaison.canaux && liaison.canaux.length ? liaison.canaux : [{index:0, nom:"Public"}]);
@@ -1630,13 +1694,15 @@ const HOT_MIN = 360; // 6 heures
       ? `<span class="reading" style="color:var(--crit)">Supprimer les ${list.length} message(s) de cette conversation sur ce PC ?</span><button class="btn small danger" id="convClearYes">Oui, supprimer</button><button class="btn small" id="convClearNo">Non</button>`
       : `<button class="btn small" id="convClear">Vider la conversation</button>`) : "";
     const estAdr = isChan && /adrasec ?0?6/i.test((chans.find(c => "c:"+c.index===conv)||{}).nom || "");
-    if (estAdr && liaison.connecte && !(appel && appel.enCours)) $("#threadActs").innerHTML = `<button class="btn small primary" id="appelGo" title="Envoie un appel sur ce canal et coche les stations qui répondent">Appel des stations</button>` + $("#threadActs").innerHTML;
+    if (estAdr && liaison.connecte && !(appel && appel.enCours)) $("#threadActs").innerHTML = `<button class="btn small primary" id="appelGo" title="Choisir les stations à appeler, envoyer l'appel sur ce canal et pointer les réponses">Appel des stations…</button>` + $("#threadActs").innerHTML;
     const ab = $("#appelPanel");
     if (estAdr && appel && (appel.enCours || appel.fin > Date.now()/1000 - 3600)) {
       ab.hidden = false;
       ab.innerHTML = `<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center"><b>${appel.enCours ? "Appel en cours" : "Dernier appel"} · lancé à ${new Date(appel.debut*1000).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})} · ${appel.reponses.length} réponse(s)</b>
         ${appel.enCours ? `<button class="btn small" id="appelStop">Clore l'appel et l'inscrire à la main courante</button>` : ""}</div>
-        ${appel.reponses.length ? `<ol>${appel.reponses.map(r => `<li><b>${esc(r.auteur)}</b> à ${new Date(r.ts*1000).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}${r.snr!=null?` · SNR ${fmtSnr(+r.snr)}`:""}${r.sauts!=null?` · ${r.sauts} saut(s)`:""} <span class="muted">— ${esc(r.texte)}</span></li>`).join("")}</ol>` : `<span class="muted">En attente des réponses…</span>`}`;
+        ${(appel.attendus||[]).length ? `<span class="muted">Stations appelées : ${appel.attendus.filter(x => x.repondu).length}/${appel.attendus.length} ont répondu</span>
+          <ul class="apatt">${appel.attendus.map(x => `<li title="${esc(x.auteur ? "Réponse de " + x.auteur : "")}">${x.repondu ? `<span class="statut-ok">✓</span> <b>${esc(x.nom)}</b> <span class="muted">${hmTs(x.ts)}</span>` : `<span class="muted">⏳ ${esc(x.nom)}${appel.enCours ? "" : " — sans réponse"}</span>`}</li>`).join("")}</ul>` : ""}
+        ${(() => { const l = (appel.attendus||[]).length ? (appel.autres||[]) : appel.reponses; return l.length ? `${(appel.attendus||[]).length ? `<span class="muted">Autres réponses</span>` : ""}<ol>${l.map(r => `<li><b>${esc(r.auteur)}</b> à ${hmTs(r.ts)}${r.snr!=null?` · SNR ${fmtSnr(+r.snr)}`:""}${r.sauts!=null?` · ${r.sauts} saut(s)`:""} <span class="muted">— ${esc(r.texte)}</span></li>`).join("")}</ol>` : ((appel.attendus||[]).length ? "" : `<span class="muted">En attente des réponses…</span>`); })()}`;
     } else ab.hidden = true;
     box.innerHTML = list.length ? list.map(m => `<div class="msg${m.sens==="emis"?" out":""}" data-msgid="${m.id}" title="Cliquer pour voir le parcours du message"><button class="del" data-msgdel="${m.id}" title="Supprimer ce message" aria-label="Supprimer ce message">×</button>${m.sens==="recu" && m.auteur ? `<span class="who">${esc(m.auteur)}</span>` : ""}<span>${esc(m.texte)}</span>
       <span class="meta"><span>${fmtDate(m.date)}</span>${m.snr!=null?`<span>SNR ${fmtSnr(+m.snr)}</span>`:""}${m.sauts!=null?`<span>${m.sauts} saut(s)</span>`:""}${m.statut?`<span class="${/✓/.test(m.statut) ? "statut-ok" : /✗|échec/.test(m.statut) ? "statut-ko" : ""}">${esc(m.statut)}</span>`:""}${m.sens==="emis" && /✗|échec/.test(m.statut||"") ? `<button class="btn small" data-renvoyer="${m.id}" style="padding:0 8px;font-size:.72rem">Renvoyer</button>` : ""}</span></div>`).join("")
@@ -1844,7 +1910,7 @@ const HOT_MIN = 360; // 6 heures
     }
   }
   setInterval(() => { if (crise) $("#crClock").textContent = new Date().toLocaleTimeString("fr-FR"); }, 1000);
-  document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#mcomp").hidden) { $("#mcomp").hidden = true; return; } if (e.key === "Escape" && !$("#mdet").hidden) { fermerDetail(); return; } if (e.key === "Escape" && crise) openCrise(false); });
+  document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.id === "apAjout") { e.preventDefault(); $("#apAjoutBtn").click(); return; } if (e.key === "Escape" && !$("#mappel").hidden) { $("#mappel").hidden = true; return; } if (e.key === "Escape" && !$("#mcomp").hidden) { $("#mcomp").hidden = true; return; } if (e.key === "Escape" && !$("#mdet").hidden) { fermerDetail(); return; } if (e.key === "Escape" && crise) openCrise(false); });
 
   /* ---------- messages types ---------- */
   function fillTemplate(t){
@@ -1874,6 +1940,9 @@ const HOT_MIN = 360; // 6 heures
     $("#aprsState").textContent = (ae.message || "") + (ae.paquets ? ` · ${ae.paquets} position(s) reçue(s)` : "") + ((aprsData.stations||[]).length ? ` · ${aprsData.stations.length} station(s) sur 12 h` : "");
     if (document.activeElement !== $("#tplEdit")) $("#tplEdit").value = (r.modeles || []).join("\n");
     $("#optHorloge").checked = r.horlogeAuto !== false;
+    if (document.activeElement !== $("#optCorr")) $("#optCorr").value = (+r.corrBattCompanion || 0).toFixed(2);
+    const lb = liaison.batterie;
+    $("#corrInfo").textContent = lb && lb.brut ? `Lecture actuelle : ${fmtNum(lb.brut/1000,2)} V brut → ${fmtNum(lb.mv/1000,2)} V affiché (${lb.pct} %).` : "";
     const ml = r.mail || {};
     if (!inside("#tab-reglages .fgrid") && !mailDirty) {
       $("#mlOn").checked = !!ml.actif; $("#mlSrv").value = ml.serveur || ""; $("#mlPort").value = ml.port || 465; $("#mlSec").value = ml.securite || "ssl";
@@ -2065,7 +2134,16 @@ const HOT_MIN = 360; // 6 heures
       case "exArchDir": { await api.choisir_dossier_archives(); refresh(true); return; }
       case "exArchOpen": { const r = await api.ouvrir_dossier_archives(); if (!r.ok) toast(r.erreur); return; }
       case "exArchShow": voirArchives = !voirArchives; renderCourante(); return;
-      case "appelGo": { t.disabled = true; const r = await api.lancer_appel(); t.disabled = false; toast(r.ok ? "Appel envoyé sur le canal ADRASEC 06" : r.erreur); refresh(true); return; }
+      case "appelGo": ouvrirAppel(); return;
+      case "appelCancel": $("#mappel").hidden = true; return;
+      case "apTous": document.querySelectorAll("#apListe input[data-st]").forEach(x => x.checked = true); apMaj(true); return;
+      case "apAucun": document.querySelectorAll("#apListe input[data-st]").forEach(x => x.checked = false); apMaj(true); return;
+      case "apAjoutBtn": { const v = $("#apAjout").value.trim().toUpperCase(); if (!v) return;
+        const coches = new Set(apCochees()); apStations.forEach(x => x.coche = coches.has(x.nom));
+        if (!apStations.some(x => x.nom.toUpperCase() === v)) apStations.unshift({nom: v, source: "Ajoutées pour cet appel", coche: true});
+        $("#apAjout").value = ""; apRendre(); return; }
+      case "apGo": { t.disabled = true; const r = await api.lancer_appel($("#apTexte").value.trim(), apCochees()); t.disabled = false;
+        if (r.ok) { $("#mappel").hidden = true; toast("Appel envoyé sur le canal ADRASEC 06"); } else toast(r.erreur); refresh(true); return; }
       case "appelStop": { const r = await api.clore_appel(); toast(r.ok ? r.texte : r.erreur); refresh(true); return; }
       case "bkNow": { const r = await api.sauvegarder_maintenant(); toast(r.ok ? "Sauvegarde faite : " + r.chemin : r.erreur); refresh(true); return; }
       case "majCheck": { t.disabled = true; const r = await api.verifier_maj(); t.disabled = false; toast(r.ok ? (r.disponible ? `Version ${r.derniere} disponible` : "Le logiciel est à jour") : r.erreur); refresh(true); return; }
@@ -2125,6 +2203,8 @@ const HOT_MIN = 360; // 6 heures
     if (e.target.id === "optMaj") await api.regler_maj_auto(e.target.checked);
     if (e.target.id === "tplSel" && e.target.value !== "") { const m = (reglages.modeles||[])[+e.target.value]; if (m) { const ta = $("#msgText"); ta.value = fillTemplate(m); ta.dispatchEvent(new Event("input")); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } e.target.value = ""; }
     if (e.target.id === "optNotif") await api.regler_options({notifications: e.target.checked});
+    if (e.target.matches && e.target.matches("#apListe input[data-st], #apCiter")) apMaj(true);
+    if (e.target.id === "optCorr") { await api.regler_options({corrBattCompanion: +e.target.value || 0}); toast("Correction enregistrée : prise en compte à la prochaine lecture (1 min)"); refresh(true); }
     if (e.target.id === "optHorloge") { await api.regler_options({horlogeAuto: e.target.checked}); refresh(true); }
     if (["mlOn","mlSrv","mlPort","mlSec","mlUser","mlPwd","mlFrom","mlTo","mlMsg"].includes(e.target.id)) mailDirty = true;
     if (["wbOn","wbPort","wbCode"].includes(e.target.id)) webDirty = true;

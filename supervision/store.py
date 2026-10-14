@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import os
 import sqlite3
 import sys
@@ -720,13 +721,18 @@ def _attach_appels():
         self._cx.execute("""CREATE TABLE IF NOT EXISTS appels (
             id INTEGER PRIMARY KEY AUTOINCREMENT, debut REAL NOT NULL, fin REAL, canal INTEGER, canal_nom TEXT,
             texte TEXT, exercice INTEGER, operateur TEXT)""")
+        cols = {r[1] for r in self._cx.execute("PRAGMA table_info(appels)")}
+        if "attendus" not in cols:
+            self._cx.execute("ALTER TABLE appels ADD COLUMN attendus TEXT")
 
-    def start_appel(self, canal: int, canal_nom: str, texte: str, exercice, operateur: str) -> int:
+    def start_appel(self, canal: int, canal_nom: str, texte: str, exercice, operateur: str, attendus=None) -> int:
         with self._lock:
             _table_appels(self)
             self._cx.execute("UPDATE appels SET fin=? WHERE fin IS NULL", (time.time(),))
-            c = self._cx.execute("INSERT INTO appels(debut, canal, canal_nom, texte, exercice, operateur) VALUES(?,?,?,?,?,?)",
-                                 (time.time(), canal, canal_nom, texte, exercice, operateur))
+            c = self._cx.execute("INSERT INTO appels(debut, canal, canal_nom, texte, exercice, operateur, attendus)"
+                                 " VALUES(?,?,?,?,?,?,?)",
+                                 (time.time(), canal, canal_nom, texte, exercice, operateur,
+                                  json.dumps(list(attendus or []), ensure_ascii=False)))
             self._cx.commit()
             aid = c.lastrowid
         self._bump()
@@ -763,6 +769,24 @@ def _attach_appels():
             rep.append({"auteur": m["auteur"], "ts": m["ts"], "texte": m["texte"], "snr": m["snr"], "sauts": m["sauts"]})
         a["reponses"] = rep
         a["enCours"] = a["fin"] is None
+        # stations appelées : répondu si son nom ou son indicatif apparaît dans l'auteur ou le texte d'une réponse
+        try:
+            attendus = json.loads(a.get("attendus") or "[]")
+        except ValueError:
+            attendus = []
+        norm = lambda x: re.sub(r"[^A-Z0-9]", "", (x or "").upper())
+        liste, pris = [], set()
+        for nom in attendus:
+            n = norm(nom)
+            trouve = next((r for r in rep if n and (n == norm(r["auteur"]) or n in norm(r["auteur"]) or
+                                                    re.search(r"(?<![A-Z0-9])" + re.escape(n) + r"(?![A-Z0-9])",
+                                                              (r["texte"] or "").upper().replace("-", "")))), None)
+            if trouve:
+                pris.add(trouve["auteur"])
+            liste.append({"nom": nom, "repondu": bool(trouve), "ts": trouve["ts"] if trouve else None,
+                          "auteur": trouve["auteur"] if trouve else None})
+        a["attendus"] = liste
+        a["autres"] = [r for r in rep if r["auteur"] not in pris] if attendus else rep
         return a
 
     for f in (start_appel, stop_appel, appel):

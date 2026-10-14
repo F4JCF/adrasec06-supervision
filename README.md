@@ -136,6 +136,12 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 - Vignettes ADRASEC : **pourcentage de batterie** à côté de la tension.
 - **Horloge** HH:MM:SS et date en haut à droite.
 
+### Nouveautés de la version 1.14
+
+- Vignettes ADRASEC : **température** transmise en télémétrie (orange à partir de 45 °C, rouge à 60 °C).
+- **Pourcentage de batterie** calculé comme l'écran des nœuds MeshCore (3,00 V = 0 %, 4,20 V = 100 %) ; **correction de tension** du nœud companion réglable (Réglages) ; l'analyse du nœud compare la mesure batterie et la télémétrie.
+- **Appel des stations…** : choix des stations appelées (moyens engagés, stations ayant écrit sur le canal, contacts, ajout manuel), indicatifs cités dans le message si la place le permet ; le suivi pointe ✓ / ⏳ chaque station appelée et liste les autres réponses ; la clôture inscrit à la main courante les stations ayant répondu et celles sans réponse.
+
 ### Les données
 
 Tout est enregistré sur le PC dans `%APPDATA%\ADRASEC06-Supervision\supervision.db`, y compris les mots de passe des répéteurs et le PIN Bluetooth (en clair, dans ce fichier local uniquement). Le journal technique est dans `supervision.log` au même endroit.
