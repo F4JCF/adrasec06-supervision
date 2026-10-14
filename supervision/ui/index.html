@@ -1642,7 +1642,13 @@ const HOT_MIN = 360; // 6 heures
         <div class="fgrid">
           <label class="full">Nom du nœud (identique au nom annoncé sur le réseau)<input id="f-nom" required value="${v("nom")}" placeholder="FR06-XXXX-ADRASEC06" ${n.id?"readonly":""}></label>
           <label>Appartenance<select id="f-proprio">${opt({adrasec:"ADRASEC 06",externe:"Voisin externe"}, n.proprio||"adrasec")}</select></label>
-          <label>Propriétaire (indicatif, nom)<input id="f-proprietaire" maxlength="80" value="${esc(n.proprietaire||"")}" placeholder="${esc(indicatifDuNom(n.nom) || "Ex. : F4JCF — Jean-Marie")}"></label>
+          ${(() => { const liste = [...new Set(["F4JCF", "F4NMK", "F4SMX", ...allNodes.map(x => x.proprietaire).filter(Boolean)])];
+            const cur = n.proprietaire || "", autre = cur && !liste.includes(cur);
+            return `<label>Propriétaire<span class="combo"><select id="f-proprietaire-sel">
+              <option value="">${indicatifDuNom(n.nom) ? `— non précisé (déduit : ${esc(indicatifDuNom(n.nom))})` : "— non précisé"}</option>
+              ${liste.map(v => `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(v)}</option>`).join("")}
+              <option value="__autre" ${autre ? "selected" : ""}>Autre…</option></select>
+              <input id="f-proprietaire" maxlength="80" value="${esc(autre ? cur : "")}" placeholder="Indicatif ou nom" ${autre ? "" : "hidden"}></span></label>`; })()}
           <label>État<select id="f-statut">${opt(Object.fromEntries(Object.entries(STATUTS).map(([k,s])=>[k,s.t])), n.statut||"en-ligne")}</select></label>
           <label>Rôle<select id="f-role">${opt(ROLES, n.role||"repeteur")}</select></label>
           <label>Firmware<input id="f-firmware" value="${v("firmware")}" placeholder="v1.17.1"></label>
@@ -2352,6 +2358,7 @@ const HOT_MIN = 360; // 6 heures
     if (e.target.id === "optNotif") await api.regler_options({notifications: e.target.checked});
     if (e.target.matches && e.target.matches("#apListe input[data-st], #apCiter")) apMaj(true);
     if (["trAuto","trJour","trHeure"].includes(e.target.id)) { await api.regler_test_resilience({auto: $("#trAuto").checked, jour: +$("#trJour").value, heure: $("#trHeure").value || "20:00"}); toast($("#trAuto").checked ? "Test automatique programmé" : "Test automatique désactivé"); refresh(true); }
+    if (e.target.id === "f-proprietaire-sel") { const a = $("#f-proprietaire"); a.hidden = e.target.value !== "__autre"; if (!a.hidden) a.focus(); }
     if (e.target.id === "optCorr") { await api.regler_options({corrBattCompanion: +e.target.value || 0}); toast("Correction enregistrée : prise en compte à la prochaine lecture (1 min)"); refresh(true); }
     if (e.target.id === "optHorloge") { await api.regler_options({horlogeAuto: e.target.checked}); refresh(true); }
     if (["mlOn","mlSrv","mlPort","mlSec","mlUser","mlPwd","mlFrom","mlTo","mlMsg"].includes(e.target.id)) mailDirty = true;
@@ -2381,7 +2388,7 @@ const HOT_MIN = 360; // 6 heures
         const m = l.match(/^(.*\S)\s+([+\-−]?\d+(?:[.,]\d+)?)\s*(?:dB)?$/i);
         return m ? {nom:m[1].trim(), snr:+m[2].replace("−","-").replace(",",".")} : null;
       }).filter(Boolean);
-      const doc = {...(editing.id ? editing : {}), id: editing.id || null, nom, proprio:g("proprio"), proprietaire:g("proprietaire"), statut:g("statut"), role:g("role"), firmware:g("firmware"), site:g("site"), commune:g("commune"),
+      const doc = {...(editing.id ? editing : {}), id: editing.id || null, nom, proprio:g("proprio"), proprietaire:($("#f-proprietaire-sel").value === "__autre" ? g("proprietaire") : $("#f-proprietaire-sel").value), statut:g("statut"), role:g("role"), firmware:g("firmware"), site:g("site"), commune:g("commune"),
         lat:numOr(g("lat")), lon:numOr(g("lon")), alt:numOr(g("alt")), materiel:g("materiel"), antenne:g("antenne"),
         tx:numOr(g("tx")), bruit:numOr(g("bruit")), erreursRx:numOr(g("erreursRx")), voisins, aFaire:g("aFaire"), notes:g("notes"),
         dateInstallation:g("dateInstallation"), dateBatterie:g("dateBatterie"), derniereVisite:g("derniereVisite"), prochaineVisite:g("prochaineVisite"),
