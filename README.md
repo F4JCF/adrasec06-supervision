@@ -147,6 +147,11 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 - **Définir le chemin…** dans le détail d'un message : choisir soi-même les relais (dans l'ordre) par lesquels passent les messages directs vers ce contact, ou le mode direct, ou l'inondation ; le chemin est enregistré dans le nœud companion et noté au journal.
 - Le bouton **Renvoyer** n'ouvre plus le détail du message ; **coche verte** et nombre de répéteurs ayant relayé nos messages de canal ; bouton **Répondre** dans le détail.
 
+### Nouveautés de la version 1.16
+
+- L'onglet « Main courante & rapports » s'appelle désormais **ADRASEC 06**.
+- **Test mensuel de résilience** (sous « Rapports d'état du réseau ») : diffuse sur #ADRASEC 06 « [EXERCICE ADRASEC 06 - TEST MENSUEL DE RESILIENCE - NE PAS REPONDRE - ACK AUTO] », interroge les répéteurs et écoute 10 minutes (répéteurs qui relaient, accusés automatiques, état des répéteurs ADRASEC) ; suivi en direct, compte rendu PDF rangé avec les rapports (et envoyé par e-mail si activé), historique ; lancement automatique possible chaque mois (jour et heure au choix).
+
 ### Les données
 
 Tout est enregistré sur le PC dans `%APPDATA%\ADRASEC06-Supervision\supervision.db`, y compris les mots de passe des répéteurs et le PIN Bluetooth (en clair, dans ce fichier local uniquement). Le journal technique est dans `supervision.log` au même endroit.

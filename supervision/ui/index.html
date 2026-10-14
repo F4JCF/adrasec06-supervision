@@ -481,7 +481,7 @@ header.top .hright{grid-column:1 / -1}
   <nav class="tabs" role="tablist" aria-label="Sections">
     <button role="tab" data-tab="reseau" aria-selected="true">Réseau</button>
     <button role="tab" data-tab="messages" aria-selected="false">Messagerie <span class="badge" id="msgBadge" hidden></span></button>
-    <button role="tab" data-tab="courante" aria-selected="false">Main courante &amp; rapports <span class="badge" id="exBadge" hidden>EN COURS</span></button>
+    <button role="tab" data-tab="courante" aria-selected="false">ADRASEC 06 <span class="badge" id="exBadge" hidden>EN COURS</span></button>
     <button role="tab" data-tab="stats" aria-selected="false">Statistiques &amp; couverture</button>
     <button role="tab" data-tab="reglages" aria-selected="false">Réglages</button>
   </nav>
@@ -591,6 +591,14 @@ header.top .hright{grid-column:1 / -1}
         <p style="margin:0">État de tous les nœuds ADRASEC, actions en attente et dernières alertes, prêt à transmettre au SDIS ou à la préfecture.</p>
         <label style="display:flex;flex-direction:row;align-items:center;gap:8px;color:var(--fg)"><input type="checkbox" id="repVoisins" style="width:auto"> Inclure les répéteurs voisins</label>
         <div class="actions"><button class="btn primary" id="repPdf" type="button">Rapport PDF</button><button class="btn" id="repXlsx" type="button">Tableau Excel</button></div>
+        <div class="panel-head" style="margin-top:10px;border-top:1px solid var(--line);padding-top:12px"><h2>Test mensuel de résilience</h2><span class="reading" id="trState"></span></div>
+        <p style="margin:0">Diffuse sur le canal ADRASEC 06 le message ci-dessous, interroge les répéteurs puis écoute 10 minutes : répéteurs qui relaient, accusés automatiques, état des répéteurs ADRASEC. Le compte rendu PDF est rangé avec les rapports (et envoyé par e-mail si l'envoi des rapports est activé).</p>
+        <code class="mono" style="font-size:.82rem;background:var(--sunk);padding:6px 8px;border-radius:4px;overflow-wrap:anywhere" id="trTexte">[EXERCICE ADRASEC 06 - TEST MENSUEL DE RESILIENCE - NE PAS REPONDRE - ACK AUTO]</code>
+        <div id="trLive"></div>
+        <div class="actions"><button class="btn primary" id="trGo" type="button">Lancer le test maintenant</button><button class="btn" id="trStop" type="button" hidden>Terminer maintenant</button></div>
+        <label style="display:flex;flex-direction:row;align-items:center;gap:8px;color:var(--fg);flex-wrap:wrap"><input type="checkbox" id="trAuto" style="width:auto"> Automatiquement chaque mois, le
+          <select id="trJour" style="width:auto"></select> à <input id="trHeure" type="time" style="width:auto"></label>
+        <div class="exlist" id="trHist"></div>
       </section>
     </div>
 
@@ -1145,6 +1153,23 @@ header.top .hright{grid-column:1 / -1}
     if (!r && /^[0-9a-fA-F]{2,8}$/.test(v)) { const c = chData.relais.filter(x => x.cle.toLowerCase().startsWith(v.toLowerCase())); r = c.length === 1 ? c[0] : {cle: v.toLowerCase(), nom: c.length ? `${c[0].nom} (?)` : "Relais " + v.toUpperCase()}; }
     if (!r) { $("#chMsg").textContent = "Répéteur inconnu : choisissez-le dans la liste ou tapez son identifiant hexadécimal."; return; }
     chRelais.push({cle: r.cle, nom: r.nom}); $("#chAjout").value = ""; $("#chMsg").textContent = ""; chRendre(); $("#chAjout").focus();
+  }
+  /* ---------- test mensuel de résilience ---------- */
+  let resil = null;
+  function renderResilience(){
+    const r = resil; if (!r || !$("#trGo")) return;
+    const rg = r.reglages || {}, ec = r.enCours;
+    if (!$("#trJour").options.length) $("#trJour").innerHTML = [...Array(28)].map((_, i) => `<option value="${i+1}">${i+1}</option>`).join("");
+    if (!inside("#trJour") && !inside("#trHeure")) { $("#trAuto").checked = !!rg.auto; $("#trJour").value = rg.jour || 1; $("#trHeure").value = rg.heure || "20:00"; }
+    $("#trGo").hidden = !!ec; $("#trStop").hidden = !ec; $("#trGo").disabled = !liaison.connecte;
+    $("#trState").textContent = ec ? `En cours · reste ${Math.floor(ec.reste/60)} min ${String(ec.reste%60).padStart(2,"0")} s` : (rg.auto ? `Automatique le ${rg.jour} de chaque mois à ${rg.heure}` : "");
+    const syn = x => `relayé par <b>${x.relaisDirects}</b> répéteur(s) (${x.relaisTotal} relais) · <b>${x.reponses}</b> accusé(s) · répéteurs ADRASEC en ligne <b>${x.repeteursOk}/${x.repeteursTotal}</b>`;
+    $("#trLive").innerHTML = ec ? `<div class="appelbox" style="margin:0"><b>Test en cours depuis ${new Date(ec.debut*1000).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}</b><span>${syn(ec.resultats.synthese)}</span>
+      ${(ec.resultats.echos.noms||[]).length ? `<span class="muted">Relais entendus : ${esc(ec.resultats.echos.noms.join(", "))}</span>` : ""}
+      ${(ec.resultats.reponses||[]).length ? `<span class="muted">Accusés : ${esc(ec.resultats.reponses.map(x => x.auteur).join(", "))}</span>` : ""}</div>` : (!liaison.connecte ? `<span class="reading">Connectez le nœud companion pour lancer le test.</span>` : "");
+    const h = (r.historique || []).filter(t => t.resultats);
+    $("#trHist").innerHTML = h.length ? h.map(t => `<div><span><b>${fmtDate(new Date(t.debut*1000).toISOString())}</b>${t.auto ? ` <span class="muted">(automatique)</span>` : ""}<br><span class="muted" style="font-size:.85rem">${syn(t.resultats.synthese)}</span></span><button class="btn small" data-trpdf="${t.id}">PDF</button></div>`).join("")
+      : `<div class="empty" style="padding:8px">Aucun test réalisé pour l'instant.</div>`;
   }
   /* ---------- analyse du nœud companion ---------- */
   let compBusy = false;
@@ -1828,6 +1853,7 @@ const HOT_MIN = 360; // 6 heures
   const hm = iso => { try { return new Date(iso).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"}); } catch(e) { return ""; } };
   const inside = sel => document.activeElement && document.activeElement.closest(sel);
   function renderCourante(){
+    renderResilience();
     const e = exercice;
     $("#mcStart").hidden = !!e; $("#mcLive").hidden = !e;
     if (e) {
@@ -2042,7 +2068,7 @@ const HOT_MIN = 360; // 6 heures
     if (!force && r === rev) { renderLink(); return; }
     const st = await api.etat();
     rev = st.revision; allNodes = st.noeuds; nodes = allNodes.filter(actif); journal = st.journal; liaison = st.liaison; loaded = true;
-    messages = st.messages || []; exercice = st.exercice; exercices = st.exercices || []; reglages = st.reglages || {}; appel = st.appel || null;
+    messages = st.messages || []; exercice = st.exercice; exercices = st.exercices || []; reglages = st.reglages || {}; appel = st.appel || null; resil = st.resilience || null;
     mc = st.mc || {entrees:[], moyens:[]};
     aprsData = st.aprs || aprsData;
     alertes = st.alertes || []; traces = st.traces || {}; couvertures = st.couvertures || []; dispo = st.dispo || {}; maj = st.maj;
@@ -2128,6 +2154,8 @@ const HOT_MIN = 360; // 6 heures
     if (xs) { exDelConfirm = +xs.dataset.exdel; renderCourante(); return; }
     if (t.closest("[data-exdelno]")) { exDelConfirm = null; renderCourante(); return; }
     if (xo) { const r = await api.supprimer_main_courante(+xo.dataset.exdelok); exDelConfirm = null; toast(r.ok ? "Main courante supprimée" : r.erreur); refresh(true); return; }
+    const tp = t.closest("[data-trpdf]");
+    if (tp) { const r = await api.pdf_test_resilience(+tp.dataset.trpdf); if (r.ok) toast("Compte rendu enregistré : " + r.chemin); else if (r.erreur) toast(r.erreur); return; }
     const mc = t.closest("[data-mc]");
     if (mc) { const r = await api.main_courante(+mc.dataset.mc); if (r.ok) toast("Main courante enregistrée : " + r.chemin); else if (r.erreur) toast(r.erreur); return; }
     const tl = t.closest("[data-testliaison]");
@@ -2222,6 +2250,8 @@ const HOT_MIN = 360; // 6 heures
       case "chAppliquer": { t.disabled = true; $("#chMsg").textContent = "Enregistrement dans le nœud companion…";
         const r = await api.definir_chemin(chData.cle, chMode, chRelais.map(x => x.cle)); t.disabled = false;
         if (r.ok) { $("#mchemin").hidden = true; toast(r.message); refresh(true); } else $("#chMsg").textContent = r.erreur; return; }
+      case "trGo": { t.disabled = true; const r = await api.test_resilience(); t.disabled = false; toast(r.ok ? "Test de résilience lancé : écoute pendant 10 minutes" : r.erreur); refresh(true); return; }
+      case "trStop": { await api.terminer_test_resilience(); toast("Fin du test : compte rendu en cours de création"); refresh(true); return; }
       case "compOpen": analyserCompanion(false); return;
       case "compRun": analyserCompanion(true); return;
       case "compClose": $("#mcomp").hidden = true; return;
@@ -2298,6 +2328,7 @@ const HOT_MIN = 360; // 6 heures
     if (e.target.id === "tplSel" && e.target.value !== "") { const m = (reglages.modeles||[])[+e.target.value]; if (m) { const ta = $("#msgText"); ta.value = fillTemplate(m); ta.dispatchEvent(new Event("input")); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } e.target.value = ""; }
     if (e.target.id === "optNotif") await api.regler_options({notifications: e.target.checked});
     if (e.target.matches && e.target.matches("#apListe input[data-st], #apCiter")) apMaj(true);
+    if (["trAuto","trJour","trHeure"].includes(e.target.id)) { await api.regler_test_resilience({auto: $("#trAuto").checked, jour: +$("#trJour").value, heure: $("#trHeure").value || "20:00"}); toast($("#trAuto").checked ? "Test automatique programmé" : "Test automatique désactivé"); refresh(true); }
     if (e.target.id === "optCorr") { await api.regler_options({corrBattCompanion: +e.target.value || 0}); toast("Correction enregistrée : prise en compte à la prochaine lecture (1 min)"); refresh(true); }
     if (e.target.id === "optHorloge") { await api.regler_options({horlogeAuto: e.target.checked}); refresh(true); }
     if (["mlOn","mlSrv","mlPort","mlSec","mlUser","mlPwd","mlFrom","mlTo","mlMsg"].includes(e.target.id)) mailDirty = true;

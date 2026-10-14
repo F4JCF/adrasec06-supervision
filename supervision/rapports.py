@@ -342,3 +342,61 @@ def pdf_main_courante(store: Store, ex_id: int, chemin: str):
 
     pages = build(0)
     build(pages)  # second passage pour « page x / y »
+
+
+ETATS_FR = {"en-ligne": "En ligne", "degrade": "Dégradé", "hors-ligne": "Hors ligne", "test": "En test"}
+
+
+def pdf_test_resilience(store: Store, t: dict, chemin: str):
+    """Compte rendu du test mensuel de résilience."""
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Paragraph, Spacer
+    st = _styles()
+    res = t.get("resultats") or {}
+    s = res.get("synthese") or {}
+    doc, entete = _pdf_base(chemin, "Test mensuel de résilience")
+    d0 = datetime.fromtimestamp(float(t["debut"]))
+    d1 = datetime.fromtimestamp(float(t.get("fin") or t["debut"]))
+    elems = [Paragraph("ADRASEC 06 — Test mensuel de résilience du réseau MeshCore", st["titre"]),
+             Paragraph(f"Test du {d0.strftime('%d/%m/%Y')} de {d0.strftime('%H:%M')} à {d1.strftime('%H:%M')}"
+                       f"{' (lancé automatiquement)' if t.get('auto') else ''} · canal #{_x(str(t.get('canal_nom') or '').lstrip('#'))}"
+                       f" · opérateur {_x(t.get('operateur') or '—')}", st["sous"]),
+             Paragraph(f"Message diffusé : <b>{_x(t.get('texte') or '')}</b>", st["norm"]), Spacer(1, 6),
+             Paragraph(f"Synthèse : relayé par <b>{s.get('relaisDirects', 0)}</b> répéteur(s) entendus directement "
+                       f"(<b>{s.get('relaisTotal', 0)}</b> relais au total) · <b>{s.get('reponses', 0)}</b> accusé(s) reçu(s) · "
+                       f"répéteurs ADRASEC en ligne <b>{s.get('repeteursOk', 0)}/{s.get('repeteursTotal', 0)}</b>.", st["norm"])]
+    ech = res.get("echos") or {}
+    elems.append(Paragraph("Répéteurs ayant relayé le message", st["h2"]))
+    det = ech.get("details") or []
+    if det:
+        data = [["Répéteur (entendu directement)", "SNR"]] + [[Paragraph(_x(d["nom"]), st["cell"]),
+                                                             "" if d.get("snr") is None else f"{d['snr']:+.1f} dB"] for d in det]
+        elems.append(_table(data, [200 * mm, 40 * mm]))
+        autres = [n for n in (ech.get("tousNoms") or []) if n not in [d["nom"] for d in det]]
+        if autres:
+            elems.append(Spacer(1, 4))
+            elems.append(Paragraph("Autres relais sur le trajet : " + _x(", ".join(autres)), st["norm"]))
+    else:
+        elems.append(Paragraph("Aucun répéteur n'a été entendu relayer le message.", st["norm"]))
+    elems.append(Paragraph("Accusés reçus sur le canal pendant le test", st["h2"]))
+    rep = res.get("reponses") or []
+    if rep:
+        data = [["Heure", "Station", "Message", "SNR", "Sauts"]] + [
+            [datetime.fromtimestamp(r["ts"]).strftime("%H:%M:%S"), Paragraph(_x(r.get("auteur") or ""), st["cell"]),
+             Paragraph(_x(r.get("texte") or ""), st["cell"]), "" if r.get("snr") is None else f"{r['snr']:+.1f} dB",
+             "" if r.get("sauts") is None else str(r["sauts"])] for r in rep]
+        elems.append(_table(data, [22 * mm, 60 * mm, 140 * mm, 22 * mm, 18 * mm]))
+    else:
+        elems.append(Paragraph("Aucun accusé reçu pendant le test.", st["norm"]))
+    elems.append(Paragraph("État des répéteurs ADRASEC", st["h2"]))
+    cols = {"Hors ligne": "#F8D7D7", "Dégradé": "#FCEBC7", "En ligne": "#DDF1E3"}
+    data, marks = [["Répéteur", "État", "Batterie", "Dernière lecture", "A relayé le test"]], []
+    for i, r in enumerate(res.get("repeteurs") or [], 1):
+        etat = "Éteint" if r.get("eteint") else ETATS_FR.get(r.get("statut"), r.get("statut") or "")
+        data.append([Paragraph(_x(r.get("nom") or ""), st["cell"]), etat,
+                     "" if r.get("batterie") in (None, "") else f"{float(r['batterie']):.2f} V".replace(".", ","),
+                     _date(r.get("maj")) if r.get("maj") else "—", "oui" if r.get("relaye") else "—"])
+        if etat in cols:
+            marks.append((i, 1, cols[etat]))
+    elems.append(_table(data, [80 * mm, 35 * mm, 30 * mm, 50 * mm, 40 * mm], marks))
+    doc.build(elems, onFirstPage=entete, onLaterPages=entete)

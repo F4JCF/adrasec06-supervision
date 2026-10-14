@@ -11,12 +11,13 @@ import webview
 
 import re
 import time
+from datetime import datetime
 
-from . import aprs, courriel, rapports, systeme, taches, web
+from . import aprs, courriel, rapports, resilience, systeme, taches, web
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.15.1"
+VERSION = "1.16.0"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -36,6 +37,7 @@ class Api:
         self._aprs = None
         self._courrier = None
         self._web = None
+        self._resilience = None
 
     # ----- lecture -----
     def revision(self):
@@ -83,6 +85,7 @@ class Api:
                      "stations": self._store.aprs_stations(12), "traces": self._store.aprs_traces(6)},
             "couvertures": self._store.list_coverage(),
             "appel": self._store.appel(),
+            "resilience": self._resilience.etat() if self._resilience else None,
             "dispo": {n["id"]: {"j7": self._store.availability(n["id"], 7)["pct"],
                                 "j30": self._store.availability(n["id"], 30)["pct"]}
                       for n in nodes if n.get("proprio") != "externe" and n.get("statut") not in ("prevu", "supprime")},
@@ -205,6 +208,30 @@ class Api:
             ajoute(c["nom"], "Contact du nœud companion", False)
         return {"ok": True, "stations": out, "operateur": self._store.get_config("operateur", "") or ""}
 
+    # ----- test mensuel de résilience -----
+    def test_resilience(self):
+        return self._resilience.lancer() if self._resilience else {"ok": False, "erreur": "Indisponible."}
+
+    def terminer_test_resilience(self):
+        return self._resilience.terminer() if self._resilience else {"ok": False}
+
+    def regler_test_resilience(self, options):
+        return self._resilience.regler(options) if self._resilience else {"ok": False}
+
+    def pdf_test_resilience(self, tid):
+        t = self._resilience._get(int(tid)) if self._resilience else None
+        if not t or not t.get("resultats"):
+            return {"ok": False, "erreur": "Test introuvable ou pas encore terminé."}
+        p = self._choisir(f"test-resilience-adrasec06-{datetime.fromtimestamp(t['debut']).strftime('%Y-%m-%d')}.pdf", "Document PDF (*.pdf)")
+        if not p:
+            return {"ok": False, "annule": True}
+        try:
+            rapports.pdf_test_resilience(self._store, t, p)
+        except Exception as e:  # noqa: BLE001
+            logging.getLogger("supervision").exception("pdf test")
+            return {"ok": False, "erreur": f"PDF impossible : {e}"}
+        return {"ok": True, "chemin": p}
+
     def lancer_appel(self, texte=None, stations=None):
         ch = self._canal_adrasec()
         if ch is None:
@@ -280,26 +307,35 @@ class Api:
                 apres = [x for x in msgs[i + 1:] if x.get("sens") == "recu" and x.get("canal") == m.get("canal")
                          and (x.get("ts") or 0) <= (m.get("ts") or 0) + 7200]
                 m["livreA"] = [c for c in cites if any(norm(x.get("auteur")) == norm(c) for x in apres)]
-            ech = self._store.echos(f"{m.get('auteur')}: {m.get('texte')}", float(m.get("ts") or 0))
-            if not ech:
-                m["echos"] = {"directs": 0, "relais": 0, "noms": [], "attente": time.time() - (m.get("ts") or 0) < 60}
-                continue
-            if noms is None:
-                noms = [((n.get("cle") or "").lower(), n.get("nom")) for n in self._store.list_nodes() if n.get("cle")]
-                noms += [((c.get("public_key") or "").lower(), c.get("adv_name")) for c in self._poller._contacts.values()
-                         if c.get("type") in (2, 3)]
-            def nom(h):
-                return next((nm for k, nm in noms if h and k.startswith(h)), f"relais {h.upper()}")
-            directs, tous = {}, set()
-            for e in ech:
-                t = max(1, int(e.get("taille") or 1))
-                hops = [e["chemin"][i:i + 2 * t] for i in range(0, len(e.get("chemin") or ""), 2 * t)]
-                if hops:
-                    directs.setdefault(hops[0], e.get("snr"))
-                    tous.update(hops)
-            m["echos"] = {"directs": len(directs), "relais": len(tous),
-                          "noms": [nom(h) for h in directs], "echos": len(ech)}
+            e = self._resume_echos(f"{m.get('auteur')}: {m.get('texte')}", float(m.get("ts") or 0))
+            if not e["echos"]:
+                e["attente"] = time.time() - (m.get("ts") or 0) < 60
+            m["echos"] = e
         return msgs
+
+    def _resume_echos(self, texte_complet: str, ts: float, fenetre: float = 600) -> dict:
+        """Répéteurs ayant relayé un de nos messages : directs (1er saut entendu) et tous les relais des échos."""
+        ech = self._store.echos(texte_complet, ts, fenetre)
+        if not ech:
+            return {"directs": 0, "relais": 0, "noms": [], "tousNoms": [], "echos": 0, "details": []}
+        noms = [((n.get("cle") or "").lower(), n.get("nom")) for n in self._store.list_nodes() if n.get("cle")]
+        noms += [((c.get("public_key") or "").lower(), c.get("adv_name")) for c in self._poller._contacts.values()
+                 if c.get("type") in (2, 3)]
+
+        def nom(h):
+            return next((nm for k, nm in noms if h and k.startswith(h)), f"relais {h.upper()}")
+        directs, tous = {}, []
+        for e in ech:
+            t = max(1, int(e.get("taille") or 1))
+            hops = [e["chemin"][i:i + 2 * t] for i in range(0, len(e.get("chemin") or ""), 2 * t)]
+            if hops:
+                directs.setdefault(hops[0], e.get("snr"))
+                for h in hops:
+                    if h not in tous:
+                        tous.append(h)
+        return {"directs": len(directs), "relais": len(tous), "noms": [nom(h) for h in directs],
+                "tousNoms": [nom(h) for h in tous], "echos": len(ech),
+                "details": [{"nom": nom(h), "snr": s} for h, s in directs.items()]}
 
     def historique(self, node_id, jours=7):
         return self._store.history(node_id, int(jours))
@@ -821,6 +857,7 @@ def main():
     api._aprs = aprs.AprsIS(store, VERSION)
     api._courrier = courrier
     api._web = web.Tableau(store, api.tableau_donnees)
+    api._resilience = resilience.TestResilience(store, poller, api, alerte)
     html = resource_path("ui/index.html")
     reduit = "--reduit" in sys.argv
     window = webview.create_window(
