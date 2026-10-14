@@ -16,7 +16,7 @@ from . import aprs, courriel, rapports, systeme, taches, web
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.14.2"
+VERSION = "1.14.3"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -52,7 +52,7 @@ class Api:
             "liaison": self._poller.state(),
             "version": VERSION,
             "dossier": str(data_dir()),
-            "messages": self._store.list_messages(400),
+            "messages": self._messages_avec_echos(),
             "alertes": self._store.list_alerts(30),
             "exercice": self._store.current_exercise(),
             "mc": ({"entrees": self._store.journal_of_exercise(cur_ex["id"]), "moyens": self._store.list_moyens(cur_ex["id"]),
@@ -258,6 +258,35 @@ class Api:
 
     def renvoyer_message(self, mid):
         return self._poller.renvoyer_message(int(mid))
+
+    def _messages_avec_echos(self):
+        """Pour nos messages de canal : répéteurs qui l'ont relayé (entendus par le nœud companion)."""
+        msgs = self._store.list_messages(400)
+        noms = None
+        limite = time.time() - 2 * 86400
+        for m in msgs:
+            if m.get("sens") != "emis" or m.get("canal") is None or (m.get("ts") or 0) < limite:
+                continue
+            ech = self._store.echos(f"{m.get('auteur')}: {m.get('texte')}", float(m.get("ts") or 0))
+            if not ech:
+                m["echos"] = {"directs": 0, "relais": 0, "noms": [], "attente": time.time() - (m.get("ts") or 0) < 60}
+                continue
+            if noms is None:
+                noms = [((n.get("cle") or "").lower(), n.get("nom")) for n in self._store.list_nodes() if n.get("cle")]
+                noms += [((c.get("public_key") or "").lower(), c.get("adv_name")) for c in self._poller._contacts.values()
+                         if c.get("type") in (2, 3)]
+            def nom(h):
+                return next((nm for k, nm in noms if h and k.startswith(h)), f"relais {h.upper()}")
+            directs, tous = {}, set()
+            for e in ech:
+                t = max(1, int(e.get("taille") or 1))
+                hops = [e["chemin"][i:i + 2 * t] for i in range(0, len(e.get("chemin") or ""), 2 * t)]
+                if hops:
+                    directs.setdefault(hops[0], e.get("snr"))
+                    tous.update(hops)
+            m["echos"] = {"directs": len(directs), "relais": len(tous),
+                          "noms": [nom(h) for h in directs], "echos": len(ech)}
+        return msgs
 
     def historique(self, node_id, jours=7):
         return self._store.history(node_id, int(jours))

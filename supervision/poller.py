@@ -687,6 +687,8 @@ class Poller:
             self.store.add_reception({"msg_hash": p.get("msg_hash"), "ts": p.get("recv_time") or time.time(),
                                       "texte": p.get("message"), "chemin": p.get("path") or "",
                                       "taille": p.get("path_hash_size") or 1, "snr": p.get("snr"), "rssi": p.get("rssi")})
+            if self.local_name and str(p.get("message")).startswith(self.local_name + ": "):
+                self.store._bump()  # écho d'un de nos messages : mise à jour du compteur de répéteurs
         except Exception as e:  # noqa: BLE001
             log.debug("Réception ignorée : %s", e)
 

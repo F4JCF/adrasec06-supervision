@@ -355,6 +355,13 @@ class Store:
                                         (texte, ts - 600, ts + 600)).fetchall()
         return [dict(r) for r in rows]
 
+    def echos(self, texte: str, ts: float) -> list[dict]:
+        """Répétitions entendues d'un message que nous avons émis sur un canal (10 min après l'envoi)."""
+        with self._lock:
+            rows = self._cx.execute("SELECT chemin, taille, snr, ts FROM receptions WHERE texte=? AND ts BETWEEN ? AND ? ORDER BY ts",
+                                    (texte, ts - 5, ts + 600)).fetchall()
+        return [dict(r) for r in rows]
+
     def last_position_by_name(self, nom: str):
         with self._lock:
             r = self._cx.execute("SELECT lat, lon, ts FROM positions WHERE lower(nom)=lower(?) ORDER BY ts DESC LIMIT 1",
