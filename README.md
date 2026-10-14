@@ -165,3 +165,12 @@ supervision/ui/          interface (HTML/JS)
 supervision/seed.json    données initiales du réseau
 supervision.spec         configuration PyInstaller
 ```
+
+## Licence
+
+Supervision MeshCore ADRASEC 06 — Copyright © 2026 Jean-Marie Bouthors (F4JCF).
+
+Ce logiciel est libre : vous pouvez le redistribuer et le modifier selon les termes de la
+[licence publique générale GNU, version 3](LICENSE) (GPL-3.0) ou, à votre choix, toute version
+ultérieure. Il est fourni sans aucune garantie. Toute version modifiée et redistribuée doit
+rester sous la même licence, avec ses sources.
