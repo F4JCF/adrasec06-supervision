@@ -1196,14 +1196,14 @@ header.top .hright{grid-column:1 / -1}
         L.marker([h.lat, h.lon], {zIndexOffset: 600, icon: L.divIcon({className:"", html:`<div class="det-num" style="--rc:${c}">${j + 1}</div>`, iconSize:[22,18], iconAnchor:[11,9]})})
           .bindTooltip(`Chemin ${i + 1} · relais ${j + 1} : ${esc(h.nom || h.hash)}`).addTo(detLayer); });
       if (mPos) ligne.push([M.lat, M.lon]);
-      if (ligne.length > 1) L.polyline(ligne, {color:c, weight:4, opacity:.85, dashArray: i ? "8 6" : null}).addTo(detLayer);
+      if (ligne.length > 1) L.polyline(ligne, {color:c, weight:6, opacity:.9, dashArray: i ? "10 8" : null}).addTo(detLayer);
     });
     if (!routes.length && d.route_connue) {
       const ligne = mPos ? [[M.lat, M.lon]] : [];
       d.route_connue.relais.forEach((h, j) => { if (h.lat == null) return; ligne.push([h.lat, h.lon]); pts.push([h.lat, h.lon]);
         L.marker([h.lat, h.lon], {icon: L.divIcon({className:"", html:`<div class="det-num" style="--rc:${ROUTE_COUL[1]}">${j + 1}</div>`, iconSize:[22,18], iconAnchor:[11,9]})}).bindTooltip(esc(h.nom || h.hash)).addTo(detLayer); });
       if (aPos && !emis) ligne.push([A.lat, A.lon]);
-      if (ligne.length > 1) L.polyline(ligne, {color:ROUTE_COUL[1], weight:4, opacity:.8, dashArray:"8 6"}).addTo(detLayer);
+      if (ligne.length > 1) L.polyline(ligne, {color:ROUTE_COUL[1], weight:6, opacity:.85, dashArray:"10 8"}).addTo(detLayer);
     }
     if (aPos && !emis) pin(A.lat, A.lon, "#1f3a5f", `Émetteur : ${esc(auteur)}`);
     if (mPos) pin(M.lat, M.lon, "#e8590c", `Réception : ${esc(M.nom)}`);
@@ -1257,13 +1257,14 @@ header.top .hright{grid-column:1 / -1}
       const m = byName(v.nom); if (!m || !hasPos(m)) return;
       const k = [n.nom,m.nom].sort().join("|"); if (seen.has(k)) return; seen.add(k);
       const on = sel && (sel===n.id || sel===m.id);
-      L.polyline([[+n.lat,+n.lon],[+m.lat,+m.lon]], {color:colorOf(snrColor(+v.snr)), weight:on?4:2.5, opacity: sel && !on ? .3 : .85})
+      if (!(sel && !on)) L.polyline([[+n.lat,+n.lon],[+m.lat,+m.lon]], {color:"#ffffff", weight:on?10:7, opacity:.55, interactive:false}).addTo(lLayer);
+      L.polyline([[+n.lat,+n.lon],[+m.lat,+m.lon]], {color:colorOf(snrColor(+v.snr)), weight:on?7:4.5, opacity: sel && !on ? .3 : .9})
         .bindTooltip((() => { const inv = (m.voisins||[]).find(x => x.nom === n.nom); return `${esc(n.nom)} ↔ ${esc(m.nom)}<br>${esc(n.nom.replace(/^FR06-/,""))} entend ${esc(m.nom.replace(/^FR06-/,""))} : ${fmtSnr(+v.snr)}` + (inv ? `<br>${esc(m.nom.replace(/^FR06-/,""))} entend ${esc(n.nom.replace(/^FR06-/,""))} : ${fmtSnr(+inv.snr)}` : ""); })()).addTo(lLayer);
     }));
     const selNode = nodes.find(n => n.id===sel);
     if (selNode && selNode.chemin && selNode.chemin.relais && hasPos(selNode)) {
       const pts = selNode.chemin.relais.map(r => byName(String(r).replace(/ \(\?\)$/,""))).filter(x => x && hasPos(x)).map(x => [+x.lat,+x.lon]);
-      if (pts.length) L.polyline([...pts, [+selNode.lat,+selNode.lon]], {color:colorOf("var(--accent)"), weight:3, dashArray:"6 6"}).addTo(lLayer);
+      if (pts.length) L.polyline([...pts, [+selNode.lat,+selNode.lon]], {color:colorOf("var(--accent)"), weight:5, dashArray:"8 8"}).addTo(lLayer);
     }
     const order = [...vis].sort((a,b) => (a.statut==="prevu"?0:1)-(b.statut==="prevu"?0:1) || (a.id===sel)-(b.id===sel));
     order.forEach(n => {
@@ -1305,7 +1306,7 @@ const HOT_MIN = 360; // 6 heures
     const hot = expediteursRecents();
     if (showTeams) (liaison.equipes || []).forEach(t => {
       const tr = traces[t.cle];
-      if (tr && tr.length > 1) L.polyline(tr.map(p => [p[0], p[1]]), {color:"#9b59d0", weight:2.5, opacity:.8, dashArray:"2 6"}).addTo(layer);
+      if (tr && tr.length > 1) L.polyline(tr.map(p => [p[0], p[1]]), {color:"#9b59d0", weight:4, opacity:.85, dashArray:"3 7"}).addTo(layer);
       const h = hot[normNom(t.nom)];
       L.marker([t.lat, t.lon], {zIndexOffset: h ? 1000 : 0, icon: L.divIcon({className:"", html: h ? HOT_TRI : `<div class="team-icon"></div>`, iconSize: h ? [26,24] : [16,16], iconAnchor: h ? [13,16] : [8,8]})})
         .bindTooltip(h ? `${esc(t.nom)} · message ${ago(h.date)} : « ${esc(h.texte.slice(0,60))}${h.texte.length>60?"…":""} »` : `${esc(t.nom)} · ${ago(t.vu)}`, {permanent:true, direction:"right", offset:[h ? 13 : 10, 0], className: "map-label" + (h ? " hot" : "")})
@@ -1319,7 +1320,7 @@ const HOT_MIN = 360; // 6 heures
     }
     if (showAprs) (aprsData.stations || []).forEach(a => {
       const tr = (aprsData.traces || {})[a.call];
-      if (tr && tr.length > 1) L.polyline(tr.map(p => [p[0], p[1]]), {color:"#1f6fd1", weight:2.5, opacity:.75, dashArray:"6 5"}).addTo(layer);
+      if (tr && tr.length > 1) L.polyline(tr.map(p => [p[0], p[1]]), {color:"#1f6fd1", weight:4, opacity:.8, dashArray:"8 6"}).addTo(layer);
       const base = normNom(a.call.split("-")[0]);
       const h = Object.entries(hot).find(([k]) => base && k.startsWith(base));
       const vit = a.vitesse ? ` · ${Math.round(a.vitesse)} km/h` : "";
@@ -1359,7 +1360,7 @@ const HOT_MIN = 360; // 6 heures
       const key = [n.nom,m.nom].sort().join("|"); if (seen.has(key)) return; seen.add(key);
       const [x1,y1]=px(+n.lat,+n.lon), [x2,y2]=px(+m.lat,+m.lon);
       const on = sel && (sel===n.id || sel===m.id);
-      g += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${snrColor(+v.snr)}" stroke-width="${on?3:2}" stroke-opacity="${sel && !on ? .25 : .85}" stroke-linecap="round"><title>${esc(n.nom)} ↔ ${esc(m.nom)} : ${fmtSnr(+v.snr)}</title></line>`;
+      g += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${snrColor(+v.snr)}" stroke-width="${on?5:3.5}" stroke-opacity="${sel && !on ? .25 : .85}" stroke-linecap="round"><title>${esc(n.nom)} ↔ ${esc(m.nom)} : ${fmtSnr(+v.snr)}</title></line>`;
     }));
     const order = [...vis].sort((a,b) => (a.statut==="prevu"?0:1)-(b.statut==="prevu"?0:1) || (a.id===sel)-(b.id===sel));
     order.forEach(n => {

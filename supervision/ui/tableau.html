@@ -92,7 +92,8 @@ footer{margin-top:16px;font-size:.78rem;color:var(--muted)}
       const m = parNom[v.nom]; if (!m || !pos(m)) return;
       const k = [n.nom, m.nom].sort().join("|"); if (vu.has(k)) return; vu.add(k);
       const c = v.snr >= 5 ? "var(--ok)" : v.snr >= -5 ? "var(--warn)" : "var(--crit)";
-      L.polyline([[+n.lat,+n.lon],[+m.lat,+m.lon]], {color:css(c), weight:2.5, opacity:.8}).bindTooltip(`${esc(n.nom)} ↔ ${esc(m.nom)} : ${num(v.snr,1," dB")}`).addTo(layer);
+      L.polyline([[+n.lat,+n.lon],[+m.lat,+m.lon]], {color:"#ffffff", weight:7, opacity:.5, interactive:false}).addTo(layer);
+      L.polyline([[+n.lat,+n.lon],[+m.lat,+m.lon]], {color:css(c), weight:4.5, opacity:.9}).bindTooltip(`${esc(n.nom)} ↔ ${esc(m.nom)} : ${num(v.snr,1," dB")}`).addTo(layer);
     }));
     d.noeuds.filter(pos).forEach(n => {
       const own = n.proprio !== "externe", s = ST[n.statut] || ST["en-ligne"];
