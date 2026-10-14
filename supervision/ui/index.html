@@ -768,7 +768,7 @@ header.top .hright{grid-column:1 / -1}
 </div>
 <div id="mdet" hidden role="dialog" aria-modal="true" aria-labelledby="mdetTitle">
   <div class="mdet-box">
-    <div class="mdet-head"><h2 id="mdetTitle">Détail du message</h2><button class="btn small" id="mdetClose" type="button">Fermer (Échap)</button></div>
+    <div class="mdet-head"><h2 id="mdetTitle">Détail du message</h2><div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end"><span id="mdetActs" style="display:flex;gap:8px;flex-wrap:wrap"></span><button class="btn small" id="mdetClose" type="button">Fermer (Échap)</button></div></div>
     <div class="mdet-body"><div id="mdetInfo"></div><div><div id="mdetMap"></div><p class="muted" id="mdetMapNote" style="font-size:.8rem;margin:6px 0 0"></p></div></div>
   </div>
 </div>
@@ -1139,11 +1139,20 @@ header.top .hright{grid-column:1 / -1}
                                       : `Relais inconnu <span class="x">identifiant ${esc(r.hash)}</span>`; }
   async function ouvrirDetail(id){
     detRetour = document.activeElement;
-    $("#mdet").hidden = false; $("#mdetClose").focus();
+    $("#mdet").hidden = false; $("#mdetClose").focus(); $("#mdetActs").innerHTML = "";
     $("#mdetInfo").innerHTML = `<p class="reading">Chargement…</p>`; $("#mdetMapNote").textContent = "";
     let d; try { d = await api.detail_message(id); } catch(e) { d = {ok:false, erreur:String(e)}; }
     if (!d || !d.ok) { $("#mdetInfo").innerHTML = `<p style="color:var(--crit)">${esc((d && d.erreur) || "Détail indisponible.")}</p>`; return; }
     const m = d.message, emis = m.sens === "emis", canal = m.canal != null;
+    // boutons « Répondre » : sur le même canal (mention @[auteur]) ou en message direct si l'auteur est un contact
+    if (!emis) {
+      const auteurNom = m.auteur || m.contact || "";
+      const contact = (liaison.contactsMessagerie || []).find(c => c.nom === auteurNom || (m.contact_cle && c.cle.startsWith(m.contact_cle)));
+      const acts = [];
+      if (canal) acts.push(`<button class="btn small primary" data-repondre="c:${m.canal}" data-mention="${esc(auteurNom)}" title="Prépare une réponse sur ${esc(diese(m.canal_nom))} commençant par @[${esc(auteurNom)}]">Répondre sur ${esc(diese(m.canal_nom))}</button>`);
+      if (contact) acts.push(`<button class="btn small${canal ? "" : " primary"}" data-repondre="d:${esc(contact.cle.slice(0,12))}" title="Message direct chiffré à ${esc(contact.nom)}">Répondre en privé</button>`);
+      $("#mdetActs").innerHTML = liaison.connecte ? acts.join("") : (acts.length ? `<span class="reading">Connectez le nœud companion pour répondre</span>` : "");
+    }
     const auteur = emis ? (d.moi.nom + " (nous)") : (m.auteur || m.contact || "Inconnu");
     let html = `<div class="mdet-txt">${esc(m.texte)}</div>
       <dl class="mdet-kv"><dt>De</dt><dd><b>${esc(auteur)}</b>${d.auteur.source && !emis ? ` <span class="muted">· ${esc(d.auteur.source)}</span>` : ""}</dd>
@@ -2032,6 +2041,14 @@ const HOT_MIN = 360; // 6 heures
     const mdel = t.closest("[data-msgdel]");
     if (mdel) { await api.supprimer_message(+mdel.dataset.msgdel); refresh(true); return; }
     if (t.closest("#mdetClose") || t.id === "mdet") { fermerDetail(); return; }
+    const rp = t.closest("[data-repondre]");
+    if (rp) {
+      fermerDetail(); tab = "messages"; conv = rp.dataset.repondre; convConfirm = false; lastMsgCount = -2; editing = null; renderAll();
+      const ta = $("#msgText"), mention = rp.dataset.mention && conv.startsWith("c:") ? `@[${rp.dataset.mention}] ` : "";
+      ta.value = mention + ta.value.replace(/^@\[[^\]]*\]\s*/, "");
+      ta.dispatchEvent(new Event("input")); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+      $("#msgs").scrollTop = $("#msgs").scrollHeight; return;
+    }
     const mid = t.closest("[data-msgid]");
     if (mid && !window.getSelection().toString()) { ouvrirDetail(+mid.dataset.msgid); return; }
     const xa = t.closest("[data-exarch]"), xd = t.closest("[data-exdesarch]"), xs = t.closest("[data-exdel]"), xo = t.closest("[data-exdelok]");
