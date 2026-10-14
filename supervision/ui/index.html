@@ -2051,7 +2051,7 @@ const HOT_MIN = 360; // 6 heures
       $("#msgs").scrollTop = $("#msgs").scrollHeight; return;
     }
     const mid = t.closest("[data-msgid]");
-    if (mid && !window.getSelection().toString()) { ouvrirDetail(+mid.dataset.msgid); return; }
+    if (mid && !t.closest("button, a, input, textarea, select") && !window.getSelection().toString()) { ouvrirDetail(+mid.dataset.msgid); return; }
     const xa = t.closest("[data-exarch]"), xd = t.closest("[data-exdesarch]"), xs = t.closest("[data-exdel]"), xo = t.closest("[data-exdelok]");
     if (xa) { toast("Archivage…"); const r = await api.archiver_main_courante(+xa.dataset.exarch); if (r.ok) toast("Archivée : " + r.chemin); else if (r.erreur) toast(r.erreur); refresh(true); return; }
     if (xd) { await api.desarchiver_main_courante(+xd.dataset.exdesarch); refresh(true); return; }
@@ -2067,7 +2067,7 @@ const HOT_MIN = 360; // 6 heures
       testBusy = null; toast(r.message || r.erreur || "Test terminé"); refresh(true); renderFiche(); return;
     }
     const rv = t.closest("[data-renvoyer]");
-    if (rv) { const r = await api.renvoyer_message(+rv.dataset.renvoyer); if (!r.ok) toast(r.erreur); refresh(true); return; }
+    if (rv) { rv.disabled = true; rv.textContent = "Renvoi…"; const r = await api.renvoyer_message(+rv.dataset.renvoyer); toast(r.ok ? "Message renvoyé (3 essais, en attente de l'accusé de réception)" : r.erreur); refresh(true); return; }
     const rc = t.closest("[data-reinitchemin]");
     if (rc) {
       cheminBusy = rc.dataset.reinitchemin; renderFiche(); toast("Réinitialisation du chemin… (jusqu'à 30 s)");

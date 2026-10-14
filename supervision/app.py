@@ -16,7 +16,7 @@ from . import aprs, courriel, rapports, systeme, taches, web
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.14.3"
+VERSION = "1.14.4"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
