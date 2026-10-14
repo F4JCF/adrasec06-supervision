@@ -16,7 +16,7 @@ from . import aprs, courriel, rapports, systeme, taches, web
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.15.0"
+VERSION = "1.15.1"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -270,9 +270,16 @@ class Api:
         msgs = self._store.list_messages(400)
         noms = None
         limite = time.time() - 2 * 86400
-        for m in msgs:
+        norm = lambda x: re.sub(r"[^a-z0-9]", "", (x or "").lower())
+        for i, m in enumerate(msgs):
             if m.get("sens") != "emis" or m.get("canal") is None or (m.get("ts") or 0) < limite:
                 continue
+            # discussion : la station citée (@[nom]) a écrit sur le canal après notre message → livré à cette station
+            cites = re.findall(r"@\[([^\]]+)\]", m.get("texte") or "")
+            if cites:
+                apres = [x for x in msgs[i + 1:] if x.get("sens") == "recu" and x.get("canal") == m.get("canal")
+                         and (x.get("ts") or 0) <= (m.get("ts") or 0) + 7200]
+                m["livreA"] = [c for c in cites if any(norm(x.get("auteur")) == norm(c) for x in apres)]
             ech = self._store.echos(f"{m.get('auteur')}: {m.get('texte')}", float(m.get("ts") or 0))
             if not ech:
                 m["echos"] = {"directs": 0, "relais": 0, "noms": [], "attente": time.time() - (m.get("ts") or 0) < 60}
