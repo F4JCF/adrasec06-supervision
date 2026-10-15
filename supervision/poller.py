@@ -114,6 +114,7 @@ class Poller:
             "equipes": self.equipes,
             "position": self.position,
             "batterie": self.batterie if self.mc is not None else None,
+            "regions": self.etat_regions(),
             "analyseCompanion": self.analyse_companion if self.mc is not None else None,
             "couvertureEnCours": self.couverture_en_cours,
             "contactsMessagerie": self.contacts_messagerie() if self.mc is not None else [],
@@ -633,16 +634,27 @@ class Poller:
     # ---------- messagerie ----------
     async def _load_channels(self):
         out = []
-        for i in range(8):
+        cle_public = "8b3387e9c5cdea6ac9e5edbaa115cd72"
+        for i in range(40):
             try:
                 ev = await self.mc.commands.get_channel(i)
             except Exception:
                 break
             if ev is None or ev.type == EventType.ERROR:
                 break
-            name = ((ev.payload or {}).get("channel_name") or "").strip("\x00 ")
+            p = ev.payload or {}
+            name = (p.get("channel_name") or "").strip("\x00 ")
             if name:
-                out.append({"index": i, "nom": name})
+                secret = p.get("channel_secret") or b""
+                secret = secret.hex() if isinstance(secret, (bytes, bytearray)) else str(secret)
+                nh = name if name.startswith("#") else "#" + name
+                if secret == cle_public:
+                    genre = "public"
+                elif secret and secret == hashlib.sha256(nh.encode("utf-8")).hexdigest()[:32]:
+                    genre = "hashtag"
+                else:
+                    genre = "prive"
+                out.append({"index": i, "nom": name, "genre": genre})
         self.canaux = out or [{"index": 0, "nom": "Public"}]
         self.store._bump()
 
@@ -938,7 +950,21 @@ class Poller:
             ok = True
         else:
             idx = int(canal or 0)
+            region = (self.store.get_config("regions_canaux", {}) or {}).get(str(idx), "")
+            if region:
+                try:
+                    if region == "*":
+                        await self.mc.commands.force_unscoped()
+                    else:
+                        await self.mc.commands.set_flood_scope(region)
+                except Exception as e:  # noqa: BLE001
+                    log.warning("région %s : %s", region, e)
             ev = await self.mc.commands.send_chan_msg(idx, texte)
+            if region:
+                try:
+                    await self.mc.commands.set_flood_scope(None)  # retour à la région par défaut du nœud
+                except Exception:  # noqa: BLE001
+                    pass
             ok = ev is not None and ev.type != EventType.ERROR
             self.store.add_message({"sens": "emis", "canal": idx, "canal_nom": self._canal_nom(idx), "auteur": moi,
                                     "texte": texte, "statut": "envoyé" if ok else "échec"})
@@ -1614,6 +1640,74 @@ class Poller:
         self.store.add_journal(nom, operateur or "PC", f"Chemin vers {nom} défini manuellement : {texte}.")
         self.store._bump()
         return {"ok": True, "message": f"Chemin vers {nom} : {texte}", "chemin": self._chemin(c)}
+
+    # ---------- régions (portée des messages en inondation) ----------
+    def regions(self, lire_repeteurs: bool = False) -> dict:
+        if self.mc is None:
+            return {"ok": False, "erreur": "Aucun nœud connecté."}
+        try:
+            return self._submit(self._regions(lire_repeteurs), timeout=240)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "erreur": f"Lecture impossible : {e}"}
+
+    async def _regions(self, lire_repeteurs: bool) -> dict:
+        defaut = ""
+        try:
+            ev = await self.mc.commands.get_default_flood_scope()
+            if ev is not None and ev.type != EventType.ERROR:
+                defaut = (ev.payload or {}).get("scope_name") or ""
+        except Exception:  # noqa: BLE001
+            pass
+        self.store.set_config("region_defaut", defaut)
+        par_rep = dict(self.store.get_config("regions_repeteurs", {}) or {})
+        if lire_repeteurs:
+            if not await self._attendre_la_main("Lecture des régions"):
+                return {"ok": False, "erreur": "L'interrogation en cours ne s'est pas terminée à temps. Réessayez."}
+            for n in self.store.list_nodes():
+                if n.get("proprio") == "externe" or n.get("statut") in ("prevu", "supprime") or n.get("eteint"):
+                    continue
+                c = self._contact_for(n.get("nom", ""))
+                if c is None:
+                    continue
+                try:
+                    txt = await self.mc.commands.req_regions_sync(c, min_timeout=10)
+                except Exception:  # noqa: BLE001
+                    txt = None
+                if txt is not None:
+                    par_rep[n["nom"]] = [r for r in re.split(r"[\s,;]+", txt) if r]
+            self.store.set_config("regions_repeteurs", par_rep)
+        self.store._bump()
+        return {"ok": True, **self.etat_regions()}
+
+    def etat_regions(self) -> dict:
+        par_rep = self.store.get_config("regions_repeteurs", {}) or {}
+        connues = sorted({r if r.startswith("#") else "#" + r for l in par_rep.values() for r in l if r not in ("*", "-")})
+        return {"defaut": self.store.get_config("region_defaut", "") or "", "parRepeteur": par_rep,
+                "connues": connues, "parCanal": self.store.get_config("regions_canaux", {}) or {}}
+
+    def regler_region(self, canal=None, region: str = "", defaut: bool = False) -> dict:
+        region = (region or "").strip()
+        if region and region != "*" and not region.startswith("#"):
+            region = "#" + region
+        if defaut:
+            if self.mc is None:
+                return {"ok": False, "erreur": "Aucun nœud connecté."}
+            try:
+                ev = self._submit(self.mc.commands.set_default_flood_scope(region or None), timeout=20)
+            except Exception as e:  # noqa: BLE001
+                return {"ok": False, "erreur": f"Réglage impossible : {e}"}
+            if ev is None or ev.type == EventType.ERROR:
+                return {"ok": False, "erreur": "Le nœud companion a refusé la région (firmware trop ancien ?)."}
+            self.store.set_config("region_defaut", region)
+        else:
+            rc = dict(self.store.get_config("regions_canaux", {}) or {})
+            if region:
+                rc[str(int(canal))] = region
+            else:
+                rc.pop(str(int(canal)), None)
+            self.store.set_config("regions_canaux", rc)
+        self.store._bump()
+        return {"ok": True, **self.etat_regions()}
 
     # ---------- analyse du nœud companion ----------
     RESEAU = {"radio_freq": 869.618, "radio_bw": 62.5, "radio_sf": 8, "radio_cr": 8}

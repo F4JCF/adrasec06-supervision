@@ -716,6 +716,11 @@ header.top .hright{grid-column:1 / -1}
       <p class="hint">Pour quitter complètement : clic droit sur l'icône près de l'horloge, puis « Quitter ».</p>
       <label class="line"><input type="checkbox" id="optHorloge"> Remettre automatiquement à l'heure les répéteurs décalés de plus de 2 minutes</label>
       <p class="hint">À chaque interrogation (mot de passe admin requis), l'heure du PC est transmise au nœud companion puis au répéteur. Chaque correction est notée au journal.</p>
+      <div class="panel-head" style="margin-top:6px"><h2>Régions (portée des messages)</h2></div>
+      <p style="margin:0">Une région limite la diffusion : seuls les répéteurs qui acceptent la région relaient le message (utile pour ne pas inonder toute la France). La région se choisit pour chaque canal dans la Messagerie ; la région par défaut s'applique sinon. Les noms doivent être ceux réglés sur les répéteurs.</p>
+      <div class="actions" style="flex-wrap:wrap"><label class="line" style="margin:0">Région par défaut du nœud companion <select id="regDefaut" style="width:auto"></select></label>
+        <button class="btn small" id="regLire" type="button">Lire les régions des répéteurs ADRASEC</button><span class="reading" id="regInfo"></span></div>
+      <div id="regRep" style="display:grid;gap:2px;font-size:.88rem"></div>
       <div class="panel-head" style="margin-top:6px"><h2>Alertes par e-mail</h2></div>
       <p style="margin:0">Répéteur hors ligne, batterie faible, alerte précoce… sont aussi envoyés par e-mail (regroupés par minute). Pour Infomaniak : serveur mail.infomaniak.com, port 465, SSL, identifiant = votre adresse complète.</p>
       <label class="line"><input type="checkbox" id="mlOn"> Envoyer les alertes par e-mail</label>
@@ -1892,13 +1897,19 @@ const HOT_MIN = 360; // 6 heures
     vus[conv] = Math.max(vus[conv] || 0, dernierRecu(conv)); saveVus();
     const item = (k, label) => { const u = k === conv ? 0 : nonLus(k);
       return `<button data-conv="${esc(k)}" aria-pressed="${conv===k}" class="${u ? "unread" : ""}" title="${u ? u + " message(s) non lu(s)" : ""}"><span>${esc(label)}</span><span class="n">${u ? u : (cnt(k) || "")}</span></button>`; };
-    $("#convs").innerHTML = `<h3>Canaux</h3>` + chans.map(c => item("c:"+c.index, diese(c.nom))).join("") +
+    $("#convs").innerHTML = `<h3>Canaux</h3>` + chans.map(c => item("c:"+c.index, (c.genre === "prive" ? "🔒 " : "") + diese(c.nom))).join("") +
       `<h3 style="display:flex;justify-content:space-between;align-items:center;gap:6px">Messages directs<button class="btn small" data-ajoutami="1" type="button" title="Ajouter un companion ami (carte de contact ou clé publique)" style="padding:1px 8px;font-size:.72rem;letter-spacing:0;text-transform:none">+ Ami</button></h3>` + (Object.values(dms).sort((a,b)=>(!!b.ami-!!a.ami)||(nonLus("d:"+b.cle)-nonLus("d:"+a.cle))||(b.n-a.n)||a.nom.localeCompare(b.nom)).map(d => item("d:"+d.cle, (d.ami ? "★ " : "") + d.nom)).join("") || `<span class="reading" style="padding:4px 14px">Aucun contact. Connectez le nœud companion.</span>`);
     const list = messages.filter(m => convKey(m)===conv);
     const isChan = conv.startsWith("c:");
     const title = isChan ? diese((chans.find(c => "c:"+c.index===conv)||{nom:"Canal"}).nom) : (dms[conv.slice(2)]||{nom:"Contact"}).nom;
     $("#threadTitle").textContent = title;
-    $("#threadSub").textContent = isChan ? "Canal partagé : tous les nœuds du canal reçoivent le message" : "Message direct chiffré";
+    const chCour = isChan ? (chans.find(c => "c:"+c.index===conv) || {}) : null;
+    const reg = liaison.regions || {}, regCanal = isChan ? ((reg.parCanal || {})[String(chCour.index)] || "") : "";
+    $("#threadSub").innerHTML = !isChan ? "Message direct chiffré"
+      : (chCour.genre === "prive" ? "🔒 <b>Canal privé</b> : seuls les nœuds qui ont sa clé secrète peuvent le lire"
+        : chCour.genre === "hashtag" ? "Canal public (#) : toute personne qui connaît son nom peut le lire"
+        : "Canal public : tous les nœuds MeshCore le reçoivent")
+        + ` · <span title="Région (portée) : seuls les répéteurs qui acceptent cette région relaient vos messages sur ce canal">Région : ${regCanal === "*" ? "aucune (forcée)" : regCanal ? esc(regCanal) : "par défaut du nœud" + (reg.defaut ? ` (${esc(reg.defaut)})` : "")}</span>`;
     const box = $("#msgs"), atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
     $("#threadActs").innerHTML = list.length ? (convConfirm
       ? `<span class="reading" style="color:var(--crit)">Supprimer les ${list.length} message(s) de cette conversation sur ce PC ?</span><button class="btn small danger" id="convClearYes">Oui, supprimer</button><button class="btn small" id="convClearNo">Non</button>`
@@ -1906,6 +1917,14 @@ const HOT_MIN = 360; // 6 heures
     if (!isChan) { const d = dms[conv.slice(2)]; if (d && d.full) $("#threadActs").insertAdjacentHTML("afterbegin", `<button class="btn small${d.ami ? " primary" : ""}" data-toggleami="${esc(d.full)}" title="${d.ami ? "Retirer de vos amis" : "Ajouter à vos amis : en tête de liste et repéré en doré sur la carte"}">${d.ami ? "★ Ami" : "☆ Ajouter aux amis"}</button>`); }
     const estAdr = isChan && /adrasec ?0?6/i.test((chans.find(c => "c:"+c.index===conv)||{}).nom || "");
     if (estAdr && liaison.connecte && !(appel && appel.enCours)) $("#threadActs").innerHTML = `<button class="btn small primary" id="appelGo" title="Choisir les stations à appeler, envoyer l'appel sur ce canal et pointer les réponses">Appel des stations…</button>` + $("#threadActs").innerHTML;
+    if (isChan) {
+      const opts = [...new Set(["#fr", "#paca", "#06", ...(reg.connues || []), ...(regCanal && regCanal !== "*" ? [regCanal] : [])])];
+      $("#threadActs").insertAdjacentHTML("afterbegin", `<select id="regCanal" data-canal="${chCour.index}" title="Région (portée) de vos messages sur ce canal" style="width:auto;padding:3px 6px;font-size:.82rem">
+        <option value="" ${!regCanal ? "selected" : ""}>Région : par défaut${reg.defaut ? " (" + esc(reg.defaut) + ")" : ""}</option>
+        <option value="*" ${regCanal === "*" ? "selected" : ""}>Région : aucune (forcée)</option>
+        ${opts.map(r => `<option value="${esc(r)}" ${r === regCanal ? "selected" : ""}>Région : ${esc(r)}${(reg.connues || []).includes(r) ? " ✓" : ""}</option>`).join("")}
+        <option value="__autre">Région : autre…</option></select>`);
+    }
     const ab = $("#appelPanel");
     if (estAdr && appel && (appel.enCours || appel.fin > Date.now()/1000 - 3600)) {
       ab.hidden = false;
@@ -2123,7 +2142,7 @@ const HOT_MIN = 360; // 6 heures
     }
   }
   setInterval(() => { if (crise) $("#crClock").textContent = new Date().toLocaleTimeString("fr-FR"); }, 1000);
-  document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#mami").hidden) { $("#mami").hidden = true; return; } if (e.target.id === "coCmd" && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); coPos = Math.max(0, Math.min(coHisto.length, coPos + (e.key === "ArrowUp" ? -1 : 1))); e.target.value = coHisto[coPos] || ""; return; } if (e.key === "Escape" && !$("#mconsole").hidden) { $("#mconsole").hidden = true; return; } if (e.key === "Enter" && e.target.id === "chAjout") { e.preventDefault(); chAjouter(); return; } if (e.key === "Escape" && !$("#mchemin").hidden) { $("#mchemin").hidden = true; return; } if (e.key === "Enter" && e.target.id === "apAjout") { e.preventDefault(); $("#apAjoutBtn").click(); return; } if (e.key === "Escape" && !$("#mappel").hidden) { $("#mappel").hidden = true; return; } if (e.key === "Escape" && !$("#mcomp").hidden) { $("#mcomp").hidden = true; return; } if (e.key === "Escape" && !$("#mdet").hidden) { fermerDetail(); return; } if (e.key === "Escape" && crise) openCrise(false); });
+  document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.id === "regAutre") { e.preventDefault(); const v = e.target.value.trim(), c = +e.target.dataset.canal; if (v && v !== "#") api.regler_region(c, v, false).then(r => { toast(r.ok ? `Région ${v} pour ce canal` : r.erreur); refresh(true); }); return; } if (e.key === "Escape" && !$("#mami").hidden) { $("#mami").hidden = true; return; } if (e.target.id === "coCmd" && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); coPos = Math.max(0, Math.min(coHisto.length, coPos + (e.key === "ArrowUp" ? -1 : 1))); e.target.value = coHisto[coPos] || ""; return; } if (e.key === "Escape" && !$("#mconsole").hidden) { $("#mconsole").hidden = true; return; } if (e.key === "Enter" && e.target.id === "chAjout") { e.preventDefault(); chAjouter(); return; } if (e.key === "Escape" && !$("#mchemin").hidden) { $("#mchemin").hidden = true; return; } if (e.key === "Enter" && e.target.id === "apAjout") { e.preventDefault(); $("#apAjoutBtn").click(); return; } if (e.key === "Escape" && !$("#mappel").hidden) { $("#mappel").hidden = true; return; } if (e.key === "Escape" && !$("#mcomp").hidden) { $("#mcomp").hidden = true; return; } if (e.key === "Escape" && !$("#mdet").hidden) { fermerDetail(); return; } if (e.key === "Escape" && crise) openCrise(false); });
 
   /* ---------- messages types ---------- */
   function fillTemplate(t){
@@ -2153,6 +2172,12 @@ const HOT_MIN = 360; // 6 heures
     $("#aprsState").textContent = (ae.message || "") + (ae.paquets ? ` · ${ae.paquets} position(s) reçue(s)` : "") + ((aprsData.stations||[]).length ? ` · ${aprsData.stations.length} station(s) sur 12 h` : "");
     if (document.activeElement !== $("#tplEdit")) $("#tplEdit").value = (r.modeles || []).join("\n");
     $("#optHorloge").checked = r.horlogeAuto !== false;
+    { const rg = liaison.regions || {}; if (document.activeElement !== $("#regDefaut")) {
+        const o = [...new Set(["#fr", "#paca", "#06", ...(rg.connues || []), ...(rg.defaut ? [rg.defaut] : [])])];
+        $("#regDefaut").innerHTML = `<option value="__aucune" ${!rg.defaut ? "selected" : ""}>aucune</option>` + o.map(x => `<option value="${esc(x)}" ${x === rg.defaut ? "selected" : ""}>${esc(x)}</option>`).join(""); }
+      $("#regDefaut").disabled = !liaison.connecte; $("#regLire").disabled = !liaison.connecte;
+      const pr = rg.parRepeteur || {};
+      $("#regRep").innerHTML = Object.keys(pr).length ? Object.entries(pr).map(([n, l]) => `<span><b class="mono">${esc(n)}</b> : ${l.length ? esc(l.join(", ")) : "aucune région (relaie tout)"}</span>`).join("") : ""; }
     if (document.activeElement !== $("#optCorr")) $("#optCorr").value = (+r.corrBattCompanion || 0).toFixed(2);
     const lb = liaison.batterie;
     $("#corrInfo").textContent = lb && lb.brut ? `Lecture actuelle : ${fmtNum(lb.brut/1000,2)} V brut → ${fmtNum(lb.mv/1000,2)} V affiché (${lb.pct} %).` : "";
@@ -2391,6 +2416,7 @@ const HOT_MIN = 360; // 6 heures
         t.disabled = true; $("#amiMsg").textContent = "Ajout dans le nœud companion…";
         const r = await api.ajouter_contact($("#amiTexte").value, $("#amiNom").value, $("#amiAmi").checked); t.disabled = false;
         if (r.ok) { $("#mami").hidden = true; toast(r.message); if (r.cle) { tab = "messages"; conv = "d:" + r.cle.slice(0,12); lastMsgCount = -2; } refresh(true); } else $("#amiMsg").textContent = r.erreur; return; }
+      case "regLire": { t.disabled = true; $("#regInfo").textContent = "Lecture auprès de chaque répéteur…"; const r = await api.regions(true); t.disabled = false; $("#regInfo").textContent = r.ok ? `${(r.connues || []).length} région(s) trouvée(s)` : r.erreur; refresh(true); return; }
       case "compOpen": analyserCompanion(false); return;
       case "compRun": analyserCompanion(true); return;
       case "compClose": $("#mcomp").hidden = true; return;
@@ -2469,6 +2495,9 @@ const HOT_MIN = 360; // 6 heures
     if (e.target.matches && e.target.matches("#apListe input[data-st], #apCiter")) apMaj(true);
     if (["trAuto","trJour","trHeure"].includes(e.target.id)) { await api.regler_test_resilience({auto: $("#trAuto").checked, jour: +$("#trJour").value, heure: $("#trHeure").value || "20:00"}); toast($("#trAuto").checked ? "Test automatique programmé" : "Test automatique désactivé"); refresh(true); }
     if (e.target.id === "f-proprietaire-sel") { const a = $("#f-proprietaire"); a.hidden = e.target.value !== "__autre"; if (!a.hidden) a.focus(); }
+    if (e.target.id === "regCanal") { let v = e.target.value; if (v === "__autre") { e.target.insertAdjacentHTML("afterend", `<input id="regAutre" data-canal="${e.target.dataset.canal}" placeholder="#region puis Entrée" style="width:12em;padding:3px 6px;font-size:.82rem">`); $("#regAutre").focus(); return; }
+      const r = await api.regler_region(+e.target.dataset.canal, v, false); toast(r.ok ? (v ? `Région ${v === "*" ? "aucune (forcée)" : v} pour ce canal` : "Région par défaut du nœud pour ce canal") : r.erreur); refresh(true); return; }
+    if (e.target.id === "regDefaut") { const r = await api.regler_region(null, e.target.value === "__aucune" ? "" : e.target.value, true); toast(r.ok ? "Région par défaut du nœud enregistrée" : r.erreur); refresh(true); return; }
     if (e.target.id === "optCorr") { await api.regler_options({corrBattCompanion: +e.target.value || 0}); toast("Correction enregistrée : prise en compte à la prochaine lecture (1 min)"); refresh(true); }
     if (e.target.id === "optHorloge") { await api.regler_options({horlogeAuto: e.target.checked}); refresh(true); }
     if (["mlOn","mlSrv","mlPort","mlSec","mlUser","mlPwd","mlFrom","mlTo","mlMsg"].includes(e.target.id)) mailDirty = true;
