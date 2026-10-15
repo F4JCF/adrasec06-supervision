@@ -156,6 +156,11 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 
 - **Console distante** (bouton dans chaque fiche nœud, mot de passe admin requis) : envoyer n'importe quelle commande console MeshCore au nœud et lire sa réponse ; boutons rapides (ver, clock, get radio, get tx, neighbors…), historique avec ↑ ↓, confirmation pour les commandes sensibles (set, reboot, password, erase…), chaque commande notée au journal et gardée dans la fiche.
 
+### Nouveautés de la version 1.18
+
+- **Companions amis** : bouton « + Ami » (Messagerie → Messages directs) pour ajouter un companion à partir de sa carte de contact « meshcore://… » ou de sa clé publique complète + son nom ; bouton « ☆ Ajouter aux amis / ★ Ami » dans chaque conversation directe ; les amis sont en tête de liste et repérés en doré sur la carte.
+- **Découvrir les voisins** dans la fiche d'un répéteur (commande discover.neighbors), console distante, étalonnage de la batterie du companion.
+
 ### Les données
 
 Tout est enregistré sur le PC dans `%APPDATA%\ADRASEC06-Supervision\supervision.db`, y compris les mots de passe des répéteurs et le PIN Bluetooth (en clair, dans ce fichier local uniquement). Le journal technique est dans `supervision.log` au même endroit.

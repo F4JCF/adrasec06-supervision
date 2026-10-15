@@ -647,10 +647,83 @@ class Poller:
         self.store._bump()
 
     def contacts_messagerie(self) -> list[dict]:
-        out = [{"cle": c.get("public_key", ""), "nom": c.get("adv_name", "")}
+        amis = set(self.store.get_config("amis", []) or [])
+        out = [{"cle": c.get("public_key", ""), "nom": c.get("adv_name", ""), "ami": c.get("public_key", "") in amis}
                for c in self._contacts.values() if c.get("type") == 1 and c.get("adv_name")]
-        out.sort(key=lambda x: x["nom"].lower())
+        out.sort(key=lambda x: (not x["ami"], x["nom"].lower()))
         return out
+
+    # ---------- amis (companions suivis) ----------
+    def basculer_ami(self, cle: str, ami=None) -> dict:
+        c = next((c for c in self._contacts.values() if (c.get("public_key") or "").startswith((cle or "~").lower())), None)
+        full = c.get("public_key") if c else (cle or "").lower()
+        amis = list(self.store.get_config("amis", []) or [])
+        etat = (full not in amis) if ami is None else bool(ami)
+        amis = [a for a in amis if a != full] + ([full] if etat else [])
+        self.store.set_config("amis", amis)
+        self._update_equipes()
+        self.store._bump()
+        return {"ok": True, "ami": etat, "nom": c.get("adv_name") if c else full[:12]}
+
+    def ajouter_contact(self, texte: str, nom: str = "", ami: bool = True) -> dict:
+        """Ajoute un companion au nœud : carte de contact « meshcore://… » (partagée depuis l'application ou la carte)
+        ou clé publique de 64 caractères hexadécimaux + nom."""
+        if self.mc is None:
+            return {"ok": False, "erreur": "Aucun nœud connecté."}
+        try:
+            return self._submit(self._ajouter_contact(texte or "", (nom or "").strip(), ami), timeout=60)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "erreur": f"Ajout impossible : {e}"}
+
+    async def _ajouter_contact(self, texte: str, nom: str, ami: bool) -> dict:
+        texte = texte.strip()
+        m_uri = re.search(r"meshcore://([0-9a-fA-F]{100,})", texte)
+        avant = set(self._contacts)
+        cle = None
+        if m_uri:
+            ev = await self.mc.commands.import_contact(bytes.fromhex(m_uri.group(1)))
+            if ev is None or ev.type == EventType.ERROR:
+                return {"ok": False, "erreur": "Le nœud companion a refusé cette carte de contact (lien incomplet ou abîmé)."}
+        else:
+            m_cle = re.search(r"(?<![0-9a-fA-F])([0-9a-fA-F]{64})(?![0-9a-fA-F])", texte)
+            if not m_cle:
+                return {"ok": False, "erreur": "Collez une carte de contact « meshcore://… » ou la clé publique complète (64 caractères hexadécimaux)."}
+            cle = m_cle.group(1).lower()
+            if not nom:
+                m_nom = re.search(r"(?:name|nom)=([^&\s]+)", texte)
+                nom = re.sub(r"%20|\+", " ", m_nom.group(1)) if m_nom else ""
+            if not nom:
+                return {"ok": False, "erreur": "Indiquez le nom du companion (ex. F4jrc-c)."}
+            if any((c.get("public_key") or "").lower() == cle for c in self._contacts.values()):
+                if ami:
+                    self.basculer_ami(cle, True)
+                return {"ok": True, "message": f"{nom} est déjà dans vos contacts" + (" : ajouté aux amis." if ami else "."), "cle": cle}
+            contact = {"public_key": cle, "type": 1, "flags": 0, "out_path_len": -1, "out_path": "", "out_path_hash_mode": 0,
+                       "adv_name": nom[:31], "last_advert": int(time.time()), "adv_lat": 0.0, "adv_lon": 0.0}
+            ev = await self.mc.commands.add_contact(contact)
+            if ev is None or ev.type == EventType.ERROR:
+                return {"ok": False, "erreur": "Le nœud companion a refusé le contact (mémoire pleine ?)."}
+        res = await self.mc.commands.get_contacts()
+        if res is not None and res.type != EventType.ERROR:
+            self._contacts = dict(res.payload or {})
+        nouveaux = [self._contacts[k] for k in self._contacts if k not in avant]
+        c = None
+        if cle:
+            c = next((c for c in self._contacts.values() if (c.get("public_key") or "").lower() == cle), None)
+        elif nouveaux:
+            c = nouveaux[0]
+        elif m_uri:
+            c = next((c for c in self._contacts.values() if (c.get("public_key") or "").lower() in m_uri.group(1).lower()), None)
+        if c is None:
+            return {"ok": False, "erreur": "Le contact n'apparaît pas dans le nœud companion après l'ajout."}
+        if ami:
+            self.basculer_ami(c["public_key"], True)
+        self._update_equipes()
+        self.store.add_journal(c.get("adv_name", ""), self.store.get_config("operateur", "") or "PC",
+                               f"Companion {c.get('adv_name')} ajouté aux contacts" + (" (ami)." if ami else "."))
+        self.store._bump()
+        return {"ok": True, "message": f"{c.get('adv_name')} ajouté à vos contacts" + (" et à vos amis ★" if ami else ""),
+                "cle": c.get("public_key")}
 
     def _canal_nom(self, idx) -> str:
         for c in self.canaux:
@@ -1102,6 +1175,7 @@ class Poller:
 
     # ---------- équipes (companions qui partagent leur position) ----------
     def _update_equipes(self):
+        amis = set(self.store.get_config("amis", []) or [])
         out = []
         for c in self._contacts.values():
             if c.get("type") != 1:
@@ -1113,6 +1187,7 @@ class Poller:
             ts = c.get("last_advert") or time.time()
             self.store.add_position(cle, c.get("adv_name", ""), lat, lon, ts)
             out.append({"cle": cle, "nom": c.get("adv_name", ""), "lat": lat, "lon": lon,
+                        "ami": c.get("public_key", "") in amis,
                         "vu": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(ts))})
         out.sort(key=lambda x: x["nom"].lower())
         self.equipes = out

@@ -441,6 +441,9 @@ header.top .hright{grid-column:1 / -1}
 #mconsole[hidden]{display:none}
 .term{background:#0a0f14;color:#cfe3d4;border:1px solid var(--line);border-radius:6px;padding:10px 12px;overflow:auto;font-family:var(--f-mono);font-size:.86rem;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;min-height:0}
 .term .c{color:#ffb35c}.term .e{color:#ff8080}.term .i{color:#7f93a6}
+#mami[hidden]{display:none}
+.team-icon.ami{background:#f2c200;box-shadow:0 0 0 1.5px #a07800}
+.map-label.ami{color:#8a6500;font-weight:700}
 </style>
 </head>
 <body>
@@ -811,6 +814,18 @@ header.top .hright{grid-column:1 / -1}
       <div class="actions" id="coRapides" style="gap:6px"></div>
       <div class="term" id="coTerm" aria-live="polite"></div>
       <form id="coForm" style="display:flex;gap:8px"><span class="mono" style="align-self:center;color:var(--accent)">&gt;</span><input id="coCmd" class="mono" autocomplete="off" spellcheck="false" placeholder="Commande (ex. ver, clock, get radio, neighbors) — ↑ ↓ : historique" style="flex:1"><button class="btn primary" type="submit" id="coGo">Envoyer</button></form>
+    </div>
+  </div>
+</div>
+<div id="mami" hidden role="dialog" aria-modal="true" aria-labelledby="mamiTitle" style="position:fixed;inset:0;z-index:2600;background:rgba(5,10,15,.55);display:grid;place-items:center;padding:16px">
+  <div class="mdet-box" style="width:min(680px,100%)">
+    <div class="mdet-head"><h2 id="mamiTitle">Ajouter un companion ami</h2><button class="btn small" id="amiAnnuler" type="button">Annuler (Échap)</button></div>
+    <div style="display:grid;gap:10px;padding:16px">
+      <p style="margin:0">Collez la <b>carte de contact</b> partagée par votre ami (application MeshCore : son contact → Partager → lien <span class="mono">meshcore://…</span>) <b>ou sa clé publique complète</b> (64 caractères). Le début de clé affiché sur la carte du réseau (ex. 38648F0C…) ne suffit pas.</p>
+      <label>Carte de contact ou clé publique<textarea id="amiTexte" class="mono" style="min-height:80px" placeholder="meshcore://… ou 38648f0c…(64 caractères)"></textarea></label>
+      <label>Nom du companion (obligatoire avec une clé seule)<input id="amiNom" maxlength="31" placeholder="Ex. : F4jrc-c"></label>
+      <label style="display:flex;flex-direction:row;align-items:center;gap:8px;color:var(--fg)"><input type="checkbox" id="amiAmi" checked style="width:16px;height:16px;flex:none"> Le marquer comme ami ★ (en tête de liste, doré sur la carte)</label>
+      <div class="actions"><button class="btn primary" id="amiGo" type="button">Ajouter</button><span class="reading" id="amiMsg"></span></div>
     </div>
   </div>
 </div>
@@ -1450,8 +1465,8 @@ const HOT_MIN = 360; // 6 heures
       const tr = traces[t.cle];
       if (tr && tr.length > 1) L.polyline(tr.map(p => [p[0], p[1]]), {color:"#9b59d0", weight:4, opacity:.85, dashArray:"3 7"}).addTo(layer);
       const h = hot[normNom(t.nom)];
-      L.marker([t.lat, t.lon], {zIndexOffset: h ? 1000 : 0, icon: L.divIcon({className:"", html: h ? HOT_TRI : `<div class="team-icon"></div>`, iconSize: h ? [26,24] : [16,16], iconAnchor: h ? [13,16] : [8,8]})})
-        .bindTooltip(h ? `${esc(t.nom)} · message ${ago(h.date)} : « ${esc(h.texte.slice(0,60))}${h.texte.length>60?"…":""} »` : `${esc(t.nom)} · ${ago(t.vu)}`, {permanent:true, direction:"right", offset:[h ? 13 : 10, 0], className: "map-label" + (h ? " hot" : "")})
+      L.marker([t.lat, t.lon], {zIndexOffset: h ? 1000 : t.ami ? 800 : 0, icon: L.divIcon({className:"", html: h ? HOT_TRI : `<div class="team-icon${t.ami ? " ami" : ""}"></div>`, iconSize: h ? [26,24] : [16,16], iconAnchor: h ? [13,16] : [8,8]})})
+        .bindTooltip(h ? `${t.ami ? "★ " : ""}${esc(t.nom)} · message ${ago(h.date)} : « ${esc(h.texte.slice(0,60))}${h.texte.length>60?"…":""} »` : `${t.ami ? "★ " : ""}${esc(t.nom)} · ${ago(t.vu)}`, {permanent:true, direction:"right", offset:[h ? 13 : 10, 0], className: "map-label" + (h ? " hot" : t.ami ? " ami" : "")})
         .bindPopup(`<b>${esc(t.nom)}</b><br>Équipe / mobile<br>Position ${ago(t.vu)}<br>${(+t.lat).toFixed(5)}, ${(+t.lon).toFixed(5)}`).addTo(layer);
     });
     const me = liaison.position;
@@ -1865,7 +1880,7 @@ const HOT_MIN = 360; // 6 heures
     const contacts = liaison.contactsMessagerie || [];
     const dms = {};
     messages.filter(m => m.canal == null).forEach(m => { const k = (m.contact_cle||"").slice(0,12); dms[k] = dms[k] || {cle:k, nom:m.contact||k, n:0}; dms[k].n++; });
-    contacts.forEach(c => { const k = c.cle.slice(0,12); dms[k] = Object.assign(dms[k] || {n:0}, {cle:k, full:c.cle, nom:c.nom}); });
+    contacts.forEach(c => { const k = c.cle.slice(0,12); dms[k] = Object.assign(dms[k] || {n:0}, {cle:k, full:c.cle, nom:c.nom, ami:!!c.ami}); });
     if (!conv) conv = "c:" + chans[0].index;
     const cnt = k => messages.filter(m => convKey(m)===k).length;
     // la conversation ouverte est lue : on mémorise le nombre de messages reçus
@@ -1873,7 +1888,7 @@ const HOT_MIN = 360; // 6 heures
     const item = (k, label) => { const u = k === conv ? 0 : nonLus(k);
       return `<button data-conv="${esc(k)}" aria-pressed="${conv===k}" class="${u ? "unread" : ""}" title="${u ? u + " message(s) non lu(s)" : ""}"><span>${esc(label)}</span><span class="n">${u ? u : (cnt(k) || "")}</span></button>`; };
     $("#convs").innerHTML = `<h3>Canaux</h3>` + chans.map(c => item("c:"+c.index, diese(c.nom))).join("") +
-      `<h3>Messages directs</h3>` + (Object.values(dms).sort((a,b)=>(nonLus("d:"+b.cle)-nonLus("d:"+a.cle))||(b.n-a.n)||a.nom.localeCompare(b.nom)).map(d => item("d:"+d.cle, d.nom)).join("") || `<span class="reading" style="padding:4px 14px">Aucun contact. Connectez le nœud companion.</span>`);
+      `<h3 style="display:flex;justify-content:space-between;align-items:center;gap:6px">Messages directs<button class="btn small" data-ajoutami="1" type="button" title="Ajouter un companion ami (carte de contact ou clé publique)" style="padding:1px 8px;font-size:.72rem;letter-spacing:0;text-transform:none">+ Ami</button></h3>` + (Object.values(dms).sort((a,b)=>(!!b.ami-!!a.ami)||(nonLus("d:"+b.cle)-nonLus("d:"+a.cle))||(b.n-a.n)||a.nom.localeCompare(b.nom)).map(d => item("d:"+d.cle, (d.ami ? "★ " : "") + d.nom)).join("") || `<span class="reading" style="padding:4px 14px">Aucun contact. Connectez le nœud companion.</span>`);
     const list = messages.filter(m => convKey(m)===conv);
     const isChan = conv.startsWith("c:");
     const title = isChan ? diese((chans.find(c => "c:"+c.index===conv)||{nom:"Canal"}).nom) : (dms[conv.slice(2)]||{nom:"Contact"}).nom;
@@ -1883,6 +1898,7 @@ const HOT_MIN = 360; // 6 heures
     $("#threadActs").innerHTML = list.length ? (convConfirm
       ? `<span class="reading" style="color:var(--crit)">Supprimer les ${list.length} message(s) de cette conversation sur ce PC ?</span><button class="btn small danger" id="convClearYes">Oui, supprimer</button><button class="btn small" id="convClearNo">Non</button>`
       : `<button class="btn small" id="convClear">Vider la conversation</button>`) : "";
+    if (!isChan) { const d = dms[conv.slice(2)]; if (d && d.full) $("#threadActs").insertAdjacentHTML("afterbegin", `<button class="btn small${d.ami ? " primary" : ""}" data-toggleami="${esc(d.full)}" title="${d.ami ? "Retirer de vos amis" : "Ajouter à vos amis : en tête de liste et repéré en doré sur la carte"}">${d.ami ? "★ Ami" : "☆ Ajouter aux amis"}</button>`); }
     const estAdr = isChan && /adrasec ?0?6/i.test((chans.find(c => "c:"+c.index===conv)||{}).nom || "");
     if (estAdr && liaison.connecte && !(appel && appel.enCours)) $("#threadActs").innerHTML = `<button class="btn small primary" id="appelGo" title="Choisir les stations à appeler, envoyer l'appel sur ce canal et pointer les réponses">Appel des stations…</button>` + $("#threadActs").innerHTML;
     const ab = $("#appelPanel");
@@ -2102,7 +2118,7 @@ const HOT_MIN = 360; // 6 heures
     }
   }
   setInterval(() => { if (crise) $("#crClock").textContent = new Date().toLocaleTimeString("fr-FR"); }, 1000);
-  document.addEventListener("keydown", e => { if (e.target.id === "coCmd" && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); coPos = Math.max(0, Math.min(coHisto.length, coPos + (e.key === "ArrowUp" ? -1 : 1))); e.target.value = coHisto[coPos] || ""; return; } if (e.key === "Escape" && !$("#mconsole").hidden) { $("#mconsole").hidden = true; return; } if (e.key === "Enter" && e.target.id === "chAjout") { e.preventDefault(); chAjouter(); return; } if (e.key === "Escape" && !$("#mchemin").hidden) { $("#mchemin").hidden = true; return; } if (e.key === "Enter" && e.target.id === "apAjout") { e.preventDefault(); $("#apAjoutBtn").click(); return; } if (e.key === "Escape" && !$("#mappel").hidden) { $("#mappel").hidden = true; return; } if (e.key === "Escape" && !$("#mcomp").hidden) { $("#mcomp").hidden = true; return; } if (e.key === "Escape" && !$("#mdet").hidden) { fermerDetail(); return; } if (e.key === "Escape" && crise) openCrise(false); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#mami").hidden) { $("#mami").hidden = true; return; } if (e.target.id === "coCmd" && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); coPos = Math.max(0, Math.min(coHisto.length, coPos + (e.key === "ArrowUp" ? -1 : 1))); e.target.value = coHisto[coPos] || ""; return; } if (e.key === "Escape" && !$("#mconsole").hidden) { $("#mconsole").hidden = true; return; } if (e.key === "Enter" && e.target.id === "chAjout") { e.preventDefault(); chAjouter(); return; } if (e.key === "Escape" && !$("#mchemin").hidden) { $("#mchemin").hidden = true; return; } if (e.key === "Enter" && e.target.id === "apAjout") { e.preventDefault(); $("#apAjoutBtn").click(); return; } if (e.key === "Escape" && !$("#mappel").hidden) { $("#mappel").hidden = true; return; } if (e.key === "Escape" && !$("#mcomp").hidden) { $("#mcomp").hidden = true; return; } if (e.key === "Escape" && !$("#mdet").hidden) { fermerDetail(); return; } if (e.key === "Escape" && crise) openCrise(false); });
 
   /* ---------- messages types ---------- */
   function fillTemplate(t){
@@ -2228,6 +2244,8 @@ const HOT_MIN = 360; // 6 heures
     if (dv) { decBusy = dv.dataset.decouvrir; renderFiche(); toast("Découverte des voisins lancée : réponse dans 30 s environ");
       let r; try { r = await api.decouvrir_voisins(decBusy); } catch(err) { r = {ok:false, erreur:String(err)}; }
       decBusy = null; toast(r.ok ? r.message : r.erreur); refresh(true); renderFiche(); return; }
+    if (t.closest("[data-ajoutami]")) { $("#mami").hidden = false; $("#amiMsg").textContent = ""; $("#amiTexte").value = ""; $("#amiNom").value = ""; $("#amiTexte").focus(); return; }
+    const ta = t.closest("[data-toggleami]"); if (ta) { const r = await api.basculer_ami(ta.dataset.toggleami); toast(r.ami ? `${r.nom} ajouté à vos amis ★` : `${r.nom} retiré de vos amis`); refresh(true); return; }
     const co = t.closest("[data-console]"); if (co) { ouvrirConsole(co.dataset.console); return; }
     const cr = t.closest("[data-corapide]"); if (cr) { coEnvoyer(cr.dataset.corapide); return; }
     const ce = t.closest("[data-cheminedit]");
@@ -2356,6 +2374,11 @@ const HOT_MIN = 360; // 6 heures
       case "coEffacer": $("#coTerm").innerHTML = ""; return;
       case "etalGo": { const v = +$("#optEtal").value; if (!(v >= 1 && v <= 99)) { toast("Indiquez le pourcentage affiché par le nœud (1 à 99 %)."); return; }
         const r = await api.etalonner_batterie(v); toast(r.ok ? `Étalonné : correction ${r.correction >= 0 ? "+" : ""}${fmtNum(r.correction, 3)} V → ${fmtNum(r.mv/1000, 2)} V · ${r.pct} %` : r.erreur); $("#optEtal").value = ""; refresh(true); return; }
+      case "amiAnnuler": $("#mami").hidden = true; return;
+      case "amiGo": { if (!liaison.connecte) { $("#amiMsg").textContent = "Connectez d'abord le nœud companion."; return; }
+        t.disabled = true; $("#amiMsg").textContent = "Ajout dans le nœud companion…";
+        const r = await api.ajouter_contact($("#amiTexte").value, $("#amiNom").value, $("#amiAmi").checked); t.disabled = false;
+        if (r.ok) { $("#mami").hidden = true; toast(r.message); if (r.cle) { tab = "messages"; conv = "d:" + r.cle.slice(0,12); lastMsgCount = -2; } refresh(true); } else $("#amiMsg").textContent = r.erreur; return; }
       case "compOpen": analyserCompanion(false); return;
       case "compRun": analyserCompanion(true); return;
       case "compClose": $("#mcomp").hidden = true; return;
