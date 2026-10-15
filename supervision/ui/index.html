@@ -704,8 +704,9 @@ header.top .hright{grid-column:1 / -1}
       <label class="line"><input type="checkbox" id="optSon"> Son d'alerte dans le logiciel</label>
       <label class="line">Seuil d'alerte batterie <input id="optSeuil" type="number" step="0.05" min="2.8" max="4.3" style="width:6em"> V</label>
       <p class="hint">Une alerte est émise quand la batterie d'un répéteur passe sous ce seuil (3,50 V conseillé pour une Li-ion 18650).</p>
+      <label class="line">Étalonner : l'écran de mon nœud companion affiche <input id="optEtal" type="number" min="1" max="99" step="1" style="width:5em"> % <button class="btn small" id="etalGo" type="button">Étalonner</button></label>
       <label class="line">Correction de la tension du nœud companion <input id="optCorr" type="number" step="0.01" min="-1" max="1" style="width:6em"> V</label>
-      <p class="hint">Les pourcentages sont calculés comme sur l'écran des nœuds MeshCore (3,00 V = 0 %, 4,20 V = 100 %). Si la tension lue par votre nœud companion est fausse, mesurez la batterie au multimètre et indiquez l'écart ici (ex. +0,08 si le nœud annonce 3,87 V pour 3,95 V réels). <span id="corrInfo"></span></p>
+      <p class="hint">Les pourcentages sont calculés comme sur l'écran des nœuds MeshCore (3,00 V = 0 %, 4,20 V = 100 %). Le plus simple : notez le pourcentage affiché à l'instant sur l'écran de votre nœud et cliquez « Étalonner » ; la correction est calculée toute seule. Vous pouvez aussi indiquer l'écart mesuré au multimètre (ex. +0,08 si le nœud annonce 3,87 V pour 3,95 V réels). <span id="corrInfo"></span></p>
       <label class="line"><input type="checkbox" id="optAuto"> Démarrer la supervision avec Windows</label>
       <p class="hint">Le logiciel démarre réduit près de l'horloge et se reconnecte au dernier nœud utilisé.</p>
       <label class="line"><input type="checkbox" id="optZone"> La croix de la fenêtre réduit près de l'horloge au lieu de quitter</label>
@@ -937,7 +938,7 @@ header.top .hright{grid-column:1 / -1}
     const seuil = (+reglages.seuilBatterie || 3.5) * 1000, faible = b.mv < seuil, moyen = !faible && b.pct < 40;
     const c = faible ? "var(--crit)" : moyen ? "var(--warn)" : "var(--ok)";
     const w = Math.max(2, Math.min(100, b.pct || 0));
-    return `<span class="batt" style="--bc:${c};border-color:${faible ? c : ""}" title="Batterie du nœud companion ${esc(liaison.noeudLocal || "")} : ${v} V (environ ${b.pct} %), lue le ${esc(fmtDate(b.date))}. Relue chaque minute.">
+    return `<span class="batt" id="battBadge" role="button" tabindex="0" style="--bc:${c};border-color:${faible ? c : ""};cursor:pointer" title="Batterie du nœud companion ${esc(liaison.noeudLocal || "")} : ${v} V (${b.pct} %), lue le ${esc(fmtDate(b.date))}. Relue chaque minute. Cliquer pour étalonner si le pourcentage diffère de l'écran du nœud.">
       <b>Batterie</b><i class="bico" aria-hidden="true"><i style="width:${w}%"></i></i><span style="color:${c}">${v} V · ${b.pct} %</span></span>`;
   }
   /* ---------- horloge de l'en-tête ---------- */
@@ -2218,6 +2219,7 @@ const HOT_MIN = 360; // 6 heures
     const mdel = t.closest("[data-msgdel]");
     if (mdel) { await api.supprimer_message(+mdel.dataset.msgdel); refresh(true); return; }
     if (t.closest("#mdetClose") || t.id === "mdet") { fermerDetail(); return; }
+    if (t.closest("#battBadge")) { tab = "reglages"; editing = null; renderAll(); setTimeout(() => { $("#optEtal").scrollIntoView({block:"center"}); $("#optEtal").focus(); }, 50); return; }
     const co = t.closest("[data-console]"); if (co) { ouvrirConsole(co.dataset.console); return; }
     const cr = t.closest("[data-corapide]"); if (cr) { coEnvoyer(cr.dataset.corapide); return; }
     const ce = t.closest("[data-cheminedit]");
@@ -2344,6 +2346,8 @@ const HOT_MIN = 360; // 6 heures
       case "triDist": triDistance = !triDistance; t.setAttribute("aria-pressed", String(triDistance)); renderTable(); return;
       case "coFermer": $("#mconsole").hidden = true; return;
       case "coEffacer": $("#coTerm").innerHTML = ""; return;
+      case "etalGo": { const v = +$("#optEtal").value; if (!(v >= 1 && v <= 99)) { toast("Indiquez le pourcentage affiché par le nœud (1 à 99 %)."); return; }
+        const r = await api.etalonner_batterie(v); toast(r.ok ? `Étalonné : correction ${r.correction >= 0 ? "+" : ""}${fmtNum(r.correction, 3)} V → ${fmtNum(r.mv/1000, 2)} V · ${r.pct} %` : r.erreur); $("#optEtal").value = ""; refresh(true); return; }
       case "compOpen": analyserCompanion(false); return;
       case "compRun": analyserCompanion(true); return;
       case "compClose": $("#mcomp").hidden = true; return;

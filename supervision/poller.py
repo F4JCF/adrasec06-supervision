@@ -1591,6 +1591,27 @@ class Poller:
         """Pourcentage calculé comme l'écran des nœuds MeshCore : linéaire de 3,00 V (0 %) à 4,20 V (100 %)."""
         return max(0, min(100, int((int(mv) - 3000) * 100 / 1200)))
 
+    def etalonner_batterie(self, pct_ecran: float) -> dict:
+        """Étalonnage : le nœud affiche pct_ecran % → correction = tension correspondant à ce % − tension lue."""
+        b = self.batterie
+        if not b or not b.get("brut"):
+            return {"ok": False, "erreur": "Batterie du nœud companion pas encore lue : connectez-le et attendez une minute."}
+        try:
+            pct = max(0.0, min(100.0, float(pct_ecran)))
+        except (TypeError, ValueError):
+            return {"ok": False, "erreur": "Pourcentage invalide."}
+        if pct in (0.0, 100.0):
+            return {"ok": False, "erreur": "Étalonnez avec un pourcentage entre 1 et 99 % (à 0 ou 100 % l'écran est saturé)."}
+        cible = 3000 + pct * 12 + 6  # milieu de la plage qui donne ce pourcentage à l'écran
+        corr = round((cible - b["brut"]) / 1000, 3)
+        if abs(corr) > 0.5:
+            return {"ok": False, "erreur": f"Écart trop grand ({corr:+.2f} V) : vérifiez le pourcentage saisi."}
+        self.store.set_config("corr_batt_companion", corr)
+        mv = self._corr_batterie(b["brut"])
+        self.batterie = {**b, "mv": mv, "pct": self._pct_batterie(mv)}
+        self.store._bump()
+        return {"ok": True, "correction": corr, "pct": self.batterie["pct"], "mv": mv}
+
     def _corr_batterie(self, mv: int) -> int:
         """Correction réglable (Réglages) si la tension lue par le nœud companion est décalée."""
         try:
@@ -1610,9 +1631,14 @@ class Poller:
             return
         if ev is None or ev.type == EventType.ERROR:
             return
-        brut = int((ev.payload or {}).get("level") or 0)
-        if brut <= 0:
+        lu = int((ev.payload or {}).get("level") or 0)
+        if lu <= 0:
             return
+        # médiane des 5 dernières lectures : évite les sauts dus aux pointes de consommation (émission radio)
+        hist = getattr(self, "_batt_hist", [])
+        hist = (hist + [lu])[-5:]
+        self._batt_hist = hist
+        brut = sorted(hist)[len(hist) // 2]
         mv = self._corr_batterie(brut)
         self.batterie = {"mv": mv, "brut": brut, "pct": self._pct_batterie(mv), "date": now_iso()}
         seuil = float(self.store.get_config("seuil_batterie", 3.5) or 3.5) * 1000

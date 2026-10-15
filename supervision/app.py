@@ -17,7 +17,7 @@ from . import aprs, courriel, rapports, resilience, systeme, taches, web
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.17.0"
+VERSION = "1.17.1"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -283,6 +283,9 @@ class Api:
         self._noter_requete(node_id, "test liaison", r)
         return r
 
+    def etalonner_batterie(self, pct):
+        return self._poller.etalonner_batterie(pct)
+
     def chemin_contact(self, cle):
         return self._poller.chemin_contact(cle)
 
@@ -522,6 +525,10 @@ class Api:
         if "corrBattCompanion" in o:
             try:
                 self._store.set_config("corr_batt_companion", max(-1.0, min(1.0, float(o["corrBattCompanion"]))))
+                b = self._poller.batterie
+                if b and b.get("brut"):
+                    mv = self._poller._corr_batterie(b["brut"])
+                    self._poller.batterie = {**b, "mv": mv, "pct": self._poller._pct_batterie(mv)}
             except (TypeError, ValueError):
                 pass
         if "horlogeAuto" in o:
