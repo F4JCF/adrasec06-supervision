@@ -647,10 +647,13 @@ class Poller:
             if name:
                 secret = p.get("channel_secret") or b""
                 secret = secret.hex() if isinstance(secret, (bytes, bytearray)) else str(secret)
-                nh = name if name.startswith("#") else "#" + name
+                base = name.lstrip("#")
+                variantes = {base, base.lower(), base.replace(" ", ""), base.lower().replace(" ", ""),
+                             base.replace(" ", "-"), base.lower().replace(" ", "-")}
+                cles_hashtag = {hashlib.sha256(("#" + v).encode("utf-8")).hexdigest()[:32] for v in variantes}
                 if secret == cle_public:
                     genre = "public"
-                elif secret and secret == hashlib.sha256(nh.encode("utf-8")).hexdigest()[:32]:
+                elif secret and secret in cles_hashtag:
                     genre = "hashtag"
                 else:
                     genre = "prive"

@@ -161,6 +161,10 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 - **Companions amis** : bouton « + Ami » (Messagerie → Messages directs) pour ajouter un companion à partir de sa carte de contact « meshcore://… » ou de sa clé publique complète + son nom ; bouton « ☆ Ajouter aux amis / ★ Ami » dans chaque conversation directe ; les amis sont en tête de liste et repérés en doré sur la carte.
 - **Découvrir les voisins** dans la fiche d'un répéteur (commande discover.neighbors), console distante, étalonnage de la batterie du companion.
 
+### Nouveautés de la version 1.19.1
+
+- Reconnaissance du type de canal plus fiable : un canal « # » écrit avec des majuscules ou des espaces (ex. « ADRASEC 06 ») n'est plus signalé à tort comme privé.
+
 ### Nouveautés de la version 1.19
 
 - **Régions MeshCore** (portée des messages) : région choisie pour chaque canal dans la Messagerie (par défaut du nœud, aucune, #fr, #paca, #06, régions lues sur les répéteurs, ou autre), région par défaut du nœud companion et lecture des régions acceptées par les répéteurs ADRASEC (Réglages → Régions).
