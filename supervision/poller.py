@@ -886,6 +886,56 @@ class Poller:
         finally:
             self.prioritaire = max(0, self.prioritaire - 1)
 
+    # ---------- découverte des voisins ----------
+    def decouvrir_voisins(self, node_id: str, operateur: str = "") -> dict:
+        if self.mc is None:
+            return {"ok": False, "erreur": "Aucun nœud connecté."}
+        node = self.store.get_node(node_id)
+        if node is None:
+            return {"ok": False, "erreur": "Nœud inconnu."}
+        if not self.store.password(node_id):
+            return {"ok": False, "erreur": "Saisissez d'abord le mot de passe admin de ce répéteur (Modifier)."}
+        self.prioritaire += 1
+        try:
+            return self._submit(self._decouvrir_voisins(node, operateur), timeout=180)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "erreur": f"Découverte impossible : {e}"}
+        finally:
+            self.prioritaire = max(0, self.prioritaire - 1)
+
+    async def _decouvrir_voisins(self, node: dict, operateur: str) -> dict:
+        if not await self._attendre_la_main("Découverte des voisins"):
+            return {"ok": False, "erreur": "L'interrogation en cours ne s'est pas terminée à temps. Réessayez."}
+        name = node.get("nom", "")
+        contact = self._contact_for(name)
+        if contact is None:
+            return {"ok": False, "erreur": f"{name} n'est pas dans les contacts du nœud companion."}
+        login = await self.mc.commands.send_login_sync(contact, self.store.password(node["id"]), min_timeout=8)
+        if not (login and login.type == EventType.LOGIN_SUCCESS):
+            return {"ok": False, "erreur": f"Connexion admin refusée par {name} (mot de passe ou portée)."}
+        avant = {v.get("nom") for v in node.get("voisins") or []}
+        rep = await self._cli(contact, "discover.neighbors", timeout=20)
+        if rep and re.search(r"unknown|inconnu|err", rep, re.I):
+            return {"ok": False, "erreur": f"{name} ne connaît pas la commande discover.neighbors (firmware trop ancien ?) : {rep.strip()}"}
+        await asyncio.sleep(20)  # les voisins répondent par une annonce sans relais (zero hop)
+        nb = None
+        for _essai in range(2):
+            try:
+                nb = await self.mc.commands.fetch_all_neighbours(contact, min_timeout=12)
+            except Exception:  # noqa: BLE001
+                nb = None
+            if nb and isinstance(nb.get("neighbours"), list):
+                break
+        if not (nb and isinstance(nb.get("neighbours"), list)):
+            return {"ok": False, "erreur": f"Découverte lancée ({(rep or 'pas de réponse').strip()}), mais la liste des voisins n'a pas pu être relue. Réessayez dans une minute."}
+        voisins = [{"nom": self._name_for_prefix(v.get("pubkey", "")), "snr": v.get("snr"), "ilYa": v.get("secs_ago")}
+                   for v in nb["neighbours"]]
+        nouveaux = [v["nom"] for v in voisins if v["nom"] not in avant]
+        self.store.patch_node(node["id"], {"voisins": voisins, "voisinsDecouverte": now_iso(), "voisinsNouveaux": nouveaux})
+        texte = f"Découverte des voisins : {len(voisins)} voisin(s)" + (f", nouveaux : {', '.join(nouveaux)}" if nouveaux else ", aucun nouveau")
+        self.store.add_journal(name, operateur or "PC", texte + ".")
+        return {"ok": True, "message": texte, "voisins": voisins, "nouveaux": nouveaux}
+
     # ---------- console distante ----------
     def console(self, node_id: str, cmd: str, operateur: str = "") -> dict:
         """Envoie une commande console libre à un nœud (droits admin) et renvoie sa réponse."""

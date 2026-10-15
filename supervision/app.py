@@ -17,7 +17,7 @@ from . import aprs, courriel, rapports, resilience, systeme, taches, web
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.17.1"
+VERSION = "1.17.2"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -475,7 +475,7 @@ class Api:
                 "powersaving on": "Économie d'énergie : activer", "powersaving off": "Économie d'énergie : désactiver",
                 "start ota": "Préparer la mise à jour (OTA)", "ver": "Vérifier la version", "clock sync": "Remettre l'heure",
                 "clock": "Lire l'heure du nœud", "reinit chemin": "Réinitialiser le chemin",
-                "test liaison": "Tester la liaison"}
+                "test liaison": "Tester la liaison", "decouvrir voisins": "Découvrir les voisins"}
 
     def _noter_requete(self, node_id, cmd, r):
         try:
@@ -494,6 +494,11 @@ class Api:
     def reinit_chemin(self, node_id):
         r = self._poller.reinit_chemin(node_id, self._store.get_config("operateur", ""))
         self._noter_requete(node_id, "reinit chemin", r)
+        return r
+
+    def decouvrir_voisins(self, node_id):
+        r = self._poller.decouvrir_voisins(node_id, self._store.get_config("operateur", ""))
+        self._noter_requete(node_id, "decouvrir voisins", r)
         return r
 
     def console(self, node_id, cmd):
