@@ -675,6 +675,44 @@ class Poller:
         except Exception as e:  # noqa: BLE001
             return {"ok": False, "erreur": f"Ajout impossible : {e}"}
 
+    def ajouter_depuis_nom(self, nom: str, ami: bool = False) -> dict:
+        """Ajoute aux contacts un nœud vu sur un canal, grâce à sa dernière annonce entendue (clé publique complète)."""
+        if self.mc is None:
+            return {"ok": False, "erreur": "Aucun nœud connecté."}
+        nom = (nom or "").strip()
+        c = next((c for c in self._contacts.values() if (c.get("adv_name") or "").lower() == nom.lower()), None)
+        if c:
+            if ami:
+                self.basculer_ami(c["public_key"], True)
+            return {"ok": True, "deja": True, "cle": c["public_key"], "message": f"{nom} est déjà dans vos contacts" + (" : ajouté aux amis ★." if ami else ".")}
+        a = self.store.annonce_par_nom(nom)
+        if not a:
+            return {"ok": False, "inconnu": True,
+                    "erreur": f"Aucune annonce de {nom} n'a encore été entendue : sa clé publique est inconnue. "
+                              "Demandez-lui d'envoyer une annonce (advert), ou collez sa carte de contact."}
+        try:
+            return self._submit(self._ajouter_annonce(a, ami), timeout=60)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "erreur": f"Ajout impossible : {e}"}
+
+    async def _ajouter_annonce(self, a: dict, ami: bool) -> dict:
+        contact = {"public_key": a["cle"], "type": int(a.get("type") or 1), "flags": 0, "out_path_len": -1, "out_path": "",
+                   "out_path_hash_mode": 0, "adv_name": (a.get("nom") or "")[:31], "last_advert": int(a.get("ts") or time.time()),
+                   "adv_lat": float(a.get("lat") or 0.0), "adv_lon": float(a.get("lon") or 0.0)}
+        ev = await self.mc.commands.add_contact(contact)
+        if ev is None or ev.type == EventType.ERROR:
+            return {"ok": False, "erreur": "Le nœud companion a refusé le contact (mémoire pleine ?)."}
+        res = await self.mc.commands.get_contacts()
+        if res is not None and res.type != EventType.ERROR:
+            self._contacts = dict(res.payload or {})
+        if ami:
+            self.basculer_ami(a["cle"], True)
+        self._update_equipes()
+        self.store.add_journal(a.get("nom", ""), self.store.get_config("operateur", "") or "PC",
+                               f"{a.get('nom')} ajouté aux contacts depuis son annonce" + (" (ami)." if ami else "."))
+        self.store._bump()
+        return {"ok": True, "cle": a["cle"], "message": f"{a.get('nom')} ajouté à vos contacts" + (" et à vos amis ★" if ami else "")}
+
     async def _ajouter_contact(self, texte: str, nom: str, ami: bool) -> dict:
         texte = texte.strip()
         m_uri = re.search(r"meshcore://([0-9a-fA-F]{100,})", texte)
@@ -755,6 +793,12 @@ class Poller:
         """Chaque paquet de canal entendu par le nœud companion : on garde son parcours (relais traversés)."""
         p = event.payload or {}
         try:
+            if p.get("payload_type") == 0x04 and p.get("adv_key") and p.get("adv_name"):
+                lat, lon = p.get("adv_lat"), p.get("adv_lon")
+                ok = lat is not None and lon is not None and abs(lat) > .01
+                self.store.annonce_vue(p["adv_key"], p["adv_name"], int(p.get("adv_type") or 1),
+                                       lat if ok else None, lon if ok else None)
+                return
             if p.get("payload_type") != 0x05 or not p.get("message"):
                 return
             self.store.add_reception({"msg_hash": p.get("msg_hash"), "ts": p.get("recv_time") or time.time(),

@@ -1300,6 +1300,7 @@ header.top .hright{grid-column:1 / -1}
       if (contact) acts.push(`<button class="btn small${canal ? "" : " primary"}" data-repondre="d:${esc(contact.cle.slice(0,12))}" title="Message direct chiffré à ${esc(contact.nom)}">Répondre en privé</button>`);
       $("#mdetActs").innerHTML = liaison.connecte ? acts.join("") : (acts.length ? `<span class="reading">Connectez le nœud companion pour répondre</span>` : "");
     }
+    if (!emis && !cleChemin && liaison.connecte && (m.auteur || m.contact)) $("#mdetActs").insertAdjacentHTML("afterbegin", `<button class="btn small" data-ajoutnom="${esc(m.auteur || m.contact)}" title="Ajouter ${esc(m.auteur || m.contact)} à vos contacts (et à vos amis) pour lui écrire en privé">+ Ajouter aux contacts</button>`);
     if (cleChemin && liaison.connecte) $("#mdetActs").insertAdjacentHTML("beforeend", `<button class="btn small" data-cheminedit="${esc(cleChemin)}" title="Choisir vous-même les relais par lesquels passent les messages directs vers ce contact">Définir le chemin…</button>`);
     const auteur = emis ? (d.moi.nom + " (nous)") : (m.auteur || m.contact || "Inconnu");
     let html = `<div class="mdet-txt">${esc(m.texte)}</div>
@@ -2248,6 +2249,11 @@ const HOT_MIN = 360; // 6 heures
     if (dv) { decBusy = dv.dataset.decouvrir; renderFiche(); toast("Découverte des voisins lancée : réponse dans 30 s environ");
       let r; try { r = await api.decouvrir_voisins(decBusy); } catch(err) { r = {ok:false, erreur:String(err)}; }
       decBusy = null; toast(r.ok ? r.message : r.erreur); refresh(true); renderFiche(); return; }
+    const an = t.closest("[data-ajoutnom]");
+    if (an) { an.disabled = true; const nom = an.dataset.ajoutnom; const r = await api.ajouter_depuis_nom(nom, true); an.disabled = false;
+      if (r.ok) { toast(r.message); fermerDetail(); tab = "messages"; conv = "d:" + r.cle.slice(0,12); lastMsgCount = -2; refresh(true); return; }
+      if (r.inconnu) { fermerDetail(); $("#mami").hidden = false; $("#amiTexte").value = ""; $("#amiNom").value = nom; $("#amiMsg").textContent = r.erreur; $("#amiTexte").focus(); return; }
+      toast(r.erreur); return; }
     if (t.closest("[data-ajoutami]")) { $("#mami").hidden = false; $("#amiMsg").textContent = ""; $("#amiTexte").value = ""; $("#amiNom").value = ""; $("#amiTexte").focus(); return; }
     const ta = t.closest("[data-toggleami]"); if (ta) { const r = await api.basculer_ami(ta.dataset.toggleami); toast(r.ami ? `${r.nom} ajouté à vos amis ★` : `${r.nom} retiré de vos amis`); refresh(true); return; }
     const co = t.closest("[data-console]"); if (co) { ouvrirConsole(co.dataset.console); return; }

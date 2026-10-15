@@ -362,6 +362,25 @@ class Store:
                                     (texte, ts - 5, ts + fenetre)).fetchall()
         return [dict(r) for r in rows]
 
+    def annonce_vue(self, cle: str, nom: str, type_: int, lat, lon):
+        """Mémorise la dernière annonce entendue de chaque nœud (clé publique complète) : sert à l'ajouter aux contacts."""
+        with self._lock:
+            self._cx.execute("""CREATE TABLE IF NOT EXISTS annonces (cle TEXT PRIMARY KEY, nom TEXT, type INTEGER,
+                lat REAL, lon REAL, ts REAL)""")
+            self._cx.execute("INSERT INTO annonces(cle, nom, type, lat, lon, ts) VALUES(?,?,?,?,?,?) "
+                             "ON CONFLICT(cle) DO UPDATE SET nom=excluded.nom, type=excluded.type, "
+                             "lat=COALESCE(excluded.lat, annonces.lat), lon=COALESCE(excluded.lon, annonces.lon), ts=excluded.ts",
+                             (cle.lower(), nom, type_, lat, lon, time.time()))
+            self._cx.commit()
+
+    def annonce_par_nom(self, nom: str) -> dict | None:
+        with self._lock:
+            try:
+                r = self._cx.execute("SELECT * FROM annonces WHERE lower(nom)=lower(?) ORDER BY ts DESC LIMIT 1", (nom or "",)).fetchone()
+            except sqlite3.OperationalError:
+                return None
+        return dict(r) if r else None
+
     def last_position_by_name(self, nom: str):
         with self._lock:
             r = self._cx.execute("SELECT lat, lon, ts FROM positions WHERE lower(nom)=lower(?) ORDER BY ts DESC LIMIT 1",

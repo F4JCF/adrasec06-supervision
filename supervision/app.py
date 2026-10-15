@@ -17,7 +17,7 @@ from . import aprs, courriel, rapports, resilience, systeme, taches, web
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.18.1"
+VERSION = "1.18.2"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -498,6 +498,9 @@ class Api:
 
     def ajouter_contact(self, texte, nom="", ami=True):
         return self._poller.ajouter_contact(texte, nom, ami)
+
+    def ajouter_depuis_nom(self, nom, ami=False):
+        return self._poller.ajouter_depuis_nom(nom, ami)
 
     def basculer_ami(self, cle, ami=None):
         return self._poller.basculer_ami(cle, ami)
