@@ -437,7 +437,7 @@ header.top .hright{grid-column:1 / -1}
 #chListe li button{padding:1px 8px}
 .thsort{border:0;background:none;color:inherit;font:inherit;letter-spacing:inherit;text-transform:inherit;padding:0;cursor:pointer;text-decoration:underline dotted}
 .thsort[aria-pressed="true"]{color:var(--accent)}
-.thsort[aria-pressed="true"]::after{content:" ▲"}
+.thsort[aria-pressed="true"]::after{content:" ▼"}
 #mconsole[hidden]{display:none}
 .term{background:#0a0f14;color:#cfe3d4;border:1px solid var(--line);border-radius:6px;padding:10px 12px;overflow:auto;font-family:var(--f-mono);font-size:.86rem;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;min-height:0}
 .term .c{color:#ffb35c}.term .e{color:#ff8080}.term .i{color:#7f93a6}
@@ -539,7 +539,7 @@ header.top .hright{grid-column:1 / -1}
     </div>
     <div class="selbar" id="selbar" hidden></div>
     <div class="table-wrap"><table>
-      <thead><tr><th class="ck"><input type="checkbox" id="selAll" title="Tout cocher (liste affichée)" aria-label="Tout cocher"></th><th>Nœud</th><th>État</th><th>Site</th><th>Matériel</th><th>Firmware</th><th class="r">TX dBm</th><th class="r">Bruit dBm</th><th class="r">Err. RX</th><th class="r">Batt. V</th><th class="r"><button type="button" id="triDist" class="thsort" title="Trier par distance depuis votre nœud companion">Distance</button></th><th title="Dernière lecture du nœud ou, à défaut, dernière annonce entendue">Dernier contact</th></tr></thead>
+      <thead><tr><th class="ck"><input type="checkbox" id="selAll" title="Tout cocher (liste affichée)" aria-label="Tout cocher"></th><th>Nœud</th><th><button type="button" id="triEtat" class="thsort" title="Trier par état (hors ligne en premier, puis ADRASEC, puis voisins)">État</button></th><th>Site</th><th>Matériel</th><th>Firmware</th><th class="r">TX dBm</th><th class="r">Bruit dBm</th><th class="r">Err. RX</th><th class="r">Batt. V</th><th class="r"><button type="button" id="triDist" class="thsort" title="Trier par distance depuis votre nœud companion">Distance</button></th><th><button type="button" id="triContact" class="thsort" title="Trier par dernier contact (le plus récent en haut) — dernière lecture du nœud ou, à défaut, dernière annonce entendue">Dernier contact</button></th></tr></thead>
       <tbody id="rows"></tbody>
     </table></div>
   </section>
@@ -1634,7 +1634,8 @@ const HOT_MIN = 360; // 6 heures
     return ind ? `${esc(ind)} <span class="muted">· ${app} · déduit du nom (Modifier pour préciser)</span>` : `<span class="muted">${app} · non renseigné (Modifier pour l'ajouter)</span>`;
   }
   /* distance et direction depuis le nœud companion (sinon depuis Mougins) */
-  let triDistance = false;
+  let tri = (() => { try { return localStorage.getItem("triNoeuds") || "contact"; } catch(e) { return "contact"; } })();
+  function choisirTri(v){ tri = v; try { localStorage.setItem("triNoeuds", v); } catch(e) {} renderTable(); }
   function distKm(n){
     if (!hasPos(n)) return null;
     const o = liaison.position && liaison.position.lat ? liaison.position : {lat:43.6, lon:7.0};
@@ -1774,7 +1775,9 @@ const HOT_MIN = 360; // 6 heures
       return true;
     }).sort((a,b) => {
       const rank = n => n.proprio==="externe" ? 4 : ({"hors-ligne":0,"degrade":1,"en-ligne":2,"test":2,"prevu":5}[n.statut] ?? 3);
-      if (triDistance) { const da = distKm(a), db = distKm(b); return (da == null) - (db == null) || (da ?? 0) - (db ?? 0) || a.nom.localeCompare(b.nom); }
+      if (tri === "distance") { const da = distKm(a), db = distKm(b); return (da == null) - (db == null) || (da ?? 0) - (db ?? 0) || a.nom.localeCompare(b.nom); }
+      if (tri === "contact") { const ta = dernierContact(a), tb = dernierContact(b);
+        const va = ta ? new Date(ta.date).getTime() : 0, vb = tb ? new Date(tb.date).getTime() : 0; return vb - va || a.nom.localeCompare(b.nom); }
       return rank(a)-rank(b) || a.nom.localeCompare(b.nom);
     });
   }
@@ -1794,6 +1797,7 @@ const HOT_MIN = 360; // 6 heures
       </tr>`).join("")
       : `<tr><td colspan="12"><div class="empty">${loaded ? (filter.scope==="supprimes" ? "Aucun nœud supprimé. Pour retirer un nœud sans l'effacer : Modifier, puis État « Supprimé »." : nodes.length ? "Aucun nœud ne correspond au filtre." : "Aucun nœud enregistré. Ajoutez le premier avec « Nouveau nœud ».") : "Chargement…"}</div></td></tr>`;
     document.querySelectorAll("#scope button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v===filter.scope));
+    [["triDist","distance"],["triContact","contact"],["triEtat","etat"]].forEach(([id, v]) => { const b = document.getElementById(id); if (b) b.setAttribute("aria-pressed", String(tri === v)); });
     // nettoyage de la sélection (nœuds disparus) et case « tout cocher »
     [...coches].forEach(id => { if (!allNodes.some(n => n.id === id)) coches.delete(id); });
     const vis = list.map(n => n.id), nb = vis.filter(id => coches.has(id)).length;
@@ -2369,7 +2373,9 @@ const HOT_MIN = 360; // 6 heures
         if (r.ok) { $("#mchemin").hidden = true; toast(r.message); refresh(true); } else $("#chMsg").textContent = r.erreur; return; }
       case "trGo": { t.disabled = true; const r = await api.test_resilience(); t.disabled = false; toast(r.ok ? "Test de résilience lancé : écoute pendant 10 minutes" : r.erreur); refresh(true); return; }
       case "trStop": { await api.terminer_test_resilience(); toast("Fin du test : compte rendu en cours de création"); refresh(true); return; }
-      case "triDist": triDistance = !triDistance; t.setAttribute("aria-pressed", String(triDistance)); renderTable(); return;
+      case "triDist": choisirTri("distance"); return;
+      case "triContact": choisirTri("contact"); return;
+      case "triEtat": choisirTri("etat"); return;
       case "coFermer": $("#mconsole").hidden = true; return;
       case "coEffacer": $("#coTerm").innerHTML = ""; return;
       case "etalGo": { const v = +$("#optEtal").value; if (!(v >= 1 && v <= 99)) { toast("Indiquez le pourcentage affiché par le nœud (1 à 99 %)."); return; }
