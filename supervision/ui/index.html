@@ -442,6 +442,24 @@ header.top .hright{grid-column:1 / -1}
 .term{background:#0a0f14;color:#cfe3d4;border:1px solid var(--line);border-radius:6px;padding:10px 12px;overflow:auto;font-family:var(--f-mono);font-size:.86rem;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;min-height:0}
 .term .c{color:#ffb35c}.term .e{color:#ff8080}.term .i{color:#7f93a6}
 #mami[hidden]{display:none}
+#mcontacts{position:fixed;inset:0;z-index:2600;background:rgba(5,10,15,.55);display:grid;place-items:center;padding:16px}
+#mcontacts[hidden]{display:none}
+.ct-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
+.ct-bar .chipb{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:3px 12px;font-size:.85rem;color:var(--fg)}
+.ct-bar .chipb[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+.ct-bar input,.ct-bar select{width:auto;min-width:160px;flex:1}
+.ct-wrap{overflow:auto;min-height:0}
+.ct-wrap th button{border:0;background:none;padding:0;font:inherit;color:inherit;letter-spacing:inherit;text-transform:inherit;cursor:pointer}
+.ct-wrap th button[aria-sort]{color:var(--accent)}
+.ct-wrap td{white-space:nowrap}
+.ct-type{font-family:var(--f-mono);font-size:.72rem;border:1px solid var(--c);color:var(--c);border-radius:3px;padding:0 5px}
+.lov-list{display:grid;gap:2px;align-content:start;align-self:start}
+.lov-list button{display:grid;grid-template-columns:minmax(120px,1.3fr) auto minmax(150px,2fr);gap:10px;align-items:center;text-align:left;border:0;border-left:3px solid var(--c);background:none;padding:6px 10px;color:var(--fg)}
+.lov-list button:hover,.lov-list button[aria-pressed="true"]{background:var(--sunk)}
+.lov-list .v{color:var(--c);font-size:.88rem}
+.lov-prof svg{width:100%;height:auto;display:block}
+.lov-prof text{font-family:var(--f-mono);font-size:11px;fill:var(--muted)}
+.convs h3.prio{color:var(--accent)}
 .team-icon.ami{background:#f2c200;box-shadow:0 0 0 1.5px #a07800}
 .map-label.ami{color:#8a6500;font-weight:700}
 </style>
@@ -698,6 +716,17 @@ header.top .hright{grid-column:1 / -1}
         <div class="exlist" id="covList"></div>
       </section>
     </div>
+    <section class="panel">
+      <div class="panel-head"><h2>Ligne à vue</h2><span class="reading">Profil du terrain depuis la position du test de couverture</span></div>
+      <p style="margin:0">Sans émettre, vérifie si le relief laisse passer le signal entre le point indiqué ci-dessus (latitude, longitude) et chaque répéteur. Le calcul tient compte de la courbure de la Terre et de la zone de Fresnel à 869,5 MHz, mais pas des bâtiments ni des arbres. Il faut une connexion Internet (altitudes du terrain).</p>
+      <div class="actions" style="margin-top:8px;align-items:end">
+        <label style="max-width:170px">Antenne ici (m au-dessus du sol)<input id="lovHici" value="2" inputmode="decimal"></label>
+        <label style="max-width:170px">Antennes des répéteurs (m)<input id="lovHrep" value="8" inputmode="decimal"></label>
+        <label style="display:flex;flex-direction:row;align-items:center;gap:8px;color:var(--fg)"><input type="checkbox" id="lovExt" style="width:16px;height:16px;flex:none"> Inclure les répéteurs externes</label>
+        <button class="btn primary" type="button" id="lovGo">Calculer la ligne à vue</button><span class="reading" id="lovMsg"></span>
+      </div>
+      <div class="cols2" style="margin-top:10px"><div class="lov-list" id="lovList"></div><div class="lov-prof" id="lovProfil"></div></div>
+    </section>
   </div>
 
   <div class="tabpane" id="tab-reglages" hidden>
@@ -820,6 +849,17 @@ header.top .hright{grid-column:1 / -1}
       <div class="term" id="coTerm" aria-live="polite"></div>
       <form id="coForm" style="display:flex;gap:8px"><span class="mono" style="align-self:center;color:var(--accent)">&gt;</span><input id="coCmd" class="mono" autocomplete="off" spellcheck="false" placeholder="Commande (ex. ver, clock, get radio, neighbors) — ↑ ↓ : historique" style="flex:1"><button class="btn primary" type="submit" id="coGo">Envoyer</button></form>
     </div>
+  </div>
+</div>
+<div id="mcontacts" hidden role="dialog" aria-modal="true" aria-labelledby="mcontactsTitle">
+  <div class="mdet-box" style="width:min(1000px,100%)">
+    <div class="mdet-head"><h2 id="mcontactsTitle">Contacts du nœud companion</h2><button class="btn small" id="ctClose" type="button">Fermer (Échap)</button></div>
+    <div class="ct-bar"><span id="ctTypes" style="display:flex;gap:6px;flex-wrap:wrap"></span>
+      <input id="ctRech" placeholder="Rechercher un nom…" type="search">
+      <select id="ctTri" aria-label="Trier par"><option value="annonce">Annonce la plus récente</option><option value="nom">Nom (A → Z)</option><option value="distance">Distance (la plus proche)</option><option value="type">Type</option><option value="route">Route (direct d'abord)</option></select></div>
+    <div class="ct-wrap"><table><thead><tr>
+      <th><button data-cttri="nom">Nom</button></th><th><button data-cttri="type">Type</button></th><th><button data-cttri="annonce">Dernière annonce</button></th><th><button data-cttri="distance">Distance</button></th><th><button data-cttri="route">Route</button></th><th></th>
+    </tr></thead><tbody id="ctRows"></tbody></table></div>
   </div>
 </div>
 <div id="mami" hidden role="dialog" aria-modal="true" aria-labelledby="mamiTitle" style="position:fixed;inset:0;z-index:2600;background:rgba(5,10,15,.55);display:grid;place-items:center;padding:16px">
@@ -1273,13 +1313,91 @@ header.top .hright{grid-column:1 / -1}
         ["Direct émis / reçus", pk.direct_tx != null ? `${fmtNum(pk.direct_tx)} / ${fmtNum(pk.direct_rx)}` : null], ["Erreurs de réception", pk.recv_errors]]),
       sec("Partage et contacts", [["Télémétrie de base", modes[idt.telemetry_mode_base] ?? null], ["Position partagée", modes[idt.telemetry_mode_loc] ?? null], ["Capteurs", modes[idt.telemetry_mode_env] ?? null],
         ["Position dans les annonces", idt.adv_loc_policy != null ? (idt.adv_loc_policy ? "oui" : "non") : null], ["Accusés multiples", idt.multi_acks != null ? (idt.multi_acks ? "oui" : "non") : null], ["Ajout manuel des contacts", oui(idt.manual_add_contacts)],
-        ["Contacts", ct.total != null ? `${ct.total} (${ct.repeteurs} répéteurs, ${ct.compagnons} compagnons, ${ct.salons} salons${ct.capteurs ? `, ${ct.capteurs} capteurs` : ""})` : null],
+        ["Contacts", ct.total != null ? `${ct.total} (${ct.repeteurs} répéteurs, ${ct.compagnons} compagnons, ${ct.salons} salons${ct.capteurs ? `, ${ct.capteurs} capteurs` : ""}) <button class="btn small" type="button" data-contacts="tous" style="margin-left:6px">Voir et trier</button>` : null],
         ["Canaux", (a.canaux || []).map(c => esc(diese(c.nom))).join(", ")]]),
       (a.telemetrie || []).length ? `<div class="comp-sec"><h3>Télémétrie</h3><div class="tele">${a.telemetrie.map(t => `<span>${esc(teleLabel(t))}</span>`).join("")}</div></div>` : "",
       Object.keys(a.variables || {}).length ? sec("Variables du firmware", Object.entries(a.variables).map(([k, v]) => [esc(k), esc(v)])) : "",
     ].join("");
   }
   const abs = Math.abs;
+  /* ---------- liste triable des contacts ---------- */
+  let ctListe = [], ctType = "tous", ctTri = "annonce";
+  const CT_TYPES = [["tous","Tous"],["repeteur","Répéteurs"],["compagnon","Compagnons"],["salon","Salons"],["capteur","Capteurs"]];
+  const CT_COUL = {repeteur:"var(--accent)", compagnon:"var(--ok)", salon:"var(--warn)", capteur:"var(--muted)", autre:"var(--muted)"};
+  const CT_NOM = {repeteur:"Répéteur", compagnon:"Compagnon", salon:"Salon", capteur:"Capteur", autre:"Autre"};
+  async function ouvrirContacts(type){
+    ctType = type || "tous"; $("#mcontacts").hidden = false; $("#ctRech").value = ""; $("#ctTri").value = ctTri;
+    $("#ctRows").innerHTML = `<tr><td colspan="6" class="muted">Chargement…</td></tr>`; $("#ctRech").focus();
+    let r; try { r = await api.liste_contacts(); } catch(e) { r = {ok:false}; }
+    ctListe = (r && r.contacts) || []; renderContacts();
+  }
+  function renderContacts(){
+    const q = $("#ctRech").value.trim().toLowerCase();
+    $("#ctTypes").innerHTML = CT_TYPES.map(([k, l]) => { const n = k === "tous" ? ctListe.length : ctListe.filter(c => c.type === k).length;
+      return (k === "tous" || n) ? `<button class="chipb" type="button" data-cttype="${k}" aria-pressed="${ctType === k}">${l} <span class="mono">${n}</span></button>` : ""; }).join("");
+    const route = c => c.sauts == null || c.sauts < 0 ? 99 : c.sauts;
+    const l = ctListe.filter(c => (ctType === "tous" || c.type === ctType) && (!q || c.nom.toLowerCase().includes(q)))
+      .map(c => ({...c, km: c.lat != null ? distKm(c) : null}));
+    const cmp = {nom:(a,b) => a.nom.localeCompare(b.nom, "fr"), annonce:(a,b) => (b.annonce||0) - (a.annonce||0),
+      distance:(a,b) => (a.km ?? 1e9) - (b.km ?? 1e9), type:(a,b) => a.type.localeCompare(b.type) || a.nom.localeCompare(b.nom, "fr"),
+      route:(a,b) => route(a) - route(b) || (b.annonce||0) - (a.annonce||0)}[ctTri];
+    l.sort((a,b) => (!!b.ami - !!a.ami) || cmp(a,b));
+    document.querySelectorAll("[data-cttri]").forEach(b => b.dataset.cttri === ctTri ? b.setAttribute("aria-sort", "ascending") : b.removeAttribute("aria-sort"));
+    $("#ctRows").innerHTML = l.length ? l.slice(0, 600).map(c => `<tr><td class="name">${c.ami ? "★ " : ""}${esc(c.nom)}</td>
+      <td><span class="ct-type" style="--c:${CT_COUL[c.type]}">${CT_NOM[c.type]}</span></td>
+      <td>${c.annonce ? ago(new Date(c.annonce*1000).toISOString()) : "—"}</td>
+      <td class="num">${c.km != null ? fmtNum(c.km, c.km < 10 ? 1 : 0) + " km" : "—"}</td>
+      <td class="muted">${c.sauts == null || c.sauts < 0 ? "inondation" : c.sauts === 0 ? "direct" : c.sauts + " relais"}</td>
+      <td>${c.type === "compagnon" ? `<button class="btn small" type="button" data-ctmsg="${esc(c.cle)}">Message</button> <button class="btn small" type="button" data-ctami="${esc(c.cle)}" title="${c.ami ? "Retirer de vos amis" : "Ajouter à vos amis"}">${c.ami ? "★" : "☆"}</button>` : ""}</td></tr>`).join("")
+      : `<tr><td colspan="6"><div class="empty">Aucun contact${q ? " pour cette recherche" : ""}.</div></td></tr>`;
+  }
+  document.addEventListener("input", e => { if (e.target.id === "ctRech") renderContacts(); });
+  document.addEventListener("change", e => { if (e.target.id === "ctTri") { ctTri = e.target.value; renderContacts(); } });
+  /* ---------- ligne à vue ---------- */
+  let lovRes = null, lovSel = null;
+  const LOV_COUL = {ok:"var(--ok)", attention:"var(--warn)", critique:"var(--crit)"};
+  async function calculerLov(){
+    const lat = $("#covLat").value.replace(",", "."), lon = $("#covLon").value.replace(",", ".");
+    if (!lat || !lon) { toast("Indiquez d'abord la latitude et la longitude (ou « Position du nœud companion »)."); return; }
+    $("#lovGo").disabled = true; $("#lovMsg").textContent = "Lecture des altitudes du terrain…";
+    let r; try { r = await api.ligne_de_vue(lat, lon, $("#lovHici").value, $("#lovHrep").value, $("#lovExt").checked); } catch(e) { r = {ok:false, erreur:String(e)}; }
+    $("#lovGo").disabled = false; $("#lovMsg").textContent = "";
+    if (!r.ok) { toast(r.erreur); return; }
+    lovRes = r; lovSel = r.resultats.length ? r.resultats[0].nom : null;
+    const ok = r.resultats.filter(x => x.niveau === "ok").length;
+    $("#lovMsg").textContent = `${ok}/${r.resultats.length} répéteur(s) en ligne à vue dégagée`;
+    renderLov();
+  }
+  function renderLov(){
+    if (!lovRes) return;
+    $("#lovList").innerHTML = lovRes.resultats.map(x => `<button type="button" data-lov="${esc(x.nom)}" aria-pressed="${x.nom === lovSel}" style="--c:${LOV_COUL[x.niveau]}">
+      <span class="mono" style="font-size:.82rem">${esc(x.nom)}${x.externe ? ' <span class="muted">(externe)</span>' : ""}</span><span class="num muted">${fmtNum(x.distanceKm,1)} km</span>
+      <span class="v">${x.niveau === "ok" ? "✓ Dégagée" : x.niveau === "attention" ? "◐ Fresnel gêné" : "✕ Masquée"}${x.obstacle ? ` <span class="muted">· obstacle à ${fmtNum(x.obstacle.km,1)} km</span>` : ""}</span></button>`).join("");
+    const x = lovRes.resultats.find(y => y.nom === lovSel);
+    if (!x) { $("#lovProfil").innerHTML = ""; return; }
+    const W = 800, H = 280, ml = 50, mr = 10, mt = 14, mb = 28;
+    const ys = [...x.terrain, ...x.ligne, ...x.fresnel], ymin = Math.floor((Math.min(...x.terrain) - 20) / 50) * 50, ymax = Math.ceil((Math.max(...ys) + 20) / 50) * 50;
+    const D = x.dist[x.dist.length - 1] || 1, X = d => ml + (W - ml - mr) * d / D, Y = v => mt + (H - mt - mb) * (1 - (v - ymin) / (ymax - ymin || 1));
+    const pts = arr => arr.map((v, i) => `${X(x.dist[i]).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
+    const pasY = (ymax - ymin) > 1200 ? 500 : (ymax - ymin) > 500 ? 200 : 100, grilleY = [];
+    for (let v = Math.ceil(ymin / pasY) * pasY; v <= ymax; v += pasY) grilleY.push(v);
+    const pasX = D > 40 ? 10 : D > 15 ? 5 : D > 5 ? 2 : 1, grilleX = [];
+    for (let d = 0; d <= D + 1e-6; d += pasX) grilleX.push(d);
+    const c = LOV_COUL[x.niveau];
+    $("#lovProfil").innerHTML = `<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:4px"><b>Ici → ${esc(x.nom)}</b><span style="color:${c}">${esc(x.verdict)}</span></div>
+      <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Profil du terrain entre le point et ${esc(x.nom)}">
+        ${grilleY.map(v => `<line x1="${ml}" x2="${W-mr}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${ml-6}" y="${Y(v)+4}" text-anchor="end">${v}</text>`).join("")}
+        ${grilleX.map(d => `<text x="${X(d)}" y="${H-8}" text-anchor="middle">${fmtNum(d,0)} km</text>`).join("")}
+        <polygon points="${X(0)},${Y(ymin)} ${pts(x.terrain)} ${X(D)},${Y(ymin)}" fill="color-mix(in srgb, var(--muted) 35%, transparent)" stroke="var(--muted)" stroke-width="1.5"/>
+        <polyline points="${pts(x.fresnel)}" fill="none" stroke="${c}" stroke-width="1.5" stroke-dasharray="5 4" opacity=".8"/>
+        <polyline points="${pts(x.ligne)}" fill="none" stroke="${c}" stroke-width="2.5"/>
+        ${x.obstacle ? `<circle cx="${X(x.obstacle.km)}" cy="${Y(x.terrain[x.dist.indexOf(x.obstacle.km)] ?? x.obstacle.altitude)}" r="5" fill="var(--crit)"/>` : ""}
+        <circle cx="${X(0)}" cy="${Y(x.ligne[0])}" r="4" fill="var(--fg)"/><circle cx="${X(D)}" cy="${Y(x.ligne[x.ligne.length-1])}" r="4" fill="var(--fg)"/>
+      </svg>
+      <p class="reading" style="margin:4px 0 0">Distance ${fmtNum(x.distanceKm,1)} km · sol ${fmtNum(x.altDepart)} m ici, ${fmtNum(x.altArrivee)} m au répéteur · affaiblissement en espace libre ${fmtNum(x.affaiblissement,0)} dB.
+        ${x.obstacle ? `Point le plus gênant à ${fmtNum(x.obstacle.km,1)} km (sol ${fmtNum(x.obstacle.altitude)} m${x.obstacle.manque > 0 ? `, il manque environ ${fmtNum(x.obstacle.manque,0)} m de dégagement` : ""}).` : ""}
+        Trait plein : ligne directe entre les antennes · tirets : limite des 60 % de la zone de Fresnel, qui doit rester au-dessus du relief.</p>`;
+  }
   /* ---------- détail d'un message : parcours et carte ---------- */
   const ROUTE_COUL = ["#e8590c", "#1c7ed6", "#2f9e44", "#ae3ec9", "#f59f00", "#0ca678"];
   let detMap = null, detLayer = null, detRetour = null;
@@ -1891,14 +2009,18 @@ const HOT_MIN = 360; // 6 heures
     const dms = {};
     messages.filter(m => m.canal == null).forEach(m => { const k = (m.contact_cle||"").slice(0,12); dms[k] = dms[k] || {cle:k, nom:m.contact||k, n:0}; dms[k].n++; });
     contacts.forEach(c => { const k = c.cle.slice(0,12); dms[k] = Object.assign(dms[k] || {n:0}, {cle:k, full:c.cle, nom:c.nom, ami:!!c.ami}); });
-    if (!conv) conv = "c:" + chans[0].index;
+    const normC = x => String(x || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const chPrio = chans.filter(c => normC(c.nom).includes("adrasec06"));
+    if (!conv) conv = "c:" + (chPrio[0] || chans[0]).index;
     const cnt = k => messages.filter(m => convKey(m)===k).length;
     // la conversation ouverte est lue : on mémorise le nombre de messages reçus
     vus[conv] = Math.max(vus[conv] || 0, dernierRecu(conv)); saveVus();
     const item = (k, label) => { const u = k === conv ? 0 : nonLus(k);
       return `<button data-conv="${esc(k)}" aria-pressed="${conv===k}" class="${u ? "unread" : ""}" title="${u ? u + " message(s) non lu(s)" : ""}"><span>${esc(label)}</span><span class="n">${u ? u : (cnt(k) || "")}</span></button>`; };
-    $("#convs").innerHTML = `<h3>Canaux</h3>` + chans.map(c => item("c:"+c.index, (c.genre === "prive" ? "🔒 " : "") + diese(c.nom))).join("") +
-      `<h3 style="display:flex;justify-content:space-between;align-items:center;gap:6px">Messages directs<button class="btn small" data-ajoutami="1" type="button" title="Ajouter un companion ami (carte de contact ou clé publique)" style="padding:1px 8px;font-size:.72rem;letter-spacing:0;text-transform:none">+ Ami</button></h3>` + (Object.values(dms).sort((a,b)=>(!!b.ami-!!a.ami)||(nonLus("d:"+b.cle)-nonLus("d:"+a.cle))||(b.n-a.n)||a.nom.localeCompare(b.nom)).map(d => item("d:"+d.cle, (d.ami ? "★ " : "") + d.nom)).join("") || `<span class="reading" style="padding:4px 14px">Aucun contact. Connectez le nœud companion.</span>`);
+    const amisL = Object.values(dms).filter(d => d.ami).sort((a,b) => (nonLus("d:"+b.cle)-nonLus("d:"+a.cle)) || a.nom.localeCompare(b.nom));
+    const prio = chPrio.length || amisL.length ? `<h3 class="prio">★ Prioritaires</h3>` + chPrio.map(c => item("c:"+c.index, (c.genre === "prive" ? "🔒 " : "") + diese(c.nom))).join("") + amisL.map(d => item("d:"+d.cle, "★ " + d.nom)).join("") : "";
+    $("#convs").innerHTML = prio + `<h3>Canaux</h3>` + chans.filter(c => !chPrio.includes(c)).map(c => item("c:"+c.index, (c.genre === "prive" ? "🔒 " : "") + diese(c.nom))).join("") +
+      `<h3 style="display:flex;justify-content:space-between;align-items:center;gap:6px">Messages directs<button class="btn small" data-ajoutami="1" type="button" title="Ajouter un companion ami (carte de contact ou clé publique)" style="padding:1px 8px;font-size:.72rem;letter-spacing:0;text-transform:none">+ Ami</button></h3>` + (Object.values(dms).filter(d => !d.ami).sort((a,b)=>(nonLus("d:"+b.cle)-nonLus("d:"+a.cle))||(b.n-a.n)||a.nom.localeCompare(b.nom)).map(d => item("d:"+d.cle, d.nom)).join("") || (amisL.length ? "" : `<span class="reading" style="padding:4px 14px">Aucun contact. Connectez le nœud companion.</span>`));
     const list = messages.filter(m => convKey(m)===conv);
     const isChan = conv.startsWith("c:");
     const title = isChan ? diese((chans.find(c => "c:"+c.index===conv)||{nom:"Canal"}).nom) : (dms[conv.slice(2)]||{nom:"Contact"}).nom;
@@ -2142,7 +2264,7 @@ const HOT_MIN = 360; // 6 heures
     }
   }
   setInterval(() => { if (crise) $("#crClock").textContent = new Date().toLocaleTimeString("fr-FR"); }, 1000);
-  document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.id === "regAutre") { e.preventDefault(); const v = e.target.value.trim(), c = +e.target.dataset.canal; if (v && v !== "#") api.regler_region(c, v, false).then(r => { toast(r.ok ? `Région ${v} pour ce canal` : r.erreur); refresh(true); }); return; } if (e.key === "Escape" && !$("#mami").hidden) { $("#mami").hidden = true; return; } if (e.target.id === "coCmd" && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); coPos = Math.max(0, Math.min(coHisto.length, coPos + (e.key === "ArrowUp" ? -1 : 1))); e.target.value = coHisto[coPos] || ""; return; } if (e.key === "Escape" && !$("#mconsole").hidden) { $("#mconsole").hidden = true; return; } if (e.key === "Enter" && e.target.id === "chAjout") { e.preventDefault(); chAjouter(); return; } if (e.key === "Escape" && !$("#mchemin").hidden) { $("#mchemin").hidden = true; return; } if (e.key === "Enter" && e.target.id === "apAjout") { e.preventDefault(); $("#apAjoutBtn").click(); return; } if (e.key === "Escape" && !$("#mappel").hidden) { $("#mappel").hidden = true; return; } if (e.key === "Escape" && !$("#mcomp").hidden) { $("#mcomp").hidden = true; return; } if (e.key === "Escape" && !$("#mdet").hidden) { fermerDetail(); return; } if (e.key === "Escape" && crise) openCrise(false); });
+  document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.id === "regAutre") { e.preventDefault(); const v = e.target.value.trim(), c = +e.target.dataset.canal; if (v && v !== "#") api.regler_region(c, v, false).then(r => { toast(r.ok ? `Région ${v} pour ce canal` : r.erreur); refresh(true); }); return; } if (e.key === "Escape" && !$("#mcontacts").hidden) { $("#mcontacts").hidden = true; return; } if (e.key === "Escape" && !$("#mami").hidden) { $("#mami").hidden = true; return; } if (e.target.id === "coCmd" && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); coPos = Math.max(0, Math.min(coHisto.length, coPos + (e.key === "ArrowUp" ? -1 : 1))); e.target.value = coHisto[coPos] || ""; return; } if (e.key === "Escape" && !$("#mconsole").hidden) { $("#mconsole").hidden = true; return; } if (e.key === "Enter" && e.target.id === "chAjout") { e.preventDefault(); chAjouter(); return; } if (e.key === "Escape" && !$("#mchemin").hidden) { $("#mchemin").hidden = true; return; } if (e.key === "Enter" && e.target.id === "apAjout") { e.preventDefault(); $("#apAjoutBtn").click(); return; } if (e.key === "Escape" && !$("#mappel").hidden) { $("#mappel").hidden = true; return; } if (e.key === "Escape" && !$("#mcomp").hidden) { $("#mcomp").hidden = true; return; } if (e.key === "Escape" && !$("#mdet").hidden) { fermerDetail(); return; } if (e.key === "Escape" && crise) openCrise(false); });
 
   /* ---------- messages types ---------- */
   function fillTemplate(t){
@@ -2279,6 +2401,12 @@ const HOT_MIN = 360; // 6 heures
       if (r.ok) { toast(r.message); fermerDetail(); tab = "messages"; conv = "d:" + r.cle.slice(0,12); lastMsgCount = -2; refresh(true); return; }
       if (r.inconnu) { fermerDetail(); $("#mami").hidden = false; $("#amiTexte").value = ""; $("#amiNom").value = nom; $("#amiMsg").textContent = r.erreur; $("#amiTexte").focus(); return; }
       toast(r.erreur); return; }
+    const ctb = t.closest("[data-contacts]"); if (ctb) { ouvrirContacts(ctb.dataset.contacts); return; }
+    const ctt = t.closest("[data-cttype]"); if (ctt) { ctType = ctt.dataset.cttype; renderContacts(); return; }
+    const cts = t.closest("[data-cttri]"); if (cts) { ctTri = cts.dataset.cttri; $("#ctTri").value = ctTri; renderContacts(); return; }
+    const ctm = t.closest("[data-ctmsg]"); if (ctm) { $("#mcontacts").hidden = true; $("#mcomp").hidden = true; tab = "messages"; conv = "d:" + ctm.dataset.ctmsg.slice(0,12); lastMsgCount = -2; renderAll(); return; }
+    const cta = t.closest("[data-ctami]"); if (cta) { const r = await api.basculer_ami(cta.dataset.ctami); const c = ctListe.find(c => c.cle === cta.dataset.ctami); if (c) c.ami = r.ami; renderContacts(); toast(r.ami ? `${r.nom} ajouté à vos amis ★` : `${r.nom} retiré de vos amis`); refresh(true); return; }
+    const lv = t.closest("[data-lov]"); if (lv) { lovSel = lv.dataset.lov; renderLov(); return; }
     if (t.closest("[data-ajoutami]")) { $("#mami").hidden = false; $("#amiMsg").textContent = ""; $("#amiTexte").value = ""; $("#amiNom").value = ""; $("#amiTexte").focus(); return; }
     const ta = t.closest("[data-toggleami]"); if (ta) { const r = await api.basculer_ami(ta.dataset.toggleami); toast(r.ami ? `${r.nom} ajouté à vos amis ★` : `${r.nom} retiré de vos amis`); refresh(true); return; }
     const co = t.closest("[data-console]"); if (co) { ouvrirConsole(co.dataset.console); return; }
@@ -2420,6 +2548,8 @@ const HOT_MIN = 360; // 6 heures
       case "compOpen": analyserCompanion(false); return;
       case "compRun": analyserCompanion(true); return;
       case "compClose": $("#mcomp").hidden = true; return;
+      case "ctClose": $("#mcontacts").hidden = true; return;
+      case "lovGo": calculerLov(); return;
       case "exArchDir": { await api.choisir_dossier_archives(); refresh(true); return; }
       case "exArchOpen": { const r = await api.ouvrir_dossier_archives(); if (!r.ok) toast(r.erreur); return; }
       case "exArchShow": voirArchives = !voirArchives; renderCourante(); return;

@@ -13,11 +13,11 @@ import re
 import time
 from datetime import datetime
 
-from . import aprs, courriel, rapports, resilience, systeme, taches, web
+from . import aprs, courriel, rapports, resilience, systeme, taches, visibilite, web
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.19.2"
+VERSION = "1.20.0"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -657,6 +657,44 @@ class Api:
 
     def test_couverture(self, lat, lon, lieu=""):
         return self._poller.test_couverture(lat, lon, lieu)
+
+    def ligne_de_vue(self, lat, lon, h_ici=2, h_rep=8, externes=False):
+        """Profil du terrain entre le point indiqué et chaque répéteur ayant une position."""
+        try:
+            lat, lon = float(str(lat).replace(",", ".")), float(str(lon).replace(",", "."))
+            h_ici = max(0.0, min(300.0, float(str(h_ici or 0).replace(",", "."))))
+            h_rep = max(0.0, min(300.0, float(str(h_rep or 0).replace(",", "."))))
+        except (TypeError, ValueError):
+            return {"ok": False, "erreur": "Latitude, longitude ou hauteur invalide."}
+        cibles = []
+        for n in self._store.list_nodes():
+            if n.get("statut") in ("prevu", "supprime") or (n.get("proprio") == "externe" and not externes):
+                continue
+            try:
+                nla, nlo = float(n.get("lat")), float(n.get("lon"))
+            except (TypeError, ValueError):
+                continue
+            if abs(nla) < 0.01 and abs(nlo) < 0.01:
+                continue
+            d = visibilite.distance_m(lat, lon, nla, nlo)
+            if d > 150000:
+                continue
+            cibles.append((d, n, nla, nlo))
+        if not cibles:
+            return {"ok": False, "erreur": "Aucun répéteur avec une position connue."}
+        cibles.sort(key=lambda x: x[0])
+        out = []
+        for d, n, nla, nlo in cibles[:40]:
+            try:
+                p = visibilite.profil(lat, lon, h_ici, nla, nlo, h_rep)
+            except Exception as e:  # noqa: BLE001
+                return {"ok": False, "erreur": f"Altitudes du terrain indisponibles (connexion Internet nécessaire) : {e}"}
+            out.append({"id": n.get("id"), "nom": n.get("nom"), "externe": n.get("proprio") == "externe",
+                        "lat": nla, "lon": nlo, **p})
+        return {"ok": True, "lat": lat, "lon": lon, "hIci": h_ici, "hRep": h_rep, "resultats": out}
+
+    def liste_contacts(self):
+        return self._poller.liste_contacts()
 
     def supprimer_couverture(self, cid):
         self._store.delete_coverage(int(cid))

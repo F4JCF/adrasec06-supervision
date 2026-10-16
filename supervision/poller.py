@@ -658,6 +658,33 @@ class Poller:
         self.canaux = out or [{"index": 0, "nom": "Public"}]
         self.store._bump()
 
+    def liste_contacts(self) -> dict:
+        """Tous les contacts du nœud companion (répéteurs, compagnons, salons, capteurs) pour la liste triable."""
+        if not self._contacts and self.mc is not None:
+            async def lire():
+                res = await self.mc.commands.get_contacts()
+                if res is not None and res.type != EventType.ERROR:
+                    self._contacts = dict(res.payload or {})
+            try:
+                self._submit(lire(), timeout=60)
+            except Exception:  # noqa: BLE001
+                pass
+        amis = set(self.store.get_config("amis", []) or [])
+        types = {1: "compagnon", 2: "repeteur", 3: "salon", 4: "capteur"}
+        out = []
+        for c in self._contacts.values():
+            cle = c.get("public_key") or ""
+            la, lo = c.get("adv_lat"), c.get("adv_lon")
+            try:
+                pos = abs(float(la)) > 0.01 or abs(float(lo)) > 0.01
+            except (TypeError, ValueError):
+                pos = False
+            out.append({"cle": cle, "nom": c.get("adv_name") or cle[:12], "type": types.get(c.get("type"), "autre"),
+                        "annonce": c.get("last_advert") or 0, "modif": c.get("lastmod") or 0,
+                        "lat": float(la) if pos else None, "lon": float(lo) if pos else None,
+                        "sauts": c.get("out_path_len"), "ami": cle in amis})
+        return {"ok": True, "contacts": out}
+
     def contacts_messagerie(self) -> list[dict]:
         amis = set(self.store.get_config("amis", []) or [])
         out = [{"cle": c.get("public_key", ""), "nom": c.get("adv_name", ""), "ami": c.get("public_key", "") in amis}
