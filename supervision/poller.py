@@ -1739,6 +1739,25 @@ class Poller:
     # ---------- analyse du nœud companion ----------
     RESEAU = {"radio_freq": 869.618, "radio_bw": 62.5, "radio_sf": 8, "radio_cr": 8}
 
+    def envoyer_advert(self, inondation: bool = False) -> dict:
+        """Annonce (advert) du nœud companion : voisins directs seulement, ou relayée par les répéteurs (inondation)."""
+        if self.mc is None:
+            return {"ok": False, "erreur": "Aucun nœud connecté."}
+        async def go():
+            return await self.mc.commands.send_advert(flood=inondation)
+        try:
+            ev = self._submit(go(), timeout=30)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "erreur": f"Advert impossible : {e}"}
+        if ev is None or ev.type == EventType.ERROR:
+            return {"ok": False, "erreur": "Le nœud a refusé l'advert."}
+        quoi = "à tout le réseau (relayé par les répéteurs)" if inondation else "aux voisins directs"
+        self._log(f"Advert envoyé {quoi}")
+        self.store.add_journal("", self.store.get_config("operateur", "") or "PC",
+                               f"Advert du nœud companion {self.local_name or ''} envoyé {quoi}.", nature="evenement")
+        self.store._bump()
+        return {"ok": True, "message": f"Advert envoyé {quoi}"}
+
     def analyser_companion(self) -> dict:
         if self.mc is None:
             return {"ok": False, "erreur": "Aucun nœud connecté."}
