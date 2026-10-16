@@ -161,6 +161,12 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 - **Companions amis** : bouton « + Ami » (Messagerie → Messages directs) pour ajouter un companion à partir de sa carte de contact « meshcore://… » ou de sa clé publique complète + son nom ; bouton « ☆ Ajouter aux amis / ★ Ami » dans chaque conversation directe ; les amis sont en tête de liste et repérés en doré sur la carte.
 - **Découvrir les voisins** dans la fiche d'un répéteur (commande discover.neighbors), console distante, étalonnage de la batterie du companion.
 
+### Nouveautés de la version 1.20
+
+- Liste des contacts du nœud companion triable et filtrable (Analyser mon nœud → Contacts → « Voir et trier ») : par type, nom, dernière annonce, distance ou route, avec recherche.
+- Messagerie : section « ★ Prioritaires » en tête, avec le canal ADRASEC 06 et les messages des amis.
+- Ligne à vue (Statistiques & couverture) : profil du terrain entre un point et chaque répéteur, courbure de la Terre et zone de Fresnel à 869,5 MHz (altitudes Copernicus via Open-Meteo, connexion Internet nécessaire).
+
 ### Nouveautés de la version 1.19.2
 
 - Annulation de la 1.19.1 : retour au fonctionnement de la 1.19.0 pour la reconnaissance des canaux privés.
