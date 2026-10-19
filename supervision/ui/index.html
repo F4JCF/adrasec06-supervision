@@ -1322,6 +1322,31 @@ header.top .hright{grid-column:1 / -1}
     ].join("");
   }
   const abs = Math.abs;
+  /* conversion des unités étrangères des messages reçus (°F, mph, mi, in…) en unités françaises */
+  function unitesFr(t){
+    let s = String(t || "");
+    const n = (v, d=0) => Number(v).toLocaleString("fr-FR", {maximumFractionDigits:d});
+    const c = f => Math.round((f - 32) * 5 / 9);
+    const kmh = v => Math.round(v * 1.609344);
+    const DIR = {N:"N",S:"S",E:"E",W:"O",NE:"NE",NW:"NO",SE:"SE",SW:"SO",NNE:"NNE",ENE:"ENE",ESE:"ESE",SSE:"SSE",SSW:"SSO",WSW:"OSO",WNW:"ONO",NNW:"NNO"};
+    // vent après une flèche : « ➡️ E6G14 » = vent d'est 6 mph, rafales 14 mph
+    s = s.replace(/([←-⇿⬀-⯿➡]️?\s*)([NSEW]{1,3})(\d{1,3})(?:G(\d{1,3}))?(?=[\s|,;]|$)/g, (m, fl, d, v, g) => DIR[d] ? `${fl}${DIR[d]} ${kmh(+v)} km/h${g ? ` (rafales ${kmh(+g)} km/h)` : ""}` : m);
+    s = s.replace(/\bH\s*:\s*(-?\d+(?:\.\d+)?)\s*°\s*F\b/gi, (m, v) => `max ${c(+v)} °C`);
+    s = s.replace(/\bL\s*:\s*(-?\d+(?:\.\d+)?)\s*°\s*F\b/gi, (m, v) => `min ${c(+v)} °C`);
+    s = s.replace(/(-?\d+(?:\.\d+)?)\s*°\s*F\b/g, (m, v) => `${c(+v)} °C`);
+    s = s.replace(/(\d+(?:\.\d+)?)\s*mph\b/gi, (m, v) => `${kmh(+v)} km/h`);
+    s = s.replace(/(\d+(?:\.\d+)?)\s*inHg\b/gi, (m, v) => `${Math.round(+v * 33.8639)} hPa`);
+    s = s.replace(/(\d+(?:\.\d+)?)\s*(?:in|")(?=[\s|,;)]|$)/g, (m, v) => `${n(+v * 25.4, 1)} mm`);
+    s = s.replace(/(\d+(?:\.\d+)?)\s*mi\b/gi, (m, v) => `${n(+v * 1.609344, +v < 6 ? 1 : 0)} km`);
+    s = s.replace(/(\d+(?:\.\d+)?)\s*ft\b/gi, (m, v) => `${n(+v * 0.3048)} m`);
+    s = s.replace(/(\d+)\s*%\s*RH\b/gi, "$1 % HR");
+    s = s.replace(/(\d+(?:\.\d+)?)\s*hPa\b/g, (m, v) => `${n(+v)} hPa`);
+    // nombres décimaux restants des valeurs converties : virgule française
+    s = s.replace(/(\d)\.(\d)(?=\d*\s*(?:°C|km|mm|m\b|hPa))/g, "$1,$2");
+    s = s.replace(/\bTonight\b/g, "Ce soir").replace(/\bToday\b/g, "Aujourd'hui").replace(/\bTomorrow\b/g, "Demain");
+    return s;
+  }
+  const txtMsg = m => m.sens === "recu" ? esc(unitesFr(m.texte)) : esc(m.texte);
   /* ---------- liste triable des contacts ---------- */
   let ctListe = [], ctType = "tous", ctTri = "annonce";
   const CT_TYPES = [["tous","Tous"],["repeteur","Répéteurs"],["compagnon","Compagnons"],["salon","Salons"],["capteur","Capteurs"]];
@@ -1428,7 +1453,7 @@ header.top .hright{grid-column:1 / -1}
     if (!emis && !cleChemin && liaison.connecte && (m.auteur || m.contact)) $("#mdetActs").insertAdjacentHTML("afterbegin", `<button class="btn small" data-ajoutnom="${esc(m.auteur || m.contact)}" title="Ajouter ${esc(m.auteur || m.contact)} à vos contacts (et à vos amis) pour lui écrire en privé">+ Ajouter aux contacts</button>`);
     if (cleChemin && liaison.connecte) $("#mdetActs").insertAdjacentHTML("beforeend", `<button class="btn small" data-cheminedit="${esc(cleChemin)}" title="Choisir vous-même les relais par lesquels passent les messages directs vers ce contact">Définir le chemin…</button>`);
     const auteur = emis ? (d.moi.nom + " (nous)") : (m.auteur || m.contact || "Inconnu");
-    let html = `<div class="mdet-txt">${esc(m.texte)}</div>
+    let html = `<div class="mdet-txt">${txtMsg(m)}</div>${m.sens === "recu" && unitesFr(m.texte) !== m.texte ? `<div class="reading">Texte d'origine : ${esc(m.texte)}</div>` : ""}
       <dl class="mdet-kv"><dt>De</dt><dd><b>${esc(auteur)}</b>${d.auteur.source && !emis ? ` <span class="muted">· ${esc(d.auteur.source)}</span>` : ""}</dd>
       <dt>${canal ? "Canal" : "À"}</dt><dd>${canal ? esc(diese(m.canal_nom)) : esc(emis ? (m.contact || "") : d.moi.nom)}</dd>
       <dt>Date</dt><dd>${fmtDate(m.date)}</dd>
@@ -2073,7 +2098,7 @@ const HOT_MIN = 360; // 6 heures
           <ul class="apatt">${appel.attendus.map(x => `<li title="${esc(x.auteur ? "Réponse de " + x.auteur : "")}">${x.repondu ? `<span class="statut-ok">✓</span> <b>${esc(x.nom)}</b> <span class="muted">${hmTs(x.ts)}</span>` : `<span class="muted">⏳ ${esc(x.nom)}${appel.enCours ? "" : " — sans réponse"}</span>`}</li>`).join("")}</ul>` : ""}
         ${(() => { const l = (appel.attendus||[]).length ? (appel.autres||[]) : appel.reponses; return l.length ? `${(appel.attendus||[]).length ? `<span class="muted">Autres réponses</span>` : ""}<ol>${l.map(r => `<li><b>${esc(r.auteur)}</b> à ${hmTs(r.ts)}${r.snr!=null?` · SNR ${fmtSnr(+r.snr)}`:""}${r.sauts!=null?` · ${r.sauts} saut(s)`:""} <span class="muted">— ${esc(r.texte)}</span></li>`).join("")}</ol>` : ((appel.attendus||[]).length ? "" : `<span class="muted">En attente des réponses…</span>`); })()}`;
     } else ab.hidden = true;
-    box.innerHTML = list.length ? list.map(m => `<div class="msg${m.sens==="emis"?" out":""}" data-msgid="${m.id}" title="Cliquer pour voir le parcours du message"><button class="del" data-msgdel="${m.id}" title="Supprimer ce message" aria-label="Supprimer ce message">×</button>${m.sens==="recu" && m.auteur ? `<span class="who">${esc(m.auteur)}</span>` : ""}<span>${esc(m.texte)}</span>
+    box.innerHTML = list.length ? list.map(m => `<div class="msg${m.sens==="emis"?" out":""}" data-msgid="${m.id}" title="Cliquer pour voir le parcours du message"><button class="del" data-msgdel="${m.id}" title="Supprimer ce message" aria-label="Supprimer ce message">×</button>${m.sens==="recu" && m.auteur ? `<span class="who">${esc(m.auteur)}</span>` : ""}<span>${txtMsg(m)}</span>
       <span class="meta"><span>${fmtDate(m.date)}</span>${m.snr!=null?`<span>SNR ${fmtSnr(+m.snr)}</span>`:""}${m.sauts!=null?`<span>${m.sauts} saut(s)</span>`:""}${m.echos ? (m.echos.directs ? `${(m.livreA||[]).length ? `<span class="livre" title="${esc(m.livreA.join(", "))} a écrit sur le canal après ce message">✓✓ livré à ${esc(m.livreA.join(", "))}</span>` : `<span class="livre" title="Le message a été relayé sur le réseau">✓ livré</span>`}<span class="statut-ok" title="Relayé par : ${esc(m.echos.noms.join(", "))}${m.echos.relais > m.echos.directs ? ` · ${m.echos.relais} relais au total sur ${m.echos.echos} écho(s) entendus` : ""}">reçu par ${m.echos.directs} répéteur${m.echos.directs > 1 ? "s" : ""}</span>` : `<span class="muted" title="Le nœud companion n'a pas encore entendu de répéteur relayer ce message">${m.echos.attente ? "envoyé, écoute des répéteurs…" : "envoyé · aucun relais entendu"}</span>`)
   : (m.statut ? (/reçu ✓/.test(m.statut) ? `<span class="livre" title="Accusé de réception reçu du destinataire">✓✓ livré</span>` : `<span class="${/✓/.test(m.statut) ? "statut-ok" : /✗|échec/.test(m.statut) ? "statut-ko" : ""}">${esc(m.statut)}</span>`) : "")}${m.sens==="emis" && /✗|échec/.test(m.statut||"") ? `<button class="btn small" data-renvoyer="${m.id}" style="padding:0 8px;font-size:.72rem">Renvoyer</button>` : ""}</span></div>`).join("")
       : `<div class="empty">${liaison.connecte ? "Aucun message pour l'instant." : "Connectez le nœud companion pour recevoir et envoyer des messages."}</div>`;
@@ -2267,7 +2292,7 @@ const HOT_MIN = 360; // 6 heures
     const chan = (liaison.canaux || []).find(c => norm(c.nom) === "adrasec06") || (liaison.canaux || []).find(c => norm(c.nom).includes("adrasec06"));
     const adr = messages.filter(m => m.canal != null && (chan ? m.canal === chan.index : norm(m.canal_nom).includes("adrasec06")));
     $("#crMsgTitle").textContent = diese(chan ? chan.nom : "ADRASEC 06") + (appel && appel.enCours ? ` · appel en cours : ${appel.reponses.length} réponse(s) (${appel.reponses.map(r => r.auteur).join(", ")})` : "");
-    $("#crMsgs").innerHTML = adr.slice(-10).reverse().map(m => `<div data-msgid="${m.id}" title="Cliquer pour voir le parcours"><span class="meta">${fmtDate(m.date)}</span><div>${m.sens==="recu" && m.auteur ? `<b>${esc(m.auteur)}</b> : ` : (m.sens==="emis" ? "<b>Nous</b> : " : "")}${esc(m.texte)}</div></div>`).join("")
+    $("#crMsgs").innerHTML = adr.slice(-10).reverse().map(m => `<div data-msgid="${m.id}" title="Cliquer pour voir le parcours"><span class="meta">${fmtDate(m.date)}</span><div>${m.sens==="recu" && m.auteur ? `<b>${esc(m.auteur)}</b> : ` : (m.sens==="emis" ? "<b>Nous</b> : " : "")}${txtMsg(m)}</div></div>`).join("")
       || `<span class="muted">${chan || adr.length ? "Aucun message sur ce canal pour l'instant." : "Le canal ADRASEC 06 n'est pas configuré sur le nœud companion (ajoutez-le dans l'application MeshCore)."}</span>`;
     if (crMap) {
       crLayer.clearLayers();

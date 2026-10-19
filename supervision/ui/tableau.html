@@ -63,6 +63,31 @@ footer{margin-top:16px;font-size:.78rem;color:var(--muted)}
 <footer>Page mise à jour toutes les 10 s depuis le PC de supervision. Aucune commande n'est possible depuis cette page.</footer>
 <script src="/leaflet/leaflet.js"></script>
 <script>
+  /* conversion des unités étrangères des messages reçus (°F, mph, mi, in…) en unités françaises */
+  function unitesFr(t){
+    let s = String(t || "");
+    const n = (v, d=0) => Number(v).toLocaleString("fr-FR", {maximumFractionDigits:d});
+    const c = f => Math.round((f - 32) * 5 / 9);
+    const kmh = v => Math.round(v * 1.609344);
+    const DIR = {N:"N",S:"S",E:"E",W:"O",NE:"NE",NW:"NO",SE:"SE",SW:"SO",NNE:"NNE",ENE:"ENE",ESE:"ESE",SSE:"SSE",SSW:"SSO",WSW:"OSO",WNW:"ONO",NNW:"NNO"};
+    // vent après une flèche : « ➡️ E6G14 » = vent d'est 6 mph, rafales 14 mph
+    s = s.replace(/([←-⇿⬀-⯿➡]️?\s*)([NSEW]{1,3})(\d{1,3})(?:G(\d{1,3}))?(?=[\s|,;]|$)/g, (m, fl, d, v, g) => DIR[d] ? `${fl}${DIR[d]} ${kmh(+v)} km/h${g ? ` (rafales ${kmh(+g)} km/h)` : ""}` : m);
+    s = s.replace(/\bH\s*:\s*(-?\d+(?:\.\d+)?)\s*°\s*F\b/gi, (m, v) => `max ${c(+v)} °C`);
+    s = s.replace(/\bL\s*:\s*(-?\d+(?:\.\d+)?)\s*°\s*F\b/gi, (m, v) => `min ${c(+v)} °C`);
+    s = s.replace(/(-?\d+(?:\.\d+)?)\s*°\s*F\b/g, (m, v) => `${c(+v)} °C`);
+    s = s.replace(/(\d+(?:\.\d+)?)\s*mph\b/gi, (m, v) => `${kmh(+v)} km/h`);
+    s = s.replace(/(\d+(?:\.\d+)?)\s*inHg\b/gi, (m, v) => `${Math.round(+v * 33.8639)} hPa`);
+    s = s.replace(/(\d+(?:\.\d+)?)\s*(?:in|")(?=[\s|,;)]|$)/g, (m, v) => `${n(+v * 25.4, 1)} mm`);
+    s = s.replace(/(\d+(?:\.\d+)?)\s*mi\b/gi, (m, v) => `${n(+v * 1.609344, +v < 6 ? 1 : 0)} km`);
+    s = s.replace(/(\d+(?:\.\d+)?)\s*ft\b/gi, (m, v) => `${n(+v * 0.3048)} m`);
+    s = s.replace(/(\d+)\s*%\s*RH\b/gi, "$1 % HR");
+    s = s.replace(/(\d+(?:\.\d+)?)\s*hPa\b/g, (m, v) => `${n(+v)} hPa`);
+    // nombres décimaux restants des valeurs converties : virgule française
+    s = s.replace(/(\d)\.(\d)(?=\d*\s*(?:°C|km|mm|m\b|hPa))/g, "$1,$2");
+    s = s.replace(/\bTonight\b/g, "Ce soir").replace(/\bToday\b/g, "Aujourd'hui").replace(/\bTomorrow\b/g, "Demain");
+    return s;
+  }
+
 (() => {
   const $ = s => document.querySelector(s);
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -128,7 +153,7 @@ footer{margin-top:16px;font-size:.78rem;color:var(--muted)}
     }).join("") || `<span class="muted">Aucun répéteur ADRASEC.</span>`;
     $("#alertes").innerHTML = (d.alertes || []).map(a => `<div class="${a.niveau === "critique" ? "crit" : a.niveau === "attention" ? "att" : ""}"><span class="m">${fmt(a.date)}</span><br>${esc(a.texte)}</div>`).join("") || `<span class="muted">Aucune alerte.</span>`;
     $("#canalTitre").textContent = d.canal ? (d.canal.startsWith("#") ? d.canal : "#" + d.canal) : "#ADRASEC 06";
-    $("#msgs").innerHTML = (d.messages || []).map(m => `<div><span class="m">${fmt(m.date)}</span><br><b>${esc(m.sens === "emis" ? "PC" : (m.auteur || "?"))}</b> : ${esc(m.texte)}</div>`).join("") || `<span class="muted">Aucun message.</span>`;
+    $("#msgs").innerHTML = (d.messages || []).map(m => `<div><span class="m">${fmt(m.date)}</span><br><b>${esc(m.sens === "emis" ? "PC" : (m.auteur || "?"))}</b> : ${esc(m.sens === "recu" ? unitesFr(m.texte) : m.texte)}</div>`).join("") || `<span class="muted">Aucun message.</span>`;
     const a = d.appel;
     $("#appelBox").hidden = !(a && a.enCours);
     if (a && a.enCours) $("#appel").innerHTML = `<span class="muted">Lancé à ${hm(a.debut)} · ${a.reponses.length} réponse(s)</span><ol>${a.reponses.map(r => `<li><b>${esc(r.auteur)}</b> à ${hm(r.ts)}</li>`).join("")}</ol>`;
