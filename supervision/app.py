@@ -17,7 +17,7 @@ from . import aprs, courriel, rapports, resilience, systeme, taches, visibilite,
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.20.3"
+VERSION = "1.20.4"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -535,6 +535,9 @@ class Api:
         r = self._poller.console(node_id, cmd, self._store.get_config("operateur", ""))
         self._noter_requete(node_id, "console " + (cmd or "").strip(), r)
         return r
+
+    def console_annuler(self):
+        return self._poller.console_annuler()
 
     def commande(self, node_id, cmd):
         r = self._poller.commande(node_id, cmd, self._store.get_config("operateur", ""))

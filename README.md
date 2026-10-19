@@ -161,6 +161,10 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 - **Companions amis** : bouton « + Ami » (Messagerie → Messages directs) pour ajouter un companion à partir de sa carte de contact « meshcore://… » ou de sa clé publique complète + son nom ; bouton « ☆ Ajouter aux amis / ★ Ami » dans chaque conversation directe ; les amis sont en tête de liste et repérés en doré sur la carte.
 - **Découvrir les voisins** dans la fiche d'un répéteur (commande discover.neighbors), console distante, étalonnage de la batterie du companion.
 
+### Nouveautés de la version 1.20.4
+
+- Console distante : suivi en direct de l'attente (secondes écoulées et étape en cours), bouton « Annuler », message clair si une commande est déjà en cours ; « neighbors » lu par la requête dédiée (la réponse texte était trop longue).
+
 ### Nouveautés de la version 1.20.3
 
 - Messages reçus affichés en unités françaises : °F → °C, mph → km/h, miles → km, pouces → mm, pieds → m, inHg → hPa, vent « E6G14 » → « E 10 km/h (rafales 23 km/h) », H/L → max/min. Le texte d'origine reste visible dans le détail du message.

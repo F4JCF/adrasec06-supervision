@@ -10,6 +10,7 @@ répéteur ADRASEC, se connecte avec le mot de passe administrateur et demande :
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import logging
 import math
 import hashlib
@@ -98,6 +99,7 @@ class Poller:
         return {
             "bibliotheque": MeshCore is not None,
             "connecte": self.mc is not None,
+            "consoleEtape": getattr(self, "console_etape", ""),
             "port": self.port,
             "mode": self.mode,
             "noeudLocal": self.local_name,
@@ -1139,16 +1141,38 @@ class Poller:
         if cmd.lower() in ("reboot", "poweroff", "shutdown"):
             return self.commande(node_id, "poweroff" if cmd.lower() == "shutdown" else cmd.lower(), operateur)
         self.prioritaire += 1
+        fut = self._submit(self._console(node, cmd, operateur))
+        self._console_fut = fut
         try:
-            return self._submit(self._console(node, cmd, operateur), timeout=120)
+            return fut.result(300)
+        except concurrent.futures.CancelledError:
+            return {"ok": False, "erreur": "Commande annulée."}
+        except concurrent.futures.TimeoutError:
+            fut.cancel()
+            return {"ok": False, "erreur": "Pas de réponse au bout de 5 minutes : commande abandonnée."}
         except Exception as e:  # noqa: BLE001
             return {"ok": False, "erreur": f"Commande impossible : {e}"}
         finally:
+            self._console_fut = None
             self.prioritaire = max(0, self.prioritaire - 1)
+            self.console_etape = ""
+
+    def console_annuler(self) -> dict:
+        fut = getattr(self, "_console_fut", None)
+        if fut is None or fut.done():
+            return {"ok": False, "erreur": "Aucune commande en cours."}
+        fut.cancel()
+        return {"ok": True}
+
+    def _etape(self, txt: str):
+        self.console_etape = txt
+        self.store._bump()
 
     async def _console(self, node: dict, cmd: str, operateur: str) -> dict:
+        if self.busy:
+            self._etape("attente de la fin de l'interrogation automatique du répéteur en cours (jusqu'à 2 min 30)")
         if not await self._attendre_la_main("Console distante"):
-            return {"ok": False, "erreur": "L'interrogation en cours ne s'est pas terminée à temps. Réessayez."}
+            return {"ok": False, "erreur": "L'interrogation automatique en cours ne s'est pas terminée à temps. Réessayez."}
         name = node.get("nom", "")
         contact = self._contact_for(name)
         if contact is None:
@@ -1162,17 +1186,47 @@ class Poller:
         sessions = getattr(self, "_sessions_console", {})
         self._sessions_console = sessions
         if time.time() - sessions.get(node["id"], 0) > 120:  # reconnexion admin toutes les 2 minutes au plus
+            self._etape(f"connexion admin à {name}…")
             login = await self.mc.commands.send_login_sync(contact, self.store.password(node["id"]), min_timeout=8)
             if not (login and login.type == EventType.LOGIN_SUCCESS):
                 sessions.pop(node["id"], None)
                 return {"ok": False, "erreur": f"Connexion admin refusée par {name} (mot de passe ou portée)."}
         sessions[node["id"]] = time.time()
-        reponse = await self._cli(contact, cmd, timeout=25)
-        if reponse is None:  # la session a peut-être expiré : une reconnexion et un 2e essai
-            login = await self.mc.commands.send_login_sync(contact, self.store.password(node["id"]), min_timeout=8)
-            if login and login.type == EventType.LOGIN_SUCCESS:
-                sessions[node["id"]] = time.time()
-                reponse = await self._cli(contact, cmd, timeout=25)
+        if cmd.strip().lower() in ("neighbors", "neighbours"):
+            # la liste des voisins est lue par la requête binaire dédiée : la réponse texte est souvent trop longue pour la radio
+            self._etape("lecture de la liste des voisins…")
+            nb = None
+            for _essai in range(2):
+                try:
+                    nb = await self.mc.commands.fetch_all_neighbours(contact, min_timeout=12)
+                except Exception:  # noqa: BLE001
+                    nb = None
+                if nb and isinstance(nb.get("neighbours"), list):
+                    break
+            if nb and isinstance(nb.get("neighbours"), list):
+                lignes = []
+                for v in sorted(nb["neighbours"], key=lambda x: x.get("secs_ago") or 0):
+                    s = v.get("secs_ago")
+                    quand = "" if s is None else (f"il y a {s} s" if s < 60 else f"il y a {s // 60} min" if s < 3600 else f"il y a {s // 3600} h")
+                    snr = v.get("snr")
+                    lignes.append(f"{self._name_for_prefix(v.get('pubkey', ''))}  SNR {snr:+.2f} dB  {quand}" if isinstance(snr, (int, float))
+                                  else f"{self._name_for_prefix(v.get('pubkey', ''))}  {quand}")
+                reponse = f"{len(lignes)} voisin(s)\n" + "\n".join(lignes) if lignes else "Aucun voisin entendu."
+                self.store.patch_node(node["id"], {"voisins": [{"nom": self._name_for_prefix(v.get("pubkey", "")), "snr": v.get("snr"),
+                                                                "ilYa": v.get("secs_ago")} for v in nb["neighbours"]]})
+            else:
+                reponse = None
+        else:
+            self._etape("commande envoyée, attente de la réponse du nœud…")
+            reponse = await self._cli(contact, cmd, timeout=25)
+            if reponse is None:  # la session a peut-être expiré : une reconnexion et un 2e essai
+                self._etape("pas de réponse : reconnexion admin et 2e essai…")
+                login = await self.mc.commands.send_login_sync(contact, self.store.password(node["id"]), min_timeout=8)
+                if login and login.type == EventType.LOGIN_SUCCESS:
+                    sessions[node["id"]] = time.time()
+                    reponse = await self._cli(contact, cmd, timeout=25)
+                else:
+                    sessions.pop(node["id"], None)
         duree = round(time.time() - t0, 1)
         histo = list(node.get("console") or [])[-49:]
         histo.append({"date": now_iso(), "cmd": cmd, "reponse": reponse, "operateur": operateur or ""})

@@ -1267,16 +1267,18 @@ header.top .hright{grid-column:1 / -1}
     $("#coCmd").value = ""; $("#coCmd").focus();
   }
   async function coEnvoyer(cmd){
-    cmd = (cmd || "").trim(); if (!cmd || coBusy || !coNode) return;
+    cmd = (cmd || "").trim(); if (!cmd || !coNode) return;
+    if (coBusy) { coLigne("e", `Une commande est déjà en cours : attendez sa réponse ou cliquez sur « Annuler ».`); return; }
     if (CO_SENSIBLES.test(cmd) && coAttente !== cmd) { coAttente = cmd; coLigne("e", `« ${cmd} » est une commande sensible (modification, redémarrage, effacement…). Appuyez de nouveau sur Entrée pour confirmer.`); return; }
-    coAttente = null; coBusy = true; $("#coGo").disabled = true;
-    coLigne("c", "> " + cmd); coLigne("i", "… envoi par radio");
+    coAttente = null; coBusy = true; $("#coGo").textContent = "Annuler"; $("#coGo").classList.remove("primary");
+    coLigne("c", "> " + cmd); coLigne("i co-att", "… envoi par radio");
+    const t0 = Date.now(), minu = setInterval(() => { const l = $("#coTerm .co-att"); if (l) l.textContent = `… ${Math.round((Date.now() - t0) / 1000)} s · ${liaison.consoleEtape || "envoi par radio"}`; }, 1000);
     coHisto = coHisto.filter(x => x !== cmd).concat(cmd); coPos = coHisto.length; $("#coCmd").value = "";
     let r; try { r = await api.console(coNode.id, cmd); } catch(e) { r = {ok:false, erreur:String(e)}; }
-    const t = $("#coTerm"); if (t.lastElementChild && t.lastElementChild.textContent === "… envoi par radio") t.lastElementChild.remove();
+    clearInterval(minu); const att = $("#coTerm .co-att"); if (att) att.remove();
     if (r.ok) coLigne("", (r.reponse || r.message || "(réponse vide)") + (r.duree ? `` : "")); else coLigne("e", r.erreur || r.message || "Échec");
     if (r.duree) coLigne("i", `(${fmtNum(r.duree, 1)} s)`);
-    coBusy = false; $("#coGo").disabled = false; $("#coCmd").focus();
+    coBusy = false; $("#coGo").textContent = "Envoyer"; $("#coGo").classList.add("primary"); $("#coCmd").focus();
   }
   /* ---------- analyse du nœud companion ---------- */
   let compBusy = false;
@@ -2746,7 +2748,7 @@ const HOT_MIN = 360; // 6 heures
       await api.mc_suite(+e.target.dataset.suiteform, $("#suiteTxt").value, clore); suiteFor = null; refresh(true);
       return;
     }
-    if (e.target.id === "coForm") { coEnvoyer($("#coCmd").value); return; }
+    if (e.target.id === "coForm") { if (coBusy && document.activeElement && document.activeElement.id === "coGo" || coBusy && e.submitter && e.submitter.id === "coGo") { const r = await api.console_annuler(); if (!r.ok) coLigne("e", r.erreur); return; } coEnvoyer($("#coCmd").value); return; }
     if (e.target.id === "cadreForm") {
       await api.modifier_exercice(exercice.id, {nom: $("#cdNom").value.trim() || exercice.nom, lieu: $("#cdLieu").value, autorite: $("#cdAutorite").value, description: $("#cdDesc").value, signataire: $("#cdSign").value});
       $("#mcCadre").hidden = true; toast("Cadre enregistré"); refresh(true);
