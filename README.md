@@ -161,6 +161,10 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 - **Companions amis** : bouton « + Ami » (Messagerie → Messages directs) pour ajouter un companion à partir de sa carte de contact « meshcore://… » ou de sa clé publique complète + son nom ; bouton « ☆ Ajouter aux amis / ★ Ami » dans chaque conversation directe ; les amis sont en tête de liste et repérés en doré sur la carte.
 - **Découvrir les voisins** dans la fiche d'un répéteur (commande discover.neighbors), console distante, étalonnage de la batterie du companion.
 
+### Nouveautés de la version 1.20.6
+
+- Console distante : chaque étape est affichée et notée dans supervision.log, délais maximum sur chaque échange, détection d'une liaison bloquée avec le nœud companion.
+
 ### Nouveautés de la version 1.20.5
 
 - Ligne à vue : correction de l'erreur « math domain error » (arrondi au dernier point du profil).

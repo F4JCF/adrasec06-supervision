@@ -66,6 +66,9 @@ class Poller:
         self.loop = asyncio.new_event_loop()
         self.thread = threading.Thread(target=self._run_loop, name="meshcore", daemon=True)
         self.thread.start()
+        self._battement = time.time()
+        self.console_etape = ""
+        asyncio.run_coroutine_threadsafe(self._coeur(), self.loop)
         self.mc = None
         self.port = None
         self.mode = None
@@ -85,6 +88,12 @@ class Poller:
         asyncio.set_event_loop(self.loop)
         self.loop.run_forever()
 
+    async def _coeur(self):
+        """Battement toutes les 2 s : s'il s'arrête, la boucle de la liaison radio est bloquée."""
+        while True:
+            self._battement = time.time()
+            await asyncio.sleep(2)
+
     def _submit(self, coro, timeout=None):
         fut = asyncio.run_coroutine_threadsafe(coro, self.loop)
         return fut.result(timeout) if timeout else fut
@@ -100,6 +109,7 @@ class Poller:
             "bibliotheque": MeshCore is not None,
             "connecte": self.mc is not None,
             "consoleEtape": getattr(self, "console_etape", ""),
+            "boucleBloquee": round(time.time() - getattr(self, "_battement", time.time())) if time.time() - getattr(self, "_battement", time.time()) > 15 else 0,
             "port": self.port,
             "mode": self.mode,
             "noeudLocal": self.local_name,
@@ -1141,6 +1151,8 @@ class Poller:
         if cmd.lower() in ("reboot", "poweroff", "shutdown"):
             return self.commande(node_id, "poweroff" if cmd.lower() == "shutdown" else cmd.lower(), operateur)
         self.prioritaire += 1
+        self.console_etape = "en file d'attente de la liaison radio…"
+        log.info("Console %s : « %s » demandée", node.get("nom"), cmd)
         fut = self._submit(self._console(node, cmd, operateur))
         self._console_fut = fut
         try:
@@ -1166,9 +1178,11 @@ class Poller:
 
     def _etape(self, txt: str):
         self.console_etape = txt
+        log.info("Console : %s", txt)
         self.store._bump()
 
     async def _console(self, node: dict, cmd: str, operateur: str) -> dict:
+        self._etape("préparation…")
         if self.busy:
             self._etape("attente de la fin de l'interrogation automatique du répéteur en cours (jusqu'à 2 min 30)")
         if not await self._attendre_la_main("Console distante"):
@@ -1176,7 +1190,11 @@ class Poller:
         name = node.get("nom", "")
         contact = self._contact_for(name)
         if contact is None:
-            res = await self.mc.commands.get_contacts()
+            self._etape(f"{name} absent des contacts : relecture des contacts du nœud companion…")
+            try:
+                res = await asyncio.wait_for(self.mc.commands.get_contacts(), 45)
+            except asyncio.TimeoutError:
+                res = None
             if res is not None and res.type != EventType.ERROR:
                 self._contacts = dict(res.payload or {})
             contact = self._contact_for(name)
@@ -1187,7 +1205,7 @@ class Poller:
         self._sessions_console = sessions
         if time.time() - sessions.get(node["id"], 0) > 120:  # reconnexion admin toutes les 2 minutes au plus
             self._etape(f"connexion admin à {name}…")
-            login = await self.mc.commands.send_login_sync(contact, self.store.password(node["id"]), min_timeout=8)
+            login = await self._login_console(contact, node)
             if not (login and login.type == EventType.LOGIN_SUCCESS):
                 sessions.pop(node["id"], None)
                 return {"ok": False, "erreur": f"Connexion admin refusée par {name} (mot de passe ou portée)."}
@@ -1221,7 +1239,7 @@ class Poller:
             reponse = await self._cli(contact, cmd, timeout=25)
             if reponse is None:  # la session a peut-être expiré : une reconnexion et un 2e essai
                 self._etape("pas de réponse : reconnexion admin et 2e essai…")
-                login = await self.mc.commands.send_login_sync(contact, self.store.password(node["id"]), min_timeout=8)
+                login = await self._login_console(contact, node)
                 if login and login.type == EventType.LOGIN_SUCCESS:
                     sessions[node["id"]] = time.time()
                     reponse = await self._cli(contact, cmd, timeout=25)
@@ -1241,6 +1259,13 @@ class Poller:
                 self.store.patch_node(node["id"], {"firmware": "v" + m.group(1)})
         return {"ok": reponse is not None, "reponse": reponse or "", "duree": duree,
                 **({} if reponse is not None else {"erreur": "Pas de réponse du nœud (portée, ou commande inconnue)."})}
+
+    async def _login_console(self, contact, node):
+        try:
+            return await asyncio.wait_for(self.mc.commands.send_login_sync(contact, self.store.password(node["id"]), min_timeout=8), 40)
+        except asyncio.TimeoutError:
+            log.warning("Console : connexion admin sans réponse (%s)", node.get("nom"))
+            return None
 
     # ---------- réinitialisation du chemin ----------
     def reinit_chemin(self, node_id: str, operateur: str = "") -> dict:

@@ -1272,7 +1272,7 @@ header.top .hright{grid-column:1 / -1}
     if (CO_SENSIBLES.test(cmd) && coAttente !== cmd) { coAttente = cmd; coLigne("e", `« ${cmd} » est une commande sensible (modification, redémarrage, effacement…). Appuyez de nouveau sur Entrée pour confirmer.`); return; }
     coAttente = null; coBusy = true; $("#coGo").textContent = "Annuler"; $("#coGo").classList.remove("primary");
     coLigne("c", "> " + cmd); coLigne("i co-att", "… envoi par radio");
-    const t0 = Date.now(), minu = setInterval(() => { const l = $("#coTerm .co-att"); if (l) l.textContent = `… ${Math.round((Date.now() - t0) / 1000)} s · ${liaison.consoleEtape || "envoi par radio"}`; }, 1000);
+    const t0 = Date.now(), minu = setInterval(() => { const l = $("#coTerm .co-att"); if (l) l.textContent = `… ${Math.round((Date.now() - t0) / 1000)} s · ${liaison.boucleBloquee ? `⚠ la liaison avec le nœud companion ne répond plus depuis ${liaison.boucleBloquee} s (Bluetooth ?) : Annuler, puis Déconnecter / Connecter` : (liaison.consoleEtape || "envoi par radio")}`; refresh(true); }, 1000);
     coHisto = coHisto.filter(x => x !== cmd).concat(cmd); coPos = coHisto.length; $("#coCmd").value = "";
     let r; try { r = await api.console(coNode.id, cmd); } catch(e) { r = {ok:false, erreur:String(e)}; }
     clearInterval(minu); const att = $("#coTerm .co-att"); if (att) att.remove();
