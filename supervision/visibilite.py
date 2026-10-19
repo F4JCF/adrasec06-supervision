@@ -25,7 +25,7 @@ def distance_m(lat1, lon1, lat2, lon2) -> float:
     p1, p2 = math.radians(lat1), math.radians(lat2)
     dp, dl = p2 - p1, math.radians(lon2 - lon1)
     a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
-    return 2 * R_TERRE * math.asin(math.sqrt(a))
+    return 2 * R_TERRE * math.asin(math.sqrt(min(1.0, max(0.0, a))))
 
 
 def altitudes(points: list[tuple[float, float]]) -> list[float]:
@@ -56,10 +56,11 @@ def profil(lat1, lon1, h1, lat2, lon2, h2) -> dict:
     pire, pire_i = math.inf, None
     for i, e in enumerate(sol):
         d = D * i / (N_POINTS - 1)
-        bombe = d * (D - d) / (2 * re)
+        reste = max(0.0, D - d)  # évite un nombre négatif minuscule au dernier point (arrondi)
+        bombe = d * reste / (2 * re)
         t = e + bombe
         l = a1 + (a2 - a1) * d / D if D else a1
-        r1 = math.sqrt(LAMBDA * d * (D - d) / D) if D else 0
+        r1 = math.sqrt(max(0.0, LAMBDA * d * reste / D)) if D else 0
         dist.append(round(d / 1000, 3))
         terrain.append(round(t, 1))
         ligne.append(round(l, 1))

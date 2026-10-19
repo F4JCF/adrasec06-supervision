@@ -17,7 +17,7 @@ from . import aprs, courriel, rapports, resilience, systeme, taches, visibilite,
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.20.4"
+VERSION = "1.20.5"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -705,8 +705,14 @@ class Api:
         for d, n, nla, nlo in cibles[:40]:
             try:
                 p = visibilite.profil(lat, lon, h_ici, nla, nlo, h_rep)
+            except (OSError, ValueError, RuntimeError) as e:
+                if isinstance(e, ValueError) and not isinstance(e, UnicodeError) and "domain" in str(e):
+                    logging.getLogger("supervision").exception("ligne à vue %s", n.get("nom"))
+                    continue
+                return {"ok": False, "erreur": f"Altitudes du terrain indisponibles (service Open-Meteo injoignable) : {e}"}
             except Exception as e:  # noqa: BLE001
-                return {"ok": False, "erreur": f"Altitudes du terrain indisponibles (connexion Internet nécessaire) : {e}"}
+                logging.getLogger("supervision").exception("ligne à vue %s", n.get("nom"))
+                continue
             out.append({"id": n.get("id"), "nom": n.get("nom"), "externe": n.get("proprio") == "externe",
                         "lat": nla, "lon": nlo, **p})
         return {"ok": True, "lat": lat, "lon": lon, "hIci": h_ici, "hRep": h_rep, "resultats": out}
