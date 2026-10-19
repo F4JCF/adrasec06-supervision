@@ -1711,6 +1711,8 @@ const HOT_MIN = 360; // 6 heures
       <dl>
         ${row("Propriétaire", proprietaireHtml(n))}
         ${row("Distance", distanceHtml(n))}
+        ${row("Position", positionHtml(n))}
+        ${row("Clé publique", n.cleComplete ? `<span class="mono" style="font-size:.8rem;word-break:break-all">${esc(n.cleComplete)}</span> <button class="btn small" type="button" data-copie="${esc(n.cleComplete)}">Copier</button>` : n.cle ? `<span class="mono">${esc(n.cle)}…</span> <span class="muted">(clé complète lue à la prochaine annonce entendue)</span>` : "")}
         ${row("Rôle", esc(ROLES[n.role]||n.role))}
         ${row("Site", esc([n.site,n.commune].filter(Boolean).join(" · ")) + (!empty(n.alt) ? ` <span class="muted">(${fmtNum(n.alt)} m)</span>` : ""))}
         ${row("Matériel", esc(n.materiel))}
@@ -1772,6 +1774,19 @@ const HOT_MIN = 360; // 6 heures
     const a = n.maj ? new Date(n.maj).getTime() : 0, b = n.dernierAdvert ? new Date(n.dernierAdvert).getTime() : 0;
     if (!a && !b) return null;
     return a >= b ? {date: n.maj, lu: true} : {date: n.dernierAdvert, lu: false};
+  }
+  function positionHtml(n){
+    const f = (la, lo) => `${(+la).toFixed(5)}, ${(+lo).toFixed(5)}`;
+    const ecart = (la, lo) => { if (empty(la) || empty(lo) || !hasPos(n)) return null; const r = x => x * Math.PI / 180;
+      return 6371000 * 2 * Math.asin(Math.sqrt(Math.sin(r(la - n.lat)/2)**2 + Math.cos(r(+n.lat)) * Math.cos(r(+la)) * Math.sin(r(lo - n.lon)/2)**2)); };
+    const lignes = [];
+    lignes.push(hasPos(n) ? `<span class="mono">${f(n.lat, n.lon)}</span> <span class="muted">sur la carte${n.posManuelle ? " · saisie à la main" : ""}</span>` : `<span class="muted">aucune position sur la carte</span>`);
+    [["gps", "GPS (télémétrie)", n.latGps, n.lonGps, n.posGpsDate], ["annonce", "annoncée par le nœud", n.latAnnonce, n.lonAnnonce, n.posAnnonceDate]].forEach(([k, lib, la, lo, d]) => {
+      if (empty(la) || empty(lo)) return;
+      const e = ecart(+la, +lo), diff = e == null || e > 50;
+      lignes.push(`<span class="mono">${f(la, lo)}</span> <span class="muted">${lib}${d ? " · " + ago(d) : ""}</span>` + (diff ? ` <span style="color:var(--warn)">${e != null ? `écart ${e < 1000 ? Math.round(e) + " m" : fmtNum(e/1000, 1) + " km"}` : ""}</span> <button class="btn small" type="button" data-usepos="${esc(n.id)}" data-src="${k}">Placer sur la carte ici</button>` : ` <span style="color:var(--ok)">✓</span>`));
+    });
+    return lignes.join("<br>");
   }
   function distanceHtml(n){
     if (!hasPos(n)) return `<span class="muted">position du nœud inconnue</span>`;
@@ -2403,6 +2418,8 @@ const HOT_MIN = 360; // 6 heures
       if (r.ok) { toast(r.message); fermerDetail(); tab = "messages"; conv = "d:" + r.cle.slice(0,12); lastMsgCount = -2; refresh(true); return; }
       if (r.inconnu) { fermerDetail(); $("#mami").hidden = false; $("#amiTexte").value = ""; $("#amiNom").value = nom; $("#amiMsg").textContent = r.erreur; $("#amiTexte").focus(); return; }
       toast(r.erreur); return; }
+    const up = t.closest("[data-usepos]"); if (up) { const r = await api.utiliser_position(up.dataset.usepos, up.dataset.src); toast(r.ok ? "Position mise à jour sur la carte" : r.erreur); refresh(true); return; }
+    const cp = t.closest("[data-copie]"); if (cp) { try { await navigator.clipboard.writeText(cp.dataset.copie); toast("Clé copiée"); } catch(e) { const ta = document.createElement("textarea"); ta.value = cp.dataset.copie; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); toast("Clé copiée"); } return; }
     const ctb = t.closest("[data-contacts]"); if (ctb) { ouvrirContacts(ctb.dataset.contacts); return; }
     const ctt = t.closest("[data-cttype]"); if (ctt) { ctType = ctt.dataset.cttype; renderContacts(); return; }
     const cts = t.closest("[data-cttri]"); if (cts) { ctTri = cts.dataset.cttri; $("#ctTri").value = ctTri; renderContacts(); return; }

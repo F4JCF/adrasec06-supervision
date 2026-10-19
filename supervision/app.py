@@ -17,7 +17,7 @@ from . import aprs, courriel, rapports, resilience, systeme, taches, visibilite,
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.20.1"
+VERSION = "1.20.2"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -361,11 +361,26 @@ class Api:
             # conserve les champs remplis automatiquement que le formulaire ne montre pas
             for k, v in old.items():
                 doc.setdefault(k, v)
+            if "posManuelle" not in (doc.get("_pos") or {}) and (str(doc.get("lat")) != str(old.get("lat")) or str(doc.get("lon")) != str(old.get("lon"))):
+                doc["posManuelle"] = bool(str(doc.get("lat") or "").strip())
+        doc.pop("_pos", None)
         doc.pop("aMotDePasse", None)
         saved = self._store.save_node(doc)
         if mot_de_passe is not None:
             self._store.set_password(saved["id"], mot_de_passe)
         return {"ok": True, "id": saved["id"]}
+
+    def utiliser_position(self, node_id, source="gps"):
+        """Place le nœud sur la carte à la position GPS (télémétrie) ou annoncée, et reprend le suivi automatique."""
+        n = self._store.get_node(node_id)
+        if not n:
+            return {"ok": False, "erreur": "Nœud introuvable."}
+        la, lo = (n.get("latGps"), n.get("lonGps")) if source == "gps" else (n.get("latAnnonce"), n.get("lonAnnonce"))
+        if la in ("", None) or lo in ("", None):
+            return {"ok": False, "erreur": "Position inconnue pour ce nœud."}
+        n.update(lat=la, lon=lo, posManuelle=False)
+        self._store.save_node(n)
+        return {"ok": True}
 
     def supprimer_noeud(self, node_id):
         self._store.delete_node(node_id)

@@ -391,13 +391,20 @@ class Poller:
                     "nom": name, "proprio": "externe", "statut": "en-ligne", "role": ROLE_BY_TYPE[t],
                     "lat": round(lat, 5) if has_pos else "", "lon": round(lon, 5) if has_pos else "",
                     "voisins": [], "decouvert": True, "dernierAdvert": last_seen,
-                    "cle": c.get("public_key", "")[:12],
+                    "cle": c.get("public_key", "")[:12], "cleComplete": c.get("public_key", ""),
+                    **({"latAnnonce": round(lat, 5), "lonAnnonce": round(lon, 5)} if has_pos else {}),
                 }, bump=False)
                 added += 1
             else:
-                fields = {"dernierAdvert": last_seen, "cle": c.get("public_key", "")[:12], "chemin": self._chemin(c), "cheminDate": now_iso()}
-                if has_pos and (node.get("lat") in ("", None) or node.get("lon") in ("", None)):
-                    fields.update(lat=round(lat, 5), lon=round(lon, 5))
+                fields = {"dernierAdvert": last_seen, "cle": c.get("public_key", "")[:12], "cleComplete": c.get("public_key", ""),
+                          "chemin": self._chemin(c), "cheminDate": now_iso()}
+                if has_pos:
+                    fields.update(latAnnonce=round(lat, 5), lonAnnonce=round(lon, 5), posAnnonceDate=last_seen)
+                    # la carte suit la position annoncée par le nœud, sauf si une position a été saisie à la main
+                    # (ou si le GPS de sa télémétrie est connu, plus précis)
+                    if (node.get("lat") in ("", None) or node.get("lon") in ("", None)
+                            or (not node.get("posManuelle") and node.get("latGps") in ("", None))):
+                        fields.update(lat=round(lat, 5), lon=round(lon, 5))
                 node.update(fields)
                 self.store.save_node(node, bump=False)
         if added:
@@ -454,6 +461,14 @@ class Poller:
                 fields["telemetrie"] = [{"canal": x.get("channel"), "type": x.get("type"), "valeur": x.get("value")}
                                         for x in lpp if isinstance(x, dict)]
                 fields["telemetrieDate"] = now_iso()
+                for x in lpp:
+                    v = x.get("value") if isinstance(x, dict) and x.get("type") == "gps" else None
+                    if isinstance(v, dict) and v.get("latitude") is not None and v.get("longitude") is not None \
+                            and (abs(float(v["latitude"])) > 0.01 or abs(float(v["longitude"])) > 0.01):
+                        fields.update(latGps=round(float(v["latitude"]), 5), lonGps=round(float(v["longitude"]), 5), posGpsDate=now_iso())
+                        if not node.get("posManuelle"):
+                            fields.update(lat=fields["latGps"], lon=fields["lonGps"])
+                        break
         except Exception as e:  # noqa: BLE001
             log.debug("télémétrie %s : %s", name, e)
         self._check_battery(node, fields.get("batterie"))
