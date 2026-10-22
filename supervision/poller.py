@@ -130,6 +130,7 @@ class Poller:
             "analyseCompanion": self.analyse_companion if self.mc is not None else None,
             "couvertureEnCours": self.couverture_en_cours,
             "contactsMessagerie": self.contacts_messagerie() if self.mc is not None else [],
+            "amisAttente": self.store.get_config("amis_attente", []) or [],
         }
 
     def interval(self) -> int:
@@ -714,12 +715,79 @@ class Poller:
 
     def contacts_messagerie(self) -> list[dict]:
         amis = set(self.store.get_config("amis", []) or [])
-        out = [{"cle": c.get("public_key", ""), "nom": c.get("adv_name", ""), "ami": c.get("public_key", "") in amis}
+        out = [{"cle": c.get("public_key", ""), "nom": c.get("adv_name", ""), "ami": c.get("public_key", "") in amis,
+                "annonce": c.get("last_advert") or 0}
                for c in self._contacts.values() if c.get("type") == 1 and c.get("adv_name")]
         out.sort(key=lambda x: (not x["ami"], x["nom"].lower()))
         return out
 
     # ---------- amis (companions suivis) ----------
+    @staticmethod
+    def _norm(s: str) -> str:
+        """Nom comparable : sans emoji, espaces, tirets ni majuscules (« F4EUB ☢️ QRA » = « f4eubqra »)."""
+        return re.sub(r"[^0-9a-z]", "", (s or "").casefold())
+
+    def _chercher_annonce(self, nom: str) -> dict | None:
+        """Dernière annonce entendue d'un companion, nom comparé sans emoji ni majuscules (puis début de nom)."""
+        n = self._norm(nom)
+        if not n:
+            return None
+        ann = [a for a in self.store.annonces_liste() if int(a.get("type") or 1) == 1]
+        exact = [a for a in ann if self._norm(a.get("nom")) == n]
+        if exact:
+            return exact[0]
+        proches = [a for a in ann if len(n) >= 4 and (self._norm(a.get("nom")).startswith(n) or n.startswith(self._norm(a.get("nom")) or "~"))]
+        return proches[0] if len(proches) == 1 else None
+
+    def companions_connus(self, q: str = "") -> dict:
+        """Companions dont la clé complète est connue : contacts du nœud et annonces entendues, filtrés par nom."""
+        n = self._norm(q)
+        vus, out = set(), []
+        for c in self._contacts.values():
+            if c.get("type") != 1 or not c.get("adv_name"):
+                continue
+            k = (c.get("public_key") or "").lower()
+            if n and n not in self._norm(c["adv_name"]) and not k.startswith(q.strip().lower() or "~"):
+                continue
+            vus.add(k)
+            out.append({"nom": c["adv_name"], "cle": k, "source": "contact", "ts": c.get("last_advert") or 0})
+        for a in self.store.annonces_liste():
+            k = (a.get("cle") or "").lower()
+            if int(a.get("type") or 1) != 1 or k in vus or not a.get("nom"):
+                continue
+            if n and n not in self._norm(a["nom"]) and not k.startswith(q.strip().lower() or "~"):
+                continue
+            vus.add(k)
+            out.append({"nom": a["nom"], "cle": k, "source": "annonce", "ts": a.get("ts") or 0})
+        out.sort(key=lambda x: -(x["ts"] or 0))
+        return {"ok": True, "companions": out[:40], "attente": self.store.get_config("amis_attente", []) or []}
+
+    def attendre_ami(self, nom: str, retirer: bool = False) -> dict:
+        """Ami « en attente » : il sera ajouté aux contacts et aux amis dès que son annonce sera entendue."""
+        nom = (nom or "").strip()
+        if not self._norm(nom):
+            return {"ok": False, "erreur": "Indiquez le nom du companion."}
+        att = [x for x in (self.store.get_config("amis_attente", []) or []) if self._norm(x.get("nom")) != self._norm(nom)]
+        if not retirer:
+            att.append({"nom": nom, "date": now_iso()})
+        self.store.set_config("amis_attente", att)
+        self.store._bump()
+        return {"ok": True, "attente": att,
+                "message": f"{nom} retiré de l'attente" if retirer else
+                f"{nom} sera ajouté automatiquement à vos amis dès que son annonce sera entendue"}
+
+    async def _ami_entendu(self, a: dict):
+        try:
+            r = await self._ajouter_annonce(a, True)
+        except Exception as e:  # noqa: BLE001
+            r = {"ok": False, "erreur": str(e)}
+        if r.get("ok"):
+            att = [x for x in (self.store.get_config("amis_attente", []) or []) if self._norm(x.get("nom")) != self._norm(a.get("nom"))]
+            self.store.set_config("amis_attente", att)
+            self.alerte("info", a.get("nom", ""), f"Annonce de {a.get('nom')} entendue : ajouté à vos contacts et à vos amis ★.")
+            self._log(f"Ami en attente {a.get('nom')} ajouté (clé {a['cle'][:12]}…)")
+        else:
+            log.warning("Ajout automatique de l'ami %s : %s", a.get("nom"), r.get("erreur"))
     def basculer_ami(self, cle: str, ami=None) -> dict:
         c = next((c for c in self._contacts.values() if (c.get("public_key") or "").startswith((cle or "~").lower())), None)
         full = c.get("public_key") if c else (cle or "").lower()
@@ -746,12 +814,12 @@ class Poller:
         if self.mc is None:
             return {"ok": False, "erreur": "Aucun nœud connecté."}
         nom = (nom or "").strip()
-        c = next((c for c in self._contacts.values() if (c.get("adv_name") or "").lower() == nom.lower()), None)
+        c = next((c for c in self._contacts.values() if self._norm(c.get("adv_name")) == self._norm(nom)), None)
         if c:
             if ami:
                 self.basculer_ami(c["public_key"], True)
             return {"ok": True, "deja": True, "cle": c["public_key"], "message": f"{nom} est déjà dans vos contacts" + (" : ajouté aux amis ★." if ami else ".")}
-        a = self.store.annonce_par_nom(nom)
+        a = self.store.annonce_par_nom(nom) or self._chercher_annonce(nom)
         if not a:
             return {"ok": False, "inconnu": True,
                     "erreur": f"Aucune annonce de {nom} n'a encore été entendue : sa clé publique est inconnue. "
@@ -790,6 +858,18 @@ class Poller:
                 return {"ok": False, "erreur": "Le nœud companion a refusé cette carte de contact (lien incomplet ou abîmé)."}
         else:
             m_cle = re.search(r"(?<![0-9a-fA-F])([0-9a-fA-F]{64})(?![0-9a-fA-F])", texte)
+            if not m_cle and not texte and nom:
+                # pas de clé : on la cherche dans les contacts et les annonces entendues
+                c = next((c for c in self._contacts.values() if c.get("type") == 1 and self._norm(c.get("adv_name")) == self._norm(nom)), None)
+                if c:
+                    if ami:
+                        self.basculer_ami(c["public_key"], True)
+                    return {"ok": True, "cle": c["public_key"], "message": f"{c.get('adv_name')} est déjà dans vos contacts" + (" : ajouté aux amis ★." if ami else ".")}
+                a = self._chercher_annonce(nom)
+                if a:
+                    return await self._ajouter_annonce(a, ami)
+                return {"ok": False, "inconnu": True,
+                        "erreur": f"Aucune annonce de « {nom} » n'a encore été entendue : sa clé publique est inconnue."}
             if not m_cle:
                 return {"ok": False, "erreur": "Collez une carte de contact « meshcore://… » ou la clé publique complète (64 caractères hexadécimaux)."}
             cle = m_cle.group(1).lower()
@@ -864,6 +944,12 @@ class Poller:
                 ok = lat is not None and lon is not None and abs(lat) > .01
                 self.store.annonce_vue(p["adv_key"], p["adv_name"], int(p.get("adv_type") or 1),
                                        lat if ok else None, lon if ok else None)
+                att = self.store.get_config("amis_attente", []) or []
+                if att and int(p.get("adv_type") or 1) == 1 and self.mc is not None \
+                        and any(self._norm(x.get("nom")) == self._norm(p["adv_name"]) for x in att) \
+                        and not any((c.get("public_key") or "").lower() == p["adv_key"].lower() for c in self._contacts.values()):
+                    asyncio.ensure_future(self._ami_entendu({"cle": p["adv_key"].lower(), "nom": p["adv_name"], "type": 1,
+                                                             "lat": lat if ok else 0.0, "lon": lon if ok else 0.0, "ts": time.time()}))
                 return
             if p.get("payload_type") != 0x05 or not p.get("message"):
                 return

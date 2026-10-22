@@ -442,6 +442,10 @@ header.top .hright{grid-column:1 / -1}
 .term{background:#0a0f14;color:#cfe3d4;border:1px solid var(--line);border-radius:6px;padding:10px 12px;overflow:auto;font-family:var(--f-mono);font-size:.86rem;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;min-height:0}
 .term .c{color:#ffb35c}.term .e{color:#ff8080}.term .i{color:#7f93a6}
 #mami[hidden]{display:none}
+.ami-res{display:grid;gap:2px;max-height:180px;overflow:auto}
+.ami-res button{display:flex;justify-content:space-between;gap:10px;text-align:left;border:1px solid var(--line);background:var(--bg);border-radius:4px;padding:5px 10px;color:var(--fg)}
+.ami-res button:hover,.ami-res button[aria-pressed="true"]{border-color:var(--accent);background:var(--sunk)}
+.ami-res .k{font-family:var(--f-mono);font-size:.74rem;color:var(--muted)}
 #mcontacts{position:fixed;inset:0;z-index:2600;background:rgba(5,10,15,.55);display:grid;place-items:center;padding:16px}
 #mcontacts[hidden]{display:none}
 .ct-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
@@ -868,11 +872,13 @@ header.top .hright{grid-column:1 / -1}
   <div class="mdet-box" style="width:min(680px,100%)">
     <div class="mdet-head"><h2 id="mamiTitle">Ajouter un companion ami</h2><button class="btn small" id="amiAnnuler" type="button">Annuler (Échap)</button></div>
     <div style="display:grid;gap:10px;padding:16px">
-      <p style="margin:0">Collez la <b>carte de contact</b> partagée par votre ami (application MeshCore : son contact → Partager → lien <span class="mono">meshcore://…</span>) <b>ou sa clé publique complète</b> (64 caractères). Le début de clé affiché sur la carte du réseau (ex. 38648F0C…) ne suffit pas.</p>
-      <label>Carte de contact ou clé publique<textarea id="amiTexte" class="mono" style="min-height:80px" placeholder="meshcore://… ou 38648f0c…(64 caractères)"></textarea></label>
-      <label>Nom du companion (obligatoire avec une clé seule)<input id="amiNom" maxlength="31" placeholder="Ex. : F4jrc-c"></label>
+      <p style="margin:0"><b>Le plus simple :</b> tapez le nom ou l'indicatif. Le logiciel cherche la clé publique dans les annonces déjà entendues ; cliquez sur le companion trouvé puis sur « Ajouter ». Sinon, collez sa <b>carte de contact</b> (<span class="mono">meshcore://…</span>) ou sa <b>clé publique complète</b> (64 caractères).</p>
+      <label>Nom ou indicatif du companion<input id="amiNom" maxlength="31" placeholder="Ex. : F4EUB" autocomplete="off"></label>
+      <div id="amiRes" class="ami-res"></div>
+      <label>Carte de contact ou clé publique (rempli automatiquement si le companion est trouvé)<textarea id="amiTexte" class="mono" style="min-height:64px" placeholder="meshcore://… ou 38648f0c…(64 caractères)"></textarea></label>
       <label style="display:flex;flex-direction:row;align-items:center;gap:8px;color:var(--fg)"><input type="checkbox" id="amiAmi" checked style="width:16px;height:16px;flex:none"> Le marquer comme ami ★ (en tête de liste, doré sur la carte)</label>
-      <div class="actions"><button class="btn primary" id="amiGo" type="button">Ajouter</button><span class="reading" id="amiMsg"></span></div>
+      <div class="actions"><button class="btn primary" id="amiGo" type="button">Ajouter</button><button class="btn" id="amiAttendre" type="button" hidden title="Le companion sera ajouté à vos contacts et à vos amis automatiquement dès que son annonce sera entendue">L'ajouter dès sa prochaine annonce</button><span class="reading" id="amiMsg"></span></div>
+      <div id="amiAtt" class="reading"></div>
     </div>
   </div>
 </div>
@@ -1324,6 +1330,23 @@ header.top .hright{grid-column:1 / -1}
     ].join("");
   }
   const abs = Math.abs;
+  /* ---------- ajout d'un ami : recherche de la clé dans les annonces entendues ---------- */
+  let amiTimer = null;
+  function ouvrirAjoutAmi(nom){
+    $("#mami").hidden = false; $("#amiMsg").textContent = ""; $("#amiTexte").value = ""; $("#amiNom").value = nom || ""; $("#amiAttendre").hidden = true;
+    $("#amiRes").innerHTML = ""; chercherAmi(); $("#amiNom").focus();
+  }
+  async function chercherAmi(){
+    const q = $("#amiNom").value.trim();
+    let r; try { r = await api.companions_connus(q); } catch(e) { r = {companions:[], attente:[]}; }
+    const l = (r.companions || []).slice(0, q ? 15 : 8);
+    $("#amiRes").innerHTML = l.length ? `<span class="reading">${q ? "Companions trouvés" : "Derniers companions entendus"} (cliquez pour choisir) :</span>` + l.map(c => `<button type="button" data-amichoix="${esc(c.cle)}" data-aminom="${esc(c.nom)}"><span>${esc(c.nom)} <span class="muted" style="font-size:.8rem">${c.source === "contact" ? "· déjà dans vos contacts" : "· annonce " + (c.ts ? ago(new Date(c.ts*1000).toISOString()) : "")}</span></span><span class="k">${esc(c.cle.slice(0,16))}…</span></button>`).join("")
+      : (q ? `<span class="reading">Aucune annonce de « ${esc(q)} » entendue pour l'instant.</span>` : "");
+    $("#amiAttendre").hidden = !(q && !l.length);
+    const att = r.attente || [];
+    $("#amiAtt").innerHTML = att.length ? "En attente de leur annonce : " + att.map(a => `<b>${esc(a.nom)}</b> <button class="btn small" type="button" data-amiretire="${esc(a.nom)}" style="padding:0 6px">retirer</button>`).join(" · ") : "";
+  }
+  document.addEventListener("input", e => { if (e.target.id === "amiNom") { clearTimeout(amiTimer); amiTimer = setTimeout(chercherAmi, 250); } });
   /* conversion des unités étrangères des messages reçus (°F, mph, mi, in…) en unités françaises */
   function unitesFr(t){
     let s = String(t || "");
@@ -2052,7 +2075,7 @@ const HOT_MIN = 360; // 6 heures
     const contacts = liaison.contactsMessagerie || [];
     const dms = {};
     messages.filter(m => m.canal == null).forEach(m => { const k = (m.contact_cle||"").slice(0,12); dms[k] = dms[k] || {cle:k, nom:m.contact||k, n:0}; dms[k].n++; });
-    contacts.forEach(c => { const k = c.cle.slice(0,12); dms[k] = Object.assign(dms[k] || {n:0}, {cle:k, full:c.cle, nom:c.nom, ami:!!c.ami}); });
+    contacts.forEach(c => { const k = c.cle.slice(0,12); dms[k] = Object.assign(dms[k] || {n:0}, {cle:k, full:c.cle, nom:c.nom, ami:!!c.ami, annonce:c.annonce}); });
     const normC = x => String(x || "").toLowerCase().replace(/[^a-z0-9]/g, "");
     const chPrio = chans.filter(c => normC(c.nom).includes("adrasec06"));
     if (!conv) conv = "c:" + (chPrio[0] || chans[0]).index;
@@ -2071,7 +2094,8 @@ const HOT_MIN = 360; // 6 heures
     $("#threadTitle").textContent = title;
     const chCour = isChan ? (chans.find(c => "c:"+c.index===conv) || {}) : null;
     const reg = liaison.regions || {}, regCanal = isChan ? ((reg.parCanal || {})[String(chCour.index)] || "") : "";
-    $("#threadSub").innerHTML = !isChan ? "Message direct chiffré"
+    const dCour = !isChan ? dms[conv.slice(2)] : null;
+    $("#threadSub").innerHTML = !isChan ? "Message direct chiffré" + (dCour && dCour.full ? `<br>Clé publique : <span class="mono" style="font-size:.78rem;word-break:break-all;color:var(--fg)">${esc(dCour.full)}</span> <button class="btn small" type="button" data-copie="${esc(dCour.full)}" style="padding:0 8px">Copier</button>` + (dCour.annonce ? ` · dernière annonce ${ago(new Date(dCour.annonce*1000).toISOString())}` : "") : "")
       : (chCour.genre === "prive" ? "🔒 <b>Canal privé</b> : seuls les nœuds qui ont sa clé secrète peuvent le lire"
         : chCour.genre === "hashtag" ? "Canal public (#) : toute personne qui connaît son nom peut le lire"
         : "Canal public : tous les nœuds MeshCore le reçoivent")
@@ -2443,7 +2467,7 @@ const HOT_MIN = 360; // 6 heures
     const an = t.closest("[data-ajoutnom]");
     if (an) { an.disabled = true; const nom = an.dataset.ajoutnom; const r = await api.ajouter_depuis_nom(nom, true); an.disabled = false;
       if (r.ok) { toast(r.message); fermerDetail(); tab = "messages"; conv = "d:" + r.cle.slice(0,12); lastMsgCount = -2; refresh(true); return; }
-      if (r.inconnu) { fermerDetail(); $("#mami").hidden = false; $("#amiTexte").value = ""; $("#amiNom").value = nom; $("#amiMsg").textContent = r.erreur; $("#amiTexte").focus(); return; }
+      if (r.inconnu) { fermerDetail(); ouvrirAjoutAmi(nom); setTimeout(() => { $("#amiMsg").textContent = r.erreur; }, 300); return; }
       toast(r.erreur); return; }
     const up = t.closest("[data-usepos]"); if (up) { const r = await api.utiliser_position(up.dataset.usepos, up.dataset.src); toast(r.ok ? "Position mise à jour sur la carte" : r.erreur); refresh(true); return; }
     const cp = t.closest("[data-copie]"); if (cp) { try { await navigator.clipboard.writeText(cp.dataset.copie); toast("Clé copiée"); } catch(e) { const ta = document.createElement("textarea"); ta.value = cp.dataset.copie; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); toast("Clé copiée"); } return; }
@@ -2453,7 +2477,9 @@ const HOT_MIN = 360; // 6 heures
     const ctm = t.closest("[data-ctmsg]"); if (ctm) { $("#mcontacts").hidden = true; $("#mcomp").hidden = true; tab = "messages"; conv = "d:" + ctm.dataset.ctmsg.slice(0,12); lastMsgCount = -2; renderAll(); return; }
     const cta = t.closest("[data-ctami]"); if (cta) { const r = await api.basculer_ami(cta.dataset.ctami); const c = ctListe.find(c => c.cle === cta.dataset.ctami); if (c) c.ami = r.ami; renderContacts(); toast(r.ami ? `${r.nom} ajouté à vos amis ★` : `${r.nom} retiré de vos amis`); refresh(true); return; }
     const lv = t.closest("[data-lov]"); if (lv) { lovSel = lv.dataset.lov; renderLov(); return; }
-    if (t.closest("[data-ajoutami]")) { $("#mami").hidden = false; $("#amiMsg").textContent = ""; $("#amiTexte").value = ""; $("#amiNom").value = ""; $("#amiTexte").focus(); return; }
+    if (t.closest("[data-ajoutami]")) { ouvrirAjoutAmi(""); return; }
+    const ach = t.closest("[data-amichoix]"); if (ach) { $("#amiTexte").value = ach.dataset.amichoix; $("#amiNom").value = ach.dataset.aminom; document.querySelectorAll("[data-amichoix]").forEach(b => b.setAttribute("aria-pressed", b === ach)); $("#amiMsg").textContent = "Clé publique trouvée : cliquez sur « Ajouter »."; $("#amiAttendre").hidden = true; return; }
+    const art = t.closest("[data-amiretire]"); if (art) { await api.attendre_ami(art.dataset.amiretire, true); chercherAmi(); refresh(true); return; }
     const ta = t.closest("[data-toggleami]"); if (ta) { const r = await api.basculer_ami(ta.dataset.toggleami); toast(r.ami ? `${r.nom} ajouté à vos amis ★` : `${r.nom} retiré de vos amis`); refresh(true); return; }
     const co = t.closest("[data-console]"); if (co) { ouvrirConsole(co.dataset.console); return; }
     const cr = t.closest("[data-corapide]"); if (cr) { coEnvoyer(cr.dataset.corapide); return; }
@@ -2589,7 +2615,9 @@ const HOT_MIN = 360; // 6 heures
       case "amiGo": { if (!liaison.connecte) { $("#amiMsg").textContent = "Connectez d'abord le nœud companion."; return; }
         t.disabled = true; $("#amiMsg").textContent = "Ajout dans le nœud companion…";
         const r = await api.ajouter_contact($("#amiTexte").value, $("#amiNom").value, $("#amiAmi").checked); t.disabled = false;
-        if (r.ok) { $("#mami").hidden = true; toast(r.message); if (r.cle) { tab = "messages"; conv = "d:" + r.cle.slice(0,12); lastMsgCount = -2; } refresh(true); } else $("#amiMsg").textContent = r.erreur; return; }
+        if (r.ok) { $("#mami").hidden = true; toast(r.message + (r.cle ? ` — clé ${r.cle.slice(0,16)}…` : "")); if (r.cle) { tab = "messages"; conv = "d:" + r.cle.slice(0,12); lastMsgCount = -2; } refresh(true); }
+        else { $("#amiMsg").textContent = r.erreur + (r.inconnu ? " Vous pouvez demander qu'il soit ajouté automatiquement dès que son annonce sera entendue." : ""); $("#amiAttendre").hidden = !r.inconnu; } return; }
+      case "amiAttendre": { const r = await api.attendre_ami($("#amiNom").value); $("#amiMsg").textContent = r.ok ? r.message + "." : r.erreur; if (r.ok) $("#amiAttendre").hidden = true; chercherAmi(); refresh(true); return; }
       case "regLire": { t.disabled = true; $("#regInfo").textContent = "Lecture auprès de chaque répéteur…"; const r = await api.regions(true); t.disabled = false; $("#regInfo").textContent = r.ok ? `${(r.connues || []).length} région(s) trouvée(s)` : r.erreur; refresh(true); return; }
       case "compOpen": analyserCompanion(false); return;
       case "advZero": case "advFlood": { t.disabled = true; let r; try { r = await api.envoyer_advert(t.id === "advFlood"); } catch(e) { r = {ok:false, erreur:String(e)}; } t.disabled = false; toast(r.ok ? r.message : r.erreur); refresh(true); return; }

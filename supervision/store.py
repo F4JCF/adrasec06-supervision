@@ -373,6 +373,14 @@ class Store:
                              (cle.lower(), nom, type_, lat, lon, time.time()))
             self._cx.commit()
 
+    def annonces_liste(self, limite: int = 3000) -> list[dict]:
+        with self._lock:
+            try:
+                rows = self._cx.execute("SELECT * FROM annonces ORDER BY ts DESC LIMIT ?", (limite,)).fetchall()
+            except sqlite3.OperationalError:
+                return []
+        return [dict(r) for r in rows]
+
     def annonce_par_nom(self, nom: str) -> dict | None:
         with self._lock:
             try:

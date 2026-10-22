@@ -17,7 +17,7 @@ from . import aprs, courriel, rapports, resilience, systeme, taches, visibilite,
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.20.6"
+VERSION = "1.21.0"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -522,6 +522,12 @@ class Api:
 
     def ajouter_depuis_nom(self, nom, ami=False):
         return self._poller.ajouter_depuis_nom(nom, ami)
+
+    def companions_connus(self, q=""):
+        return self._poller.companions_connus(q)
+
+    def attendre_ami(self, nom, retirer=False):
+        return self._poller.attendre_ami(nom, retirer)
 
     def basculer_ami(self, cle, ami=None):
         return self._poller.basculer_ami(cle, ami)
