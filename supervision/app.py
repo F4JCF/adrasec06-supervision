@@ -17,7 +17,7 @@ from . import aprs, courriel, rapports, resilience, systeme, taches, visibilite,
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.21.1"
+VERSION = "1.21.2"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -528,6 +528,29 @@ class Api:
 
     def attendre_ami(self, nom, retirer=False):
         return self._poller.attendre_ami(nom, retirer)
+
+    # ----- registre des membres autorisés d'un canal (personnes à qui la clé a été remise) -----
+    def membres_canal(self, canal_nom):
+        k = re.sub(r"[^a-z0-9]", "", (canal_nom or "").lower())
+        return {"ok": True, "membres": (self._store.get_config("membres_canaux", {}) or {}).get(k, [])}
+
+    def regler_membre(self, canal_nom, nom, note="", retirer=False):
+        k = re.sub(r"[^a-z0-9]", "", (canal_nom or "").lower())
+        nom = (nom or "").strip()[:40]
+        if not k or not nom:
+            return {"ok": False, "erreur": "Indiquez un nom ou un indicatif."}
+        tous = dict(self._store.get_config("membres_canaux", {}) or {})
+        n = lambda x: re.sub(r"[^0-9a-z]", "", (x or "").casefold())
+        liste = [m for m in tous.get(k, []) if n(m.get("nom")) != n(nom)]
+        if not retirer:
+            liste.append({"nom": nom, "note": (note or "").strip()[:80], "date": now_iso()})
+            liste.sort(key=lambda m: m["nom"].lower())
+        tous[k] = liste
+        self._store.set_config("membres_canaux", tous)
+        self._store.add_journal("", self._store.get_config("operateur", "") or "PC",
+                                f"Canal {canal_nom} : {nom} {'retiré des' if retirer else 'ajouté aux'} membres autorisés.")
+        self._store._bump()
+        return {"ok": True, "membres": liste}
 
     def basculer_ami(self, cle, ami=None):
         return self._poller.basculer_ami(cle, ami)
