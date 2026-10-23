@@ -17,7 +17,7 @@ from . import aprs, courriel, rapports, resilience, systeme, taches, visibilite,
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.22.0"
+VERSION = "1.22.1"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -82,6 +82,9 @@ class Api:
 
     def partage_canal(self, idx):
         return self._poller.partage_canal(idx)
+
+    def modifier_cle_canal(self, idx, secret="", ancienne=False):
+        return self._poller.modifier_cle_canal(idx, secret, ancienne, self._store.get_config("operateur", "") or "PC")
 
     def _purger_retention(self, force=False):
         """Supprime les messages des canaux plus anciens que la durée de rétention choisie (toutes les 5 min)."""

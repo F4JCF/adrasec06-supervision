@@ -718,7 +718,53 @@ class Poller:
         except Exception as e:  # noqa: BLE001
             log.warning("QR code du canal : %s", e)
         return {"ok": True, "nom": ch["nom"], "genre": ch.get("genre"), "secret": secret,
+                "ancienne": bool((self.store.get_config("anciennes_cles_canaux", {}) or {}).get(str(idx))),
                 "region": region.lstrip("#") if region and region != "*" else "", "lien": lien, "qr": svg}
+
+    def modifier_cle_canal(self, idx, secret: str = "", ancienne: bool = False, operateur: str = "PC") -> dict:
+        """Change la clé secrète d'un canal dans le nœud companion (clé saisie, aléatoire, ou retour à l'ancienne)."""
+        import secrets as _secrets
+        if self.mc is None:
+            return {"ok": False, "erreur": "Aucun nœud connecté."}
+        idx = int(idx)
+        ch = next((c for c in self.canaux if c["index"] == idx), None)
+        if ch is None:
+            return {"ok": False, "erreur": "Canal inconnu."}
+        anciennes = dict(self.store.get_config("anciennes_cles_canaux", {}) or {})
+        if ancienne:
+            secret = anciennes.get(str(idx), "")
+            if not secret:
+                return {"ok": False, "erreur": "Aucune ancienne clé mémorisée pour ce canal."}
+        secret = re.sub(r"\s", "", secret or "").lower() or _secrets.token_hex(16)
+        if not re.fullmatch(r"[0-9a-f]{32}", secret):
+            return {"ok": False, "erreur": "La clé doit faire 32 caractères hexadécimaux (0-9, a-f)."}
+        avant = self._secrets.get(idx, "")
+        if secret == avant:
+            return {"ok": False, "erreur": "C'est déjà la clé de ce canal."}
+
+        async def go():
+            # trame « set channel » envoyée directement : la bibliothèque recalculerait la clé d'un nom commençant par #
+            nom = ch["nom"].encode("utf-8")[:32].ljust(32, b"\x00")
+            ev = await self.mc.commands.send(b"\x20" + idx.to_bytes(1, "little") + nom + bytes.fromhex(secret),
+                                             [EventType.OK, EventType.ERROR])
+            if ev is None or ev.type == EventType.ERROR:
+                return False
+            await self._load_channels()
+            return True
+        try:
+            ok = self._submit(go(), timeout=30)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "erreur": f"Modification impossible : {e}"}
+        if not ok:
+            return {"ok": False, "erreur": "Le nœud companion a refusé la nouvelle clé."}
+        if avant:
+            anciennes[str(idx)] = avant
+            self.store.set_config("anciennes_cles_canaux", anciennes)
+        self.store.add_journal("", operateur, f"Clé secrète du canal {ch['nom']} changée" +
+                               (" (retour à l'ancienne clé)" if ancienne else "") +
+                               " : les membres doivent scanner le nouveau QR code.", nature="evenement")
+        self._log(f"Clé du canal {ch['nom']} changée")
+        return {"ok": True, **self.partage_canal(idx)}
 
     def liste_contacts(self) -> dict:
         """Tous les contacts du nœud companion (répéteurs, compagnons, salons, capteurs) pour la liste triable."""

@@ -1414,6 +1414,7 @@ header.top .hright{grid-column:1 / -1}
   document.addEventListener("change", e => { if (e.target.id === "partPer") renderParticipants(); });
   /* ---------- paramètres d'un canal ---------- */
   let parCanal = null, parPartage = null;
+  const cleAleatoire = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, "0")).join("");
   async function ouvrirParamCanal(idx){
     parCanal = +idx; parPartage = null; $("#mparam").hidden = false; renderParamCanal();
     try { parPartage = await api.partage_canal(parCanal); } catch(e) { parPartage = {ok:false, erreur:String(e)}; }
@@ -1437,8 +1438,16 @@ header.top .hright{grid-column:1 / -1}
           <div style="display:grid;gap:8px;align-content:start">
             <p style="margin:0">Scannez ce QR code avec l'application MeshCore : Menu → Ajouter un canal → Scanner le QR code.</p>
             <label>Clé secrète<span style="display:flex;gap:6px"><input class="mono" readonly value="${esc(pp.secret)}"><button class="btn small" type="button" data-copie="${esc(pp.secret)}">Copier</button></span></label>
-            <label>Périmètre de la région<input class="mono" readonly value="${esc(pp.region || "aucun")}"></label>
+            <label>Périmètre de la région<span style="display:flex;gap:6px"><input class="mono" id="parRegion" value="${esc(pp.region || "")}" placeholder="aucun (ex. fr-06)"><button class="btn small" type="button" id="parRegionOk">Appliquer</button></span></label>
             <label>Lien du canal<span style="display:flex;gap:6px"><input class="mono" readonly value="${esc(pp.lien)}"><button class="btn small" type="button" data-copie="${esc(pp.lien)}">Copier</button></span></label>
+            <div><button class="btn small" type="button" id="parCleOuvrir">Modifier la clé…</button>${pp.ancienne ? ` <button class="btn small" type="button" id="parCleAncienne" title="Remettre la clé précédente de ce canal">Revenir à l'ancienne clé</button>` : ""}</div>
+            <div id="parCle" class="par-sec" hidden style="border-color:var(--warn)">
+              <b style="color:var(--warn)">Changer la clé secrète du canal</b>
+              <span class="reading">Après le changement, <b>seuls les nœuds qui ont la nouvelle clé</b> pourront lire et écrire sur ce canal. Chaque membre devra scanner le nouveau QR code (ou recevoir la nouvelle clé). Les répéteurs n'ont rien à changer.</span>
+              <label>Nouvelle clé (32 caractères hexadécimaux)<span style="display:flex;gap:6px"><input class="mono" id="parCleVal" maxlength="40" autocomplete="off" spellcheck="false"><button class="btn small" type="button" id="parCleAlea">Générer une clé aléatoire</button></span></label>
+              <label style="display:flex;flex-direction:row;align-items:center;gap:8px;color:var(--fg)"><input type="checkbox" id="parCleOk" style="width:16px;height:16px;flex:none"> J'ai compris : les membres devront scanner le nouveau QR code.</label>
+              <div class="actions"><button class="btn primary" type="button" id="parCleGo">Changer la clé</button><span class="reading" id="parCleMsg"></span></div>
+            </div>
             <p class="reading" style="margin:0">${ch.genre === "prive" ? "⚠ Toute personne ayant la clé secrète peut envoyer et recevoir des messages dans ce canal. Ne la transmettez qu'aux membres, puis inscrivez-les dans « Participants → Membres autorisés »." : "Ce canal est public."}</p>
           </div></div>`}
       </div>
@@ -2759,6 +2768,19 @@ const HOT_MIN = 360; // 6 heures
       case "ctClose": $("#mcontacts").hidden = true; return;
       case "partClose": $("#mpart").hidden = true; return;
       case "paramClose": $("#mparam").hidden = true; return;
+      case "parCleOuvrir": { const b = $("#parCle"); b.hidden = !b.hidden; if (!b.hidden) { $("#parCleVal").value = cleAleatoire(); $("#parCleOk").checked = false; $("#parCleMsg").textContent = ""; } return; }
+      case "parCleAlea": $("#parCleVal").value = cleAleatoire(); return;
+      case "parCleGo": case "parCleAncienne": {
+        const anc = t.id === "parCleAncienne";
+        if (!anc && !$("#parCleOk").checked) { $("#parCleMsg").textContent = "Cochez la case de confirmation."; return; }
+        if (anc && !confirm("Remettre l'ancienne clé de ce canal ? Les membres qui ont déjà la nouvelle clé ne liront plus le canal.")) return;
+        t.disabled = true; if (!anc) $("#parCleMsg").textContent = "Envoi au nœud companion…";
+        let r; try { r = await api.modifier_cle_canal(parCanal, anc ? "" : $("#parCleVal").value, anc); } catch(e) { r = {ok:false, erreur:String(e)}; } t.disabled = false;
+        if (r.ok) { parPartage = r; renderParamCanal(); toast("Nouvelle clé enregistrée dans le nœud : faites scanner le nouveau QR code aux membres."); refresh(true); }
+        else if (anc) toast(r.erreur); else $("#parCleMsg").textContent = r.erreur;
+        return; }
+      case "parRegionOk": { const v = $("#parRegion").value.trim(); const r = await api.regler_region(parCanal, v, false);
+        if (r.ok) { toast(v ? `Région ${v} pour ce canal` : "Région par défaut du nœud pour ce canal"); try { parPartage = await api.partage_canal(parCanal); } catch(e) {} await refresh(true); renderParamCanal(); } else toast(r.erreur); return; }
       case "partAjout": { const v = $("#partNouv").value.trim(); if (!v) { $("#partNouv").focus(); return; } await autoriser(v, $("#partNote").value); $("#partNouv").value = ""; $("#partNote").value = ""; $("#partNouv").focus(); return; }
       case "lovGo": calculerLov(); return;
       case "exArchDir": { await api.choisir_dossier_archives(); refresh(true); return; }
