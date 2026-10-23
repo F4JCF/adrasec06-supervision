@@ -63,6 +63,7 @@ class Poller:
         self.couverture_en_cours = False
         self.prioritaire = 0
         self._recalcul = False  # demandes de l'opérateur (test, commande) en attente : l'interrogation leur cède la place
+        self._secrets: dict[int, str] = {}  # clés secrètes des canaux (jamais envoyées au tableau de bord web)
         self.loop = asyncio.new_event_loop()
         self.thread = threading.Thread(target=self._run_loop, name="meshcore", daemon=True)
         self.thread.start()
@@ -683,8 +684,41 @@ class Poller:
                 else:
                     genre = "prive"
                 out.append({"index": i, "nom": name, "genre": genre})
+                self._secrets[i] = secret
         self.canaux = out or [{"index": 0, "nom": "Public"}]
+        # canal ADRASEC 06 : périmètre de région « fr-06 » (réglage de l'application MeshCore), une seule fois
+        if not self.store.get_config("region_adrasec_init", False):
+            ch = next((c for c in out if re.sub(r"[^a-z0-9]", "", c["nom"].lower()) == "adrasec06"), None)
+            if ch is not None:
+                rc = dict(self.store.get_config("regions_canaux", {}) or {})
+                rc.setdefault(str(ch["index"]), "#fr-06")
+                self.store.set_config("regions_canaux", rc)
+                self.store.set_config("region_adrasec_init", True)
         self.store._bump()
+
+    def partage_canal(self, idx) -> dict:
+        """Lien et QR code « meshcore://channel/add » du canal, comme l'application MeshCore."""
+        from urllib.parse import quote
+        idx = int(idx)
+        ch = next((c for c in self.canaux if c["index"] == idx), None)
+        secret = self._secrets.get(idx, "")
+        if ch is None or not secret:
+            return {"ok": False, "erreur": "Clé du canal inconnue : connectez le nœud companion."}
+        region = (self.store.get_config("regions_canaux", {}) or {}).get(str(idx), "")
+        lien = f"meshcore://channel/add?name={quote(ch['nom'])}&secret={secret}"
+        if region and region != "*":
+            lien += f"&region_scope={quote(region.lstrip('#'))}"
+        svg = ""
+        try:
+            import io
+            import segno
+            buf = io.BytesIO()
+            segno.make(lien, error="m").save(buf, kind="svg", scale=6, border=2, dark="#000", light="#fff", xmldecl=False)
+            svg = buf.getvalue().decode("utf-8")
+        except Exception as e:  # noqa: BLE001
+            log.warning("QR code du canal : %s", e)
+        return {"ok": True, "nom": ch["nom"], "genre": ch.get("genre"), "secret": secret,
+                "region": region.lstrip("#") if region and region != "*" else "", "lien": lien, "qr": svg}
 
     def liste_contacts(self) -> dict:
         """Tous les contacts du nœud companion (répéteurs, compagnons, salons, capteurs) pour la liste triable."""
@@ -849,6 +883,14 @@ class Poller:
 
     async def _ajouter_contact(self, texte: str, nom: str, ami: bool) -> dict:
         texte = texte.strip()
+        m_add = re.search(r"meshcore://contact/add\?(\S+)", texte)
+        if m_add:
+            from urllib.parse import parse_qs
+            q = parse_qs(m_add.group(1))
+            cle_q = (q.get("public_key") or [""])[0]
+            if re.fullmatch(r"[0-9a-fA-F]{64}", cle_q):
+                nom = nom or (q.get("name") or [""])[0].strip()
+                texte = cle_q
         m_uri = re.search(r"meshcore://([0-9a-fA-F]{100,})", texte)
         avant = set(self._contacts)
         cle = None

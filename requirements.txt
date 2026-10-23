@@ -6,3 +6,4 @@ reportlab==5.0.1
 pystray==0.19.5
 pillow==12.3.0
 aprslib==0.7.2
+segno==1.6.6

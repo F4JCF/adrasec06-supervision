@@ -161,6 +161,13 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 - **Companions amis** : bouton « + Ami » (Messagerie → Messages directs) pour ajouter un companion à partir de sa carte de contact « meshcore://… » ou de sa clé publique complète + son nom ; bouton « ☆ Ajouter aux amis / ★ Ami » dans chaque conversation directe ; les amis sont en tête de liste et repérés en doré sur la carte.
 - **Découvrir les voisins** dans la fiche d'un répéteur (commande discover.neighbors), console distante, étalonnage de la batterie du companion.
 
+### Nouveautés de la version 1.22
+
+- Paramètres d'un canal (bouton « ⚙ Paramètres » de la conversation), comme dans l'application MeshCore : partage par QR code (lien meshcore://channel/add avec clé secrète et périmètre de région), notifications (tous / mentions / aucune), rétention des messages (1 h à 30 jours), expéditeurs bloqués.
+- « Participants du canal » (👥 nombre · ✉ messages) avec bouton « Bloquer / Débloquer ».
+- Canal ADRASEC 06 : périmètre de région « fr-06 » appliqué par défaut (réglage de l'application MeshCore).
+- Ajout d'un contact par lien « meshcore://contact/add?… » (QR code de l'application).
+
 ### Nouveautés de la version 1.21.2
 
 - « Stations du canal » : registre des membres autorisés (stations à qui la clé a été remise), tenu par l'opérateur ; les stations qui écrivent sur le canal sans y figurer sont signalées ⚠, avec un bouton « Autoriser ».

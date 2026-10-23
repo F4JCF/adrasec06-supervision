@@ -17,7 +17,7 @@ from . import aprs, courriel, rapports, resilience, systeme, taches, visibilite,
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.21.2"
+VERSION = "1.22.0"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -43,7 +43,62 @@ class Api:
     def revision(self):
         return self._store.revision
 
+    # ----- paramètres d'un canal (comme l'application MeshCore) -----
+    @staticmethod
+    def _cle_canal(nom):
+        return re.sub(r"[^a-z0-9]", "", (nom or "").lower())
+
+    def prefs_canaux(self):
+        return self._store.get_config("prefs_canaux", {}) or {}
+
+    def regler_canal(self, canal_nom, notif=None, retention=None, bloquer=None, debloquer=None):
+        k = self._cle_canal(canal_nom)
+        if not k:
+            return {"ok": False, "erreur": "Canal inconnu."}
+        tous = dict(self.prefs_canaux())
+        p = dict(tous.get(k) or {})
+        if notif in ("tous", "mentions", "aucun"):
+            p["notif"] = notif
+        if retention is not None:
+            try:
+                p["retention"] = max(0, int(retention))
+            except (TypeError, ValueError):
+                pass
+        bl = list(p.get("bloques") or [])
+        n = lambda x: re.sub(r"[^0-9a-z]", "", (x or "").casefold())
+        if bloquer and n(bloquer) not in [n(b) for b in bl]:
+            bl.append(bloquer.strip())
+        if debloquer:
+            bl = [b for b in bl if n(b) != n(debloquer)]
+        p["bloques"] = bl
+        tous[k] = p
+        self._store.set_config("prefs_canaux", tous)
+        if bloquer or debloquer:
+            self._store.add_journal("", self._store.get_config("operateur", "") or "PC",
+                                    f"Canal {canal_nom} : expéditeur {bloquer or debloquer} {'bloqué' if bloquer else 'débloqué'}.")
+        self._purger_retention(force=True)
+        self._store._bump()
+        return {"ok": True, "prefs": p}
+
+    def partage_canal(self, idx):
+        return self._poller.partage_canal(idx)
+
+    def _purger_retention(self, force=False):
+        """Supprime les messages des canaux plus anciens que la durée de rétention choisie (toutes les 5 min)."""
+        if not force and time.time() - getattr(self, "_purge_ts", 0) < 300:
+            return
+        self._purge_ts = time.time()
+        prefs = self.prefs_canaux()
+        for c in self._poller.canaux or []:
+            h = int((prefs.get(self._cle_canal(c["nom"])) or {}).get("retention") or 0)
+            if h > 0:
+                try:
+                    self._store.purger_canal(c["index"], time.time() - h * 3600)
+                except Exception:  # noqa: BLE001
+                    logging.getLogger("supervision").exception("rétention")
+
     def etat(self):
+        self._purger_retention()
         nodes = self._store.list_nodes()
         for n in nodes:
             n["aMotDePasse"] = self._store.has_password(n["id"])
@@ -51,6 +106,7 @@ class Api:
             "revision": self._store.revision,
             "noeuds": nodes,
             "journal": self._store.list_journal(),
+            "prefsCanaux": self.prefs_canaux(),
             "liaison": self._poller.state(),
             "version": VERSION,
             "dossier": str(data_dir()),

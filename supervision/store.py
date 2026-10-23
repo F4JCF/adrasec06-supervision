@@ -401,6 +401,14 @@ class Store:
             self._cx.commit()
         self._bump()
 
+    def purger_canal(self, canal: int, avant_ts: float) -> int:
+        with self._lock:
+            c = self._cx.execute("DELETE FROM messages WHERE canal=? AND ts<?", (int(canal), float(avant_ts)))
+            self._cx.commit()
+        if c.rowcount:
+            self._bump()
+        return c.rowcount
+
     def delete_message(self, mid: int):
         with self._lock:
             self._cx.execute("DELETE FROM messages WHERE id=?", (mid,))
