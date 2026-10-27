@@ -257,6 +257,12 @@ class Poller:
             await mc.commands.set_time(int(time.time()))
         except Exception:  # noqa: BLE001
             pass
+        try:  # et son écran suit l'heure légale (hiver / été)
+            fz = await self._fuseau_ecran()
+            if fz and fz[0] != fz[1]:
+                self._log(f"Écran du companion : fuseau corrigé UTC{fz[0]:+d} → UTC{fz[1]:+d} (changement d'heure)")
+        except Exception:  # noqa: BLE001
+            pass
         try:
             mc.subscribe(EventType.CHANNEL_MSG_RECV, self._on_channel_msg)
             mc.subscribe(EventType.CONTACT_MSG_RECV, self._on_contact_msg)
@@ -2007,6 +2013,37 @@ class Poller:
     # ---------- analyse du nœud companion ----------
     RESEAU = {"radio_freq": 869.618, "radio_bw": 62.5, "radio_sf": 8, "radio_cr": 8}
 
+    @staticmethod
+    def _decalage_pc() -> int:
+        """Décalage horaire actuel du PC en heures (Paris : +1 en hiver, +2 en été)."""
+        from datetime import datetime
+        off = datetime.now().astimezone().utcoffset()
+        return int(round(off.total_seconds() / 3600)) if off is not None else 0
+
+    async def _fuseau_ecran(self):
+        """L'écran du companion affiche l'heure UTC + « tz.offset » (heures entières, sans changement d'heure automatique).
+        On l'aligne sur le décalage du PC. Renvoie (avant, après) ou None si le firmware ne le permet pas."""
+        try:
+            ev = await asyncio.wait_for(self.mc.commands.run_cli_command("get tz.offset"), 8)
+        except Exception:  # noqa: BLE001
+            return None
+        if ev is None or ev.type == EventType.ERROR:
+            return None
+        m = re.search(r"(-?\d+)", (ev.payload or {}).get("text", ""))
+        if not m:
+            return None
+        avant, voulu = int(m.group(1)), self._decalage_pc()
+        if avant == voulu:
+            return avant, voulu
+        try:
+            ev = await asyncio.wait_for(self.mc.commands.run_cli_command(f"set tz.offset {voulu}"), 8)
+        except Exception:  # noqa: BLE001
+            return None
+        if ev is None or ev.type == EventType.ERROR or "ok" not in (ev.payload or {}).get("text", "").lower():
+            return None
+        log.info("Fuseau de l'écran du companion : %+d → %+d", avant, voulu)
+        return avant, voulu
+
     def heure_companion(self, operateur: str = "PC") -> dict:
         """Met l'horloge du nœud companion à l'heure du PC et indique l'écart corrigé."""
         if self.mc is None:
@@ -2024,14 +2061,24 @@ class Poller:
         async def go():
             avant = await lire()
             ev = await asyncio.wait_for(self.mc.commands.set_time(int(time.time())), 10)
+            fz = await self._fuseau_ecran()
             if ev is None or ev.type == EventType.ERROR:
-                return None, avant, None
-            return True, avant, await lire()
+                return None, avant, None, fz
+            return True, avant, await lire(), fz
         try:
-            ok, avant, apres = self._submit(go(), timeout=40)
+            ok, avant, apres, fz = self._submit(go(), timeout=60)
         except Exception as e:  # noqa: BLE001
             return {"ok": False, "erreur": f"Mise à l'heure impossible : {e}"}
         ecart = int(avant - time.time()) if isinstance(avant, (int, float)) else None
+        if not ok and fz is not None and fz[0] != fz[1]:
+            msg = (f"Écran du companion corrigé : UTC{fz[0]:+d} → UTC{fz[1]:+d} (changement d'heure). "
+                   f"L'horloge interne avance de {ecart} s et n'a pas pu être reculée." if ecart and ecart > 1 else
+                   f"Écran du companion corrigé : UTC{fz[0]:+d} → UTC{fz[1]:+d} (changement d'heure).")
+            self.store.add_journal("", operateur, msg, nature="evenement")
+            self._log(msg)
+            return {"ok": True, "message": msg, "ecart": ecart}
+        if not ok and ecart is not None and 0 < ecart <= 5:
+            ok, apres = True, None  # avance de quelques secondes seulement : considéré à l'heure
         if not ok:
             if ecart is not None and ecart > 1:
                 return {"ok": False, "erreur": f"Le nœud companion a refusé : son horloge avance de {ecart} s et MeshCore n'accepte pas "
@@ -2044,7 +2091,13 @@ class Poller:
             d = f"{a} s" if a < 120 else f"{a // 60} min" if a < 7200 else f"{a // 3600} h {a % 3600 // 60:02d}" if a < 172800 else f"{a // 86400} jours"
             return "était déjà à l'heure" if a <= 1 else f"il {'avançait' if e > 0 else 'retardait'} de {d}"
         heure = time.strftime("%d/%m/%Y %H:%M:%S", time.localtime(apres)) if isinstance(apres, (int, float)) else time.strftime("%d/%m/%Y %H:%M:%S")
-        msg = f"{self.local_name or 'Nœud companion'} mis à l'heure du PC : {heure} ({txt(ecart)})."
+        if fz is None:
+            ecran = " Fuseau de l'écran : non réglable avec ce firmware (mettez-le à jour)."
+        elif fz[0] != fz[1]:
+            ecran = f" Écran corrigé : UTC{fz[0]:+d} → UTC{fz[1]:+d} ({'heure d’hiver' if fz[1] == 1 else 'heure d’été' if fz[1] == 2 else 'heure locale'})."
+        else:
+            ecran = f" Écran déjà à l'heure locale (UTC{fz[1]:+d})."
+        msg = f"{self.local_name or 'Nœud companion'} mis à l'heure du PC : {heure} ({txt(ecart)}).{ecran}"
         self.store.add_journal("", operateur, msg, nature="evenement")
         self._log(msg)
         return {"ok": True, "message": msg, "ecart": ecart}
