@@ -452,6 +452,11 @@ header.top .hright{grid-column:1 / -1}
 #mpart[hidden]{display:none}
 #mparam{position:fixed;inset:0;z-index:2550;background:rgba(5,10,15,.55);display:grid;place-items:center;padding:16px}
 #mparam[hidden]{display:none}
+#mmaj{position:fixed;inset:0;z-index:2550;background:rgba(5,10,15,.55);display:grid;place-items:center;padding:16px}
+#mmaj[hidden]{display:none}
+.maj-et{display:grid;grid-template-columns:28px 1fr;gap:10px;align-items:start;border:1px solid var(--line);border-radius:6px;padding:10px 12px}
+.maj-et .no{width:24px;height:24px;border-radius:50%;background:var(--sunk);display:grid;place-items:center;font-family:var(--f-mono);font-size:.85rem}
+.maj-et.fait .no{background:var(--ok);color:#fff}
 .par-grid{display:grid;grid-template-columns:minmax(220px,auto) 1fr;gap:16px;align-items:start}
 @media (max-width:700px){.par-grid{grid-template-columns:1fr}}
 .par-qr svg{width:220px;height:220px;display:block;border-radius:6px}
@@ -516,6 +521,7 @@ header.top .hright{grid-column:1 / -1}
         <button class="btn" id="disconnect" type="button" hidden>Déconnecter</button>
         <button class="btn" id="pollNow" type="button" disabled>Interroger maintenant</button>
         <button class="btn" id="compOpen" type="button" disabled title="Paramètres, télémétrie, batterie, mémoire, statistiques radio de votre nœud companion">Analyser mon nœud</button>
+        <button class="btn" id="majComp" type="button" title="Vérifier et installer la dernière version du firmware MeshCore de votre nœud companion">Mise à jour du companion</button>
         <button class="btn" id="heureComp" type="button" disabled title="Règle l'horloge de votre nœud companion sur l'heure de ce PC (elle sert ensuite à remettre les répéteurs à l'heure)">Mettre à l'heure mon companion</button>
         <button class="btn" id="advZero" type="button" disabled title="Annonce votre nœud companion aux nœuds qui l'entendent directement (sans relais)">Advert</button>
         <button class="btn" id="advFlood" type="button" disabled title="Annonce votre nœud companion à tout le réseau : l'advert est relayé par les répéteurs">Advert inondation</button>
@@ -884,6 +890,12 @@ header.top .hright{grid-column:1 / -1}
     <div class="ct-wrap"><table><thead><tr>
       <th><button data-cttri="nom">Nom</button></th><th><button data-cttri="type">Type</button></th><th><button data-cttri="annonce">Dernière annonce</button></th><th><button data-cttri="distance">Distance</button></th><th><button data-cttri="route">Route</button></th><th></th>
     </tr></thead><tbody id="ctRows"></tbody></table></div>
+  </div>
+</div>
+<div id="mmaj" hidden role="dialog" aria-modal="true" aria-labelledby="mmajTitle">
+  <div class="mdet-box" style="width:min(820px,100%)">
+    <div class="mdet-head"><h2 id="mmajTitle">Mise à jour du companion</h2><button class="btn small" id="majClose" type="button">Fermer (Échap)</button></div>
+    <div id="majBody" style="overflow:auto;min-height:0;padding:12px 16px 16px;display:grid;gap:12px"></div>
   </div>
 </div>
 <div id="mparam" hidden role="dialog" aria-modal="true" aria-labelledby="mparamTitle">
@@ -1413,7 +1425,37 @@ header.top .hright{grid-column:1 / -1}
   }
   document.addEventListener("input", e => { if (e.target.id === "partRech") renderParticipants(); });
   document.addEventListener("change", e => { if (e.target.id === "partPer") renderParticipants(); });
-  /* ---------- paramètres d'un canal ---------- */
+  /* ---------- mise à jour du firmware du companion ---------- */
+  let fw = {etat:null, fichier:"", sauvegarde:"", choix:0, msg:"", busy:""};
+  async function ouvrirMaj(){
+    $("#mmaj").hidden = false; fw.msg = ""; fw.etat = null; renderMaj();
+    try { fw.etat = await api.maj_companion_etat(); } catch(e) { fw.etat = {ok:false, erreur:String(e)}; }
+    renderMaj();
+  }
+  function renderMaj(){
+    if ($("#mmaj").hidden) return;
+    const e = fw.etat;
+    if (!e) { $("#majBody").innerHTML = `<p class="reading">Lecture de la version du nœud et des versions MeshCore…</p>`; return; }
+    const ins = e.installe || {}, d = e.derniere || {}, f = (d.fichiers || [])[fw.choix];
+    const etape = (n, fait, titre, corps) => `<div class="maj-et${fait ? " fait" : ""}"><span class="no">${fait ? "✓" : n}</span><div style="display:grid;gap:6px"><b>${titre}</b>${corps}</div></div>`;
+    $("#majBody").innerHTML = `
+      <div style="display:flex;gap:16px;flex-wrap:wrap">
+        <span>Installé : <b class="mono">${esc(ins.version || "inconnu")}</b> <span class="muted">${esc([ins.modele, ins.build].filter(Boolean).join(" · "))}</span></span>
+        <span>Dernière version : ${d.ok ? `<b class="mono">${esc(d.version)}</b> <span class="muted">du ${esc(d.date)}</span>` : `<span style="color:var(--crit)">${esc(d.erreur || "inconnue")}</span>`}</span>
+        ${e.aJour === true ? `<b style="color:var(--ok)">✓ Votre companion est à jour</b>` : e.aJour === false ? `<b style="color:var(--warn)">Mise à jour disponible</b>` : ""}</div>
+      ${!ins.connecte ? `<p class="reading" style="margin:0">Connectez le nœud companion pour lire sa version et sauvegarder ses contacts.</p>` : ""}
+      ${etape(1, !!fw.sauvegarde, "Sauvegarder contacts et canaux", `<span class="reading">Par précaution : contacts, canaux et leurs clés sont enregistrés dans un fichier sur ce PC.</span>
+        <div class="actions"><button class="btn small" type="button" id="majSauv" ${ins.connecte ? "" : "disabled"}>Sauvegarder</button>${fw.sauvegarde ? `<span class="reading">${esc(fw.sauvegarde)}</span>` : ""}</div>`)}
+      ${etape(2, !!fw.fichier, "Télécharger le firmware", d.ok && (d.fichiers || []).length ? `<label>Fichier pour votre carte<select id="majFichier">${d.fichiers.map((x, i) => `<option value="${i}" ${i === fw.choix ? "selected" : ""}>${esc(x.nom)}${x.conseille ? " (conseillé)" : ""}</option>`).join("")}</select></label>
+        <div class="actions"><button class="btn small" type="button" id="majDl">Télécharger</button>${fw.fichier ? `<span class="reading">${esc(fw.fichier)}</span>` : ""}</div>`
+        : `<span class="reading">${d.ok ? "Aucun fichier .uf2 trouvé pour le Wio Tracker L1 dans cette version : utilisez le Web Flasher (étape 3 bis)." : "Versions MeshCore indisponibles (Internet)."}</span>`)}
+      ${etape(3, false, "Installer", `<span class="reading"><b>Au moment de cliquer</b>, appuyez <b>deux fois rapidement sur le bouton RST</b> du L1 Pro (câble USB branché au PC) : un disque « TRACKER L1 » apparaît, le logiciel y copie le firmware et le nœud redémarre. La liaison Bluetooth est coupée pendant l'opération ; vos contacts et canaux sont normalement conservés.</span>
+        <div class="actions"><button class="btn primary" type="button" id="majFlash" ${fw.fichier ? "" : "disabled"}>${fw.busy === "flash" ? "En attente du disque TRACKER L1…" : "Installer sur le companion"}</button></div>
+        <span class="reading">3 bis — autre méthode : <a href="${esc(e.flasher)}" target="_blank" rel="noopener">ouvrir le Web Flasher MeshCore</a> (carte « Seeed Studio Wio Tracker L1 Pro », « Companion Bluetooth »).</span>`)}
+      ${etape(4, false, "Reconnecter", `<span class="reading">Si le nœud ne redémarre pas seul, appuyez une fois sur RST. Puis « Connecter » dans « Liaison avec le nœud » et rouvrez cette fenêtre pour vérifier la version.</span>`)}
+      ${fw.msg ? `<p style="margin:0">${fw.msg}</p>` : ""}
+      ${d.ok && d.notes ? `<details><summary>Nouveautés de ${esc(d.version)}</summary><pre style="white-space:pre-wrap;font-size:.8rem">${esc(d.notes)}</pre></details>` : ""}`;
+  }
   let parCanal = null, parPartage = null;
   const cleAleatoire = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, "0")).join("");
   async function ouvrirParamCanal(idx){
@@ -1477,6 +1519,7 @@ header.top .hright{grid-column:1 / -1}
     const att = r.attente || [];
     $("#amiAtt").innerHTML = att.length ? "En attente de leur annonce : " + att.map(a => `<b>${esc(a.nom)}</b> <button class="btn small" type="button" data-amiretire="${esc(a.nom)}" style="padding:0 6px">retirer</button>`).join(" · ") : "";
   }
+  document.addEventListener("change", e => { if (e.target.id === "majFichier") { fw.choix = +e.target.value; fw.fichier = ""; renderMaj(); } });
   document.addEventListener("input", e => { if (e.target.id === "amiNom") { clearTimeout(amiTimer); amiTimer = setTimeout(chercherAmi, 250); } });
   /* conversion des unités étrangères des messages reçus (°F, mph, mi, in…) en unités françaises */
   function unitesFr(t){
@@ -2465,7 +2508,7 @@ const HOT_MIN = 360; // 6 heures
     }
   }
   setInterval(() => { if (crise) $("#crClock").textContent = new Date().toLocaleTimeString("fr-FR"); }, 1000);
-  document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.id === "regAutre") { e.preventDefault(); const v = e.target.value.trim(), c = +e.target.dataset.canal; if (v && v !== "#") api.regler_region(c, v, false).then(r => { toast(r.ok ? `Région ${v} pour ce canal` : r.erreur); refresh(true); }); return; } if (e.key === "Escape" && !$("#mami").hidden) { $("#mami").hidden = true; return; } if (e.key === "Enter" && (e.target.id === "partNouv" || e.target.id === "partNote")) { e.preventDefault(); $("#partAjout").click(); return; } if (e.key === "Escape" && !$("#mpart").hidden) { $("#mpart").hidden = true; return; } if (e.key === "Escape" && !$("#mparam").hidden) { $("#mparam").hidden = true; return; } if (e.key === "Escape" && !$("#mcontacts").hidden) { $("#mcontacts").hidden = true; return; } if (e.key === "Escape" && !$("#mami").hidden) { $("#mami").hidden = true; return; } if (e.target.id === "coCmd" && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); coPos = Math.max(0, Math.min(coHisto.length, coPos + (e.key === "ArrowUp" ? -1 : 1))); e.target.value = coHisto[coPos] || ""; return; } if (e.key === "Escape" && !$("#mconsole").hidden) { $("#mconsole").hidden = true; return; } if (e.key === "Enter" && e.target.id === "chAjout") { e.preventDefault(); chAjouter(); return; } if (e.key === "Escape" && !$("#mchemin").hidden) { $("#mchemin").hidden = true; return; } if (e.key === "Enter" && e.target.id === "apAjout") { e.preventDefault(); $("#apAjoutBtn").click(); return; } if (e.key === "Escape" && !$("#mappel").hidden) { $("#mappel").hidden = true; return; } if (e.key === "Escape" && !$("#mcomp").hidden) { $("#mcomp").hidden = true; return; } if (e.key === "Escape" && !$("#mdet").hidden) { fermerDetail(); return; } if (e.key === "Escape" && crise) openCrise(false); });
+  document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.id === "regAutre") { e.preventDefault(); const v = e.target.value.trim(), c = +e.target.dataset.canal; if (v && v !== "#") api.regler_region(c, v, false).then(r => { toast(r.ok ? `Région ${v} pour ce canal` : r.erreur); refresh(true); }); return; } if (e.key === "Escape" && !$("#mami").hidden) { $("#mami").hidden = true; return; } if (e.key === "Enter" && (e.target.id === "partNouv" || e.target.id === "partNote")) { e.preventDefault(); $("#partAjout").click(); return; } if (e.key === "Escape" && !$("#mpart").hidden) { $("#mpart").hidden = true; return; } if (e.key === "Escape" && !$("#mparam").hidden) { $("#mparam").hidden = true; return; } if (e.key === "Escape" && !$("#mmaj").hidden) { $("#mmaj").hidden = true; return; } if (e.key === "Escape" && !$("#mcontacts").hidden) { $("#mcontacts").hidden = true; return; } if (e.key === "Escape" && !$("#mami").hidden) { $("#mami").hidden = true; return; } if (e.target.id === "coCmd" && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); coPos = Math.max(0, Math.min(coHisto.length, coPos + (e.key === "ArrowUp" ? -1 : 1))); e.target.value = coHisto[coPos] || ""; return; } if (e.key === "Escape" && !$("#mconsole").hidden) { $("#mconsole").hidden = true; return; } if (e.key === "Enter" && e.target.id === "chAjout") { e.preventDefault(); chAjouter(); return; } if (e.key === "Escape" && !$("#mchemin").hidden) { $("#mchemin").hidden = true; return; } if (e.key === "Enter" && e.target.id === "apAjout") { e.preventDefault(); $("#apAjoutBtn").click(); return; } if (e.key === "Escape" && !$("#mappel").hidden) { $("#mappel").hidden = true; return; } if (e.key === "Escape" && !$("#mcomp").hidden) { $("#mcomp").hidden = true; return; } if (e.key === "Escape" && !$("#mdet").hidden) { fermerDetail(); return; } if (e.key === "Escape" && crise) openCrise(false); });
 
   /* ---------- messages types ---------- */
   function fillTemplate(t){
@@ -2770,6 +2813,16 @@ const HOT_MIN = 360; // 6 heures
       case "ctClose": $("#mcontacts").hidden = true; return;
       case "partClose": $("#mpart").hidden = true; return;
       case "paramClose": $("#mparam").hidden = true; return;
+      case "majComp": ouvrirMaj(); return;
+      case "majClose": $("#mmaj").hidden = true; return;
+      case "majSauv": { t.disabled = true; const r = await api.maj_companion_sauvegarder(); fw.sauvegarde = r.ok ? `${r.contacts} contacts et ${r.canaux} canaux sauvegardés : ${r.chemin}` : ""; if (!r.ok) toast(r.erreur); renderMaj(); return; }
+      case "majDl": { const f = (fw.etat.derniere.fichiers || [])[fw.choix]; if (!f) return; t.disabled = true; t.textContent = "Téléchargement…";
+        const r = await api.maj_companion_telecharger(f.url, f.nom); fw.fichier = r.ok ? r.chemin : ""; if (!r.ok) toast(r.erreur); renderMaj(); return; }
+      case "majFlash": { if (!confirm("Appuyez maintenant DEUX FOIS rapidement sur RST du companion (câble USB branché), puis cliquez sur OK.")) return;
+        fw.busy = "flash"; fw.msg = ""; renderMaj();
+        let r; try { r = await api.maj_companion_flasher(fw.fichier); } catch(e) { r = {ok:false, erreur:String(e)}; } fw.busy = "";
+        fw.msg = r.ok ? `<b style="color:var(--ok)">✓ Firmware copié sur ${esc(r.disque)}.</b> Le companion redémarre avec la nouvelle version. Reconnectez-le (Liaison avec le nœud → Connecter).` : `<span style="color:var(--crit)">${esc(r.erreur)}</span>`;
+        renderMaj(); refresh(true); return; }
       case "parCleOuvrir": { const b = $("#parCle"); b.hidden = !b.hidden; if (!b.hidden) { $("#parCleVal").value = cleAleatoire(); $("#parCleOk").checked = false; $("#parCleMsg").textContent = ""; } return; }
       case "parCleAlea": $("#parCleVal").value = cleAleatoire(); return;
       case "parCleGo": case "parCleAncienne": {

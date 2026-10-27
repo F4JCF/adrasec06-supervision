@@ -13,11 +13,11 @@ import re
 import time
 from datetime import datetime
 
-from . import aprs, courriel, rapports, resilience, systeme, taches, visibilite, web
+from . import aprs, courriel, firmware, rapports, resilience, systeme, taches, visibilite, web
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.22.3"
+VERSION = "1.23.0"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -988,6 +988,39 @@ class Api:
     # ----- analyse du nœud companion -----
     def analyser_companion(self):
         return self._poller.analyser_companion()
+
+    # ----- mise à jour du firmware du nœud companion -----
+    def maj_companion_etat(self):
+        info = self._poller.infos_companion()
+        dern = firmware.derniere_version(info.get("modele", ""))
+        inst = info.get("version") or ""
+        r = {"ok": True, "installe": info, "derniere": dern, "flasher": firmware.FLASHER,
+             "dossier": str(firmware.dossier())}
+        if dern.get("ok") and inst:
+            r["aJour"] = firmware._version(inst) >= firmware._version(dern["version"])
+        return r
+
+    def maj_companion_sauvegarder(self):
+        return self._poller.sauvegarde_companion()
+
+    def maj_companion_telecharger(self, url, nom):
+        return firmware.telecharger(url, nom)
+
+    def maj_companion_flasher(self, chemin):
+        if self._poller.mc is not None:
+            self._poller.disconnect()  # le nœud va redémarrer
+        r = firmware.flasher(chemin, attente=120)
+        self._store.add_journal("", self._store.get_config("operateur", "") or "PC",
+                                f"Mise à jour du firmware du nœud companion : {Path(chemin).name} " +
+                                ("copié sur le nœud." if r.get("ok") else f"échec ({r.get('erreur')})."), nature="evenement")
+        return r
+
+    def maj_companion_ouvrir_dossier(self):
+        try:
+            os.startfile(str(firmware.dossier()))  # type: ignore[attr-defined]
+            return {"ok": True}
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "erreur": str(e)}
 
     def heure_companion(self):
         return self._poller.heure_companion(self._store.get_config("operateur", "") or "PC")

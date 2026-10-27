@@ -2044,6 +2044,40 @@ class Poller:
         log.info("Fuseau de l'écran du companion : %+d → %+d", avant, voulu)
         return avant, voulu
 
+    def infos_companion(self) -> dict:
+        """Modèle et version du firmware du nœud companion."""
+        if self.mc is None:
+            a = (self.analyse_companion or {}).get("appareil") or {}
+            return {"connecte": False, "modele": a.get("model", ""), "version": a.get("ver", ""), "build": a.get("fw_build", "")}
+
+        async def go():
+            ev = await asyncio.wait_for(self.mc.commands.send_device_query(), 10)
+            return (ev.payload or {}) if ev is not None and ev.type != EventType.ERROR else {}
+        try:
+            p = self._submit(go(), timeout=20)
+        except Exception:  # noqa: BLE001
+            p = {}
+        return {"connecte": True, "nom": self.local_name, "modele": p.get("model", ""), "version": p.get("ver", ""),
+                "build": p.get("fw_build", "")}
+
+    def sauvegarde_companion(self) -> dict:
+        from . import firmware
+        if self.mc is None:
+            return {"ok": False, "erreur": "Connectez d'abord le nœud companion."}
+        try:
+            res = self._submit(self.mc.commands.get_contacts(), timeout=60)
+            if res is not None and res.type != EventType.ERROR:
+                self._contacts = dict(res.payload or {})
+            self._submit(self._load_channels(), timeout=60)
+        except Exception:  # noqa: BLE001
+            pass
+        r = firmware.sauvegarder(self._contacts, self.canaux, self._secrets,
+                                 {"nom": self.local_name, "radio": self.radio, "position": self.position})
+        if r.get("ok"):
+            self.store.add_journal("", self.store.get_config("operateur", "") or "PC",
+                                   f"Sauvegarde du nœud companion avant mise à jour : {r['contacts']} contacts, {r['canaux']} canaux.")
+        return r
+
     def heure_companion(self, operateur: str = "PC") -> dict:
         """Met l'horloge du nœud companion à l'heure du PC et indique l'écart corrigé."""
         if self.mc is None:
