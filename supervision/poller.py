@@ -2007,6 +2007,48 @@ class Poller:
     # ---------- analyse du nœud companion ----------
     RESEAU = {"radio_freq": 869.618, "radio_bw": 62.5, "radio_sf": 8, "radio_cr": 8}
 
+    def heure_companion(self, operateur: str = "PC") -> dict:
+        """Met l'horloge du nœud companion à l'heure du PC et indique l'écart corrigé."""
+        if self.mc is None:
+            return {"ok": False, "erreur": "Aucun nœud connecté."}
+
+        async def lire():
+            try:
+                ev = await asyncio.wait_for(self.mc.commands.get_time(), 10)
+                if ev is not None and ev.type != EventType.ERROR:
+                    return (ev.payload or {}).get("time")
+            except Exception:  # noqa: BLE001
+                pass
+            return None
+
+        async def go():
+            avant = await lire()
+            ev = await asyncio.wait_for(self.mc.commands.set_time(int(time.time())), 10)
+            if ev is None or ev.type == EventType.ERROR:
+                return None, avant, None
+            return True, avant, await lire()
+        try:
+            ok, avant, apres = self._submit(go(), timeout=40)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "erreur": f"Mise à l'heure impossible : {e}"}
+        ecart = int(avant - time.time()) if isinstance(avant, (int, float)) else None
+        if not ok:
+            if ecart is not None and ecart > 1:
+                return {"ok": False, "erreur": f"Le nœud companion a refusé : son horloge avance de {ecart} s et MeshCore n'accepte pas "
+                                              "de la reculer. Éteignez puis rallumez le nœud, reconnectez-le, puis réessayez."}
+            return {"ok": False, "erreur": "Le nœud companion a refusé la mise à l'heure."}
+        def txt(e):
+            if e is None:
+                return "écart précédent inconnu"
+            a = abs(e)
+            d = f"{a} s" if a < 120 else f"{a // 60} min" if a < 7200 else f"{a // 3600} h {a % 3600 // 60:02d}" if a < 172800 else f"{a // 86400} jours"
+            return "était déjà à l'heure" if a <= 1 else f"il {'avançait' if e > 0 else 'retardait'} de {d}"
+        heure = time.strftime("%d/%m/%Y %H:%M:%S", time.localtime(apres)) if isinstance(apres, (int, float)) else time.strftime("%d/%m/%Y %H:%M:%S")
+        msg = f"{self.local_name or 'Nœud companion'} mis à l'heure du PC : {heure} ({txt(ecart)})."
+        self.store.add_journal("", operateur, msg, nature="evenement")
+        self._log(msg)
+        return {"ok": True, "message": msg, "ecart": ecart}
+
     def envoyer_advert(self, inondation: bool = False) -> dict:
         """Annonce (advert) du nœud companion : voisins directs seulement, ou relayée par les répéteurs (inondation)."""
         if self.mc is None:

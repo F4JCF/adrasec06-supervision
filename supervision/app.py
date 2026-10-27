@@ -17,7 +17,7 @@ from . import aprs, courriel, rapports, resilience, systeme, taches, visibilite,
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.22.1"
+VERSION = "1.22.2"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -988,6 +988,9 @@ class Api:
     # ----- analyse du nœud companion -----
     def analyser_companion(self):
         return self._poller.analyser_companion()
+
+    def heure_companion(self):
+        return self._poller.heure_companion(self._store.get_config("operateur", "") or "PC")
 
     def envoyer_advert(self, inondation=False):
         return self._poller.envoyer_advert(bool(inondation))

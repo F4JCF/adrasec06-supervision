@@ -516,6 +516,7 @@ header.top .hright{grid-column:1 / -1}
         <button class="btn" id="disconnect" type="button" hidden>Déconnecter</button>
         <button class="btn" id="pollNow" type="button" disabled>Interroger maintenant</button>
         <button class="btn" id="compOpen" type="button" disabled title="Paramètres, télémétrie, batterie, mémoire, statistiques radio de votre nœud companion">Analyser mon nœud</button>
+        <button class="btn" id="heureComp" type="button" disabled title="Règle l'horloge de votre nœud companion sur l'heure de ce PC (elle sert ensuite à remettre les répéteurs à l'heure)">Mettre à l'heure mon companion</button>
         <button class="btn" id="advZero" type="button" disabled title="Annonce votre nœud companion aux nœuds qui l'entendent directement (sans relais)">Advert</button>
         <button class="btn" id="advFlood" type="button" disabled title="Annonce votre nœud companion à tout le réseau : l'advert est relayé par les répéteurs">Advert inondation</button>
         <label>Collecte <select id="interval"><option value="5">toutes les 5 min</option><option value="60">toutes les heures</option><option value="180">toutes les 3 h</option><option value="360">toutes les 6 h</option><option value="720">toutes les 12 h</option><option value="1440">toutes les 24 h</option><option value="0">à heures fixes…</option></select></label>
@@ -1131,7 +1132,7 @@ header.top .hright{grid-column:1 / -1}
     document.querySelectorAll("#mode button").forEach(b => b.disabled = !!L.connecte);
     if (L.connecte && L.mode && L.mode !== mode) setMode(L.mode);
     $("#pollNow").disabled = !L.connecte || L.occupe;
-    $("#compOpen").disabled = !L.connecte; $("#advZero").disabled = $("#advFlood").disabled = !L.connecte;
+    $("#compOpen").disabled = !L.connecte; $("#advZero").disabled = $("#advFlood").disabled = $("#heureComp").disabled = !L.connecte;
     if (document.activeElement !== $("#interval") && !heuresEdit) {
       const v = String(L.intervalle ?? 15), sel = $("#interval");
       if (![...sel.options].some(o => o.value === v)) sel.insertAdjacentHTML("afterbegin", `<option value="${v}">toutes les ${v} min</option>`);
@@ -2762,6 +2763,7 @@ const HOT_MIN = 360; // 6 heures
       case "amiAttendre": { const r = await api.attendre_ami($("#amiNom").value); $("#amiMsg").textContent = r.ok ? r.message + "." : r.erreur; if (r.ok) $("#amiAttendre").hidden = true; chercherAmi(); refresh(true); return; }
       case "regLire": { t.disabled = true; $("#regInfo").textContent = "Lecture auprès de chaque répéteur…"; const r = await api.regions(true); t.disabled = false; $("#regInfo").textContent = r.ok ? `${(r.connues || []).length} région(s) trouvée(s)` : r.erreur; refresh(true); return; }
       case "compOpen": analyserCompanion(false); return;
+      case "heureComp": { t.disabled = true; let r; try { r = await api.heure_companion(); } catch(e) { r = {ok:false, erreur:String(e)}; } t.disabled = false; toast(r.ok ? r.message : r.erreur); refresh(true); return; }
       case "advZero": case "advFlood": { t.disabled = true; let r; try { r = await api.envoyer_advert(t.id === "advFlood"); } catch(e) { r = {ok:false, erreur:String(e)}; } t.disabled = false; toast(r.ok ? r.message : r.erreur); refresh(true); return; }
       case "compRun": analyserCompanion(true); return;
       case "compClose": $("#mcomp").hidden = true; return;

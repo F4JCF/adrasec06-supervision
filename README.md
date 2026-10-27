@@ -161,6 +161,10 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 - **Companions amis** : bouton « + Ami » (Messagerie → Messages directs) pour ajouter un companion à partir de sa carte de contact « meshcore://… » ou de sa clé publique complète + son nom ; bouton « ☆ Ajouter aux amis / ★ Ami » dans chaque conversation directe ; les amis sont en tête de liste et repérés en doré sur la carte.
 - **Découvrir les voisins** dans la fiche d'un répéteur (commande discover.neighbors), console distante, étalonnage de la batterie du companion.
 
+### Nouveautés de la version 1.22.2
+
+- Bouton « Mettre à l'heure mon companion » (Liaison avec le nœud) : horloge du nœud réglée sur l'heure du PC, écart corrigé affiché et noté au journal.
+
 ### Nouveautés de la version 1.22.1
 
 - Paramètres du canal : « Modifier la clé… » (clé saisie ou aléatoire, avec confirmation) et « Revenir à l'ancienne clé » ; le QR code et le lien sont régénérés. Périmètre de région modifiable directement.
