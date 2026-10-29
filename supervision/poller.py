@@ -68,6 +68,30 @@ PARAMS_CONFIG = [
     ("lat", "get lat"), ("lon", "get lon"), ("gpsAdvert", "gps advert"), ("regions", "region"),
     ("regionDefaut", "region default"), ("ownerInfo", "get owner.info"), ("loopDetect", "get loop.detect"),
 ]
+def _rx(motif):
+    r = re.compile(motif, re.I)
+    return lambda t: bool(r.search(_val_cli(t) or ""))
+
+
+_NB = r"^-?\d+(\.\d+)?$"
+VALIDE_CONFIG = {
+    "nom": lambda t: bool(_val_cli(t)) and not re.match(r"^(ok\b|err|v\d+\.\d+|default scope|\* |\*\^)", _val_cli(t), re.I)
+                     and not re.match(r"^\d+\.\d+,", _val_cli(t)),
+    "firmware": _rx(r"v?\d+\.\d+\.\d+|build"),
+    "radio": _rx(r"^\d{3}\.\d+,\d+(\.\d+)?,\d+,\d+$"),
+    "tx": _rx(r"^-?\d{1,2}$"),
+    "dutycycle": _rx(r"^\d+(\.\d+)?\s*%$"),
+    "af": _rx(r"^\d(\.\d+)?$"),
+    "rxgain": _rx(r"^(on|off)$"), "repeat": _rx(r"^(on|off)$"),
+    "agc": _rx(r"^\d+$"), "rxdelay": _rx(_NB), "txdelay": _rx(_NB), "floodMax": _rx(r"^\d+$"),
+    "advertInterval": _rx(r"^\d+$"), "floodAdvertInterval": _rx(r"^\d+$"),
+    "lat": _rx(r"^-?\d{1,2}\.\d+$"), "lon": _rx(r"^-?\d{1,3}\.\d+$"),
+    "gpsAdvert": _rx(r"^(none|prefs|share)$"), "regions": _rx(r"^\*"), "regionDefaut": _rx(r"default scope"),
+    "ownerInfo": lambda t: bool(_val_cli(t)) and not re.match(r"^(ok\b|v\d+\.\d+|default scope|\*|\d+\.\d+,|on$|off$)", _val_cli(t), re.I),
+    "loopDetect": _rx(r"^(off|minimal|moderate|strict)$"),
+}
+VERSION_CONFIG = 2  # copies enregistrées avec les lectures vérifiées (les copies antérieures sont écartées)
+
 LIB_CONFIG = {"nom": "Nom", "firmware": "Firmware", "radio": "Radio (MHz, kHz, SF, CR)", "tx": "Puissance (dBm)",
               "dutycycle": "Cycle d'émission", "af": "Facteur de temps d'antenne (af)", "rxgain": "Gain RX renforcé",
               "agc": "Remise à zéro AGC (s)", "rxdelay": "rxdelay", "txdelay": "txdelay", "repeat": "Relais actif",
@@ -617,12 +641,14 @@ class Poller:
                                              "operateur": "AUTO"}
                 h = h2 or h
             fields.update(h)
-            libre = self._flood_public(await self._cli(contact, "region get *"))
+            libre = self._flood_public(await self._cli(contact, "region get *", valide=lambda t: t.strip().startswith("*")))
             if libre is not None:
                 fields["floodPublic"] = libre
                 fields["floodPublicLu"] = now_iso()
             try:
                 derniere = (node.get("config") or {}).get("date") or ""
+                if (node.get("config") or {}).get("v") != VERSION_CONFIG:
+                    derniere = ""
                 if not derniere or time.time() - _ts_iso(derniere) > 22 * 3600:
                     fields.update(await self._relever_config(node, contact))
             except Exception as e:  # noqa: BLE001
@@ -694,22 +720,62 @@ class Poller:
                 self.alerte("info", name, f"{name} répond de nouveau.")
         self.store.patch_node(node["id"], fields)
 
-    async def _cli(self, contact, cmd: str, timeout: float = 20) -> str | None:
-        """Envoie une commande console à un répéteur (droits admin requis) et attend sa réponse."""
+    async def _cli(self, contact, cmd: str, timeout: float = 20, valide=None) -> str | None:
+        """Envoie une commande console à un répéteur (droits admin requis) et attend sa réponse.
+
+        Avec « valide », les réponses qui ne correspondent pas à la commande (réponse tardive d'une commande
+        précédente, arrivée entre-temps) sont écartées et l'on attend la bonne.
+        """
         mc = self.mc
         prefix = contact.get("public_key", "")[:12]
+        file = asyncio.Queue()
+        sub = None
         try:
-            waiter = asyncio.ensure_future(mc.dispatcher.wait_for_event(
-                EventType.CONTACT_MSG_RECV, attribute_filters={"pubkey_prefix": prefix}, timeout=timeout))
-            await asyncio.sleep(0)
+            sub = mc.subscribe(EventType.CONTACT_MSG_RECV, lambda ev: file.put_nowait(ev),
+                               attribute_filters={"pubkey_prefix": prefix})
             sent = await mc.commands.send_cmd(contact, cmd)
             if sent is None or sent.type == EventType.ERROR:
-                waiter.cancel()
                 return None
-            ev = await waiter
-            return (ev.payload or {}).get("text") if ev else None
+            fin = time.time() + timeout
+            while True:
+                reste = fin - time.time()
+                if reste <= 0:
+                    return None
+                try:
+                    ev = await asyncio.wait_for(file.get(), timeout=reste)
+                except asyncio.TimeoutError:
+                    return None
+                texte = (ev.payload or {}).get("text") if ev else None
+                if valide is None or (texte is not None and valide(texte)):
+                    return texte
+                log.debug("réponse écartée pour « %s » : %r", cmd, texte)
         except Exception:
             return None
+        finally:
+            if sub is not None:
+                try:
+                    sub.unsubscribe()
+                except Exception:  # noqa: BLE001
+                    pass
+
+    async def _vider_reponses(self, contact, duree: float = 2.0):
+        """Laisse arriver puis écarte les réponses tardives d'un répéteur avant une série de lectures."""
+        prefix = contact.get("public_key", "")[:12]
+        n = [0]
+        sub = None
+        try:
+            sub = self.mc.subscribe(EventType.CONTACT_MSG_RECV, lambda ev: n.__setitem__(0, n[0] + 1),
+                                    attribute_filters={"pubkey_prefix": prefix})
+            await asyncio.sleep(duree)
+        except Exception:  # noqa: BLE001
+            pass
+        finally:
+            if sub is not None:
+                try:
+                    sub.unsubscribe()
+                except Exception:  # noqa: BLE001
+                    pass
+        return n[0]
 
     async def _mark_failure(self, node: dict):
         fails = int(node.get("echecs") or 0) + 1
@@ -2787,13 +2853,15 @@ class Poller:
         """Lit tous les réglages du répéteur (connecté en admin), vérifie la conformité, sauvegarde sur disque."""
         name = node.get("nom", "")
         cfg = {}
+        await self._vider_reponses(contact)
         for cle, cmd in PARAMS_CONFIG:
-            v = _val_cli(await self._cli(contact, cmd, timeout=12))
+            v = _val_cli(await self._cli(contact, cmd, timeout=12, valide=VALIDE_CONFIG.get(cle)))
             if v is not None:
                 cfg[cle] = v.replace("\n", " ").strip()
-        if len(cfg) < 3:
+        if len(cfg) < 3 or "radio" not in cfg:
             return {}
         cfg["date"] = now_iso()
+        cfg["v"] = VERSION_CONFIG
         fields = {"config": cfg}
         pb = conformite(cfg)
         # cohérence de la flotte : mêmes paramètres radio que les autres répéteurs ADRASEC
@@ -2840,6 +2908,12 @@ class Poller:
         """Fichier JSON daté dans « Configurations répéteurs/<nom> » si quelque chose a changé ; 30 versions gardées."""
         d = self.dossier_configs() / re.sub(r'[<>:"/\\|?*]', "_", name)
         d.mkdir(parents=True, exist_ok=True)
+        for f in d.glob("*.json"):  # copies de la 1.26.0/1.26.1, lues avec un décalage : écartées
+            try:
+                if json.loads(f.read_text(encoding="utf-8")).get("v") != VERSION_CONFIG:
+                    f.unlink()
+            except (OSError, ValueError):
+                pass
         fichiers = sorted(d.glob("*.json"))
         avant = None
         if fichiers:
@@ -2868,6 +2942,8 @@ class Poller:
             try:
                 c = json.loads(f.read_text(encoding="utf-8"))
             except (OSError, ValueError):
+                continue
+            if c.get("v") != VERSION_CONFIG:
                 continue
             versions.append({"fichier": f.name, "date": c.get("date"), "changements": self._diff_config(prec, c) if prec else []})
             prec = c
@@ -2944,8 +3020,9 @@ class Poller:
             return contact
         name = node.get("nom", "")
         try:
-            lat = float(_val_cli(await self._cli(contact, "get lat")))
-            lon = float(_val_cli(await self._cli(contact, "get lon")))
+            await self._vider_reponses(contact, 1.5)
+            lat = float(_val_cli(await self._cli(contact, "get lat", valide=VALIDE_CONFIG["lat"])))
+            lon = float(_val_cli(await self._cli(contact, "get lon", valide=VALIDE_CONFIG["lon"])))
         except (TypeError, ValueError):
             return {"ok": False, "erreur": f"{name} n'a pas donné sa position actuelle."}
         if abs(lat) < 0.01 and abs(lon) < 0.01:
@@ -2955,7 +3032,7 @@ class Poller:
         r2 = await self._cli(contact, f"set lon {lo}")
         if not (r1 and r1.strip().upper().startswith("OK") and r2 and r2.strip().upper().startswith("OK")):
             return {"ok": False, "erreur": f"{name} a refusé la nouvelle position ({(r1 or '').strip()} / {(r2 or '').strip()})."}
-        gps = _val_cli(await self._cli(contact, "gps advert")) or ""
+        gps = _val_cli(await self._cli(contact, "gps advert", valide=VALIDE_CONFIG["gpsAdvert"])) or ""
         note = ""
         if "share" in gps:  # position GPS en direct : on passe à la position enregistrée (arrondie)
             r3 = await self._cli(contact, "gps advert prefs")
@@ -3066,7 +3143,7 @@ class Poller:
             self.store.add_journal(name, operateur or "AUTO", texte)
             return {"ok": False, "erreur": texte}
         save = await self._cli(contact, "region save", timeout=20)
-        libre = self._flood_public(await self._cli(contact, "region get *", timeout=15))
+        libre = self._flood_public(await self._cli(contact, "region get *", timeout=15, valide=lambda t: t.strip().startswith("*")))
         fields = {"floodPublicLu": now_iso()}
         if libre is not None:
             fields["floodPublic"] = libre
