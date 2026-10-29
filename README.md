@@ -161,6 +161,12 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 - **Companions amis** : bouton « + Ami » (Messagerie → Messages directs) pour ajouter un companion à partir de sa carte de contact « meshcore://… » ou de sa clé publique complète + son nom ; bouton « ☆ Ajouter aux amis / ★ Ami » dans chaque conversation directe ; les amis sont en tête de liste et repérés en doré sur la carte.
 - **Découvrir les voisins** dans la fiche d'un répéteur (commande discover.neighbors), console distante, étalonnage de la batterie du companion.
 
+### Nouveautés de la version 1.26.4
+
+- Tous les boutons d'action sont en orange (les actions sensibles restent en rouge) pour les repérer plus facilement.
+- Bouton « ⚙ Configuration » sur chaque carte de répéteur ADRASEC : ouvre la fiche directement sur « Configuration et conformité radio ».
+- Barre de navigation en tête de la fiche d'un répéteur : Configuration et conformité, Brouillage, Commandes à distance, Voisins, Console.
+
 ### Nouveautés de la version 1.26.3
 
 - Région par défaut d'un répéteur réglable depuis sa fiche (commande « region default », enregistrée dans le répéteur, relue pour vérification).
