@@ -161,6 +161,17 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 - **Companions amis** : bouton « + Ami » (Messagerie → Messages directs) pour ajouter un companion à partir de sa carte de contact « meshcore://… » ou de sa clé publique complète + son nom ; bouton « ☆ Ajouter aux amis / ★ Ami » dans chaque conversation directe ; les amis sont en tête de liste et repérés en doré sur la carte.
 - **Découvrir les voisins** dans la fiche d'un répéteur (commande discover.neighbors), console distante, étalonnage de la batterie du companion.
 
+### Nouveautés de la version 1.26
+
+- Configuration et conformité radio (fiche de chaque répéteur ADRASEC) : relevé de tous les réglages une fois par jour (ou « Relever maintenant ») ; alerte si le cycle d'émission dépasse 10 % (ARCEP), si le canal déborde de la sous-bande 869,40 – 869,65 MHz, ou si les paramètres radio diffèrent des autres répéteurs.
+- Sauvegarde des configurations : une copie datée est enregistrée à chaque changement dans « Configurations répéteurs » (dossier de sauvegarde) ; historique des versions et changements notés au journal.
+- Mode crise réseau (bouton rouge au-dessus des répéteurs ADRASEC) : réserve tous les répéteurs (region denyf *), passe la région du companion en #fr-06 et ouvre une main courante ; « Fin de crise » rétablit l'état d'avant.
+- « Ce que la France voit de nous » (Statistiques) : observateurs publics qui entendent nos répéteurs et messages privés vus en inondation hors du 06 (analyseur meshstats), une fois par jour avec alerte.
+- Brouillage : profil horaire du bruit et des erreurs de réception, évolution jour par jour avec les réglages modifiés en repères ; repères manuels (« filtre changé »…).
+- Bouton « Arrondir la position annoncée (≈ 1 km) » pour les répéteurs.
+- Alerte quand une nouvelle version du firmware « repeater » MeshCore est publiée.
+- Nettoyage automatique des anciens noms de répéteurs dans les réglages de régions.
+
 ### Nouveautés de la version 1.25
 
 - Bouton rouge « ⛔ Réserver ADRASEC » sur chaque répéteur ADRASEC (mot de passe admin requis) : envoie « region denyf * » puis « region save », et vérifie l'état avec « region get * ». Le répéteur ne relaie plus les messages sans région ; il relaie toujours les messages en région qu'il connaît (#fr-06, #fr…) et les messages à chemin direct. Confirmation obligatoire (case à cocher). Le même bouton rouvre le répéteur au trafic public (« region allowf * »).

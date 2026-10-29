@@ -389,6 +389,24 @@ a.btn{color:inherit;text-decoration:none;display:inline-flex;align-items:center}
 .hvig b small{font-size:.72rem;color:var(--muted)}
 .tendv{font-size:.76rem;color:var(--warn);display:grid;gap:2px}
 .tendv span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cfgbox{display:grid;gap:8px;border-top:1px solid var(--line);padding-top:10px}
+.cfgbox,.profil{min-width:0;max-width:100%;overflow:hidden}
+.cfgbox table{width:100%;min-width:0;table-layout:fixed;border-collapse:collapse;font-size:.84rem}
+.cfgbox td{padding:2px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+.cfgbox td:first-child{color:var(--muted);white-space:nowrap;width:42%}
+.cfgbox td.mono{font-family:var(--f-mono);word-break:break-word}
+.confok{color:var(--ok);font-weight:600;font-size:.88rem}
+.confko{border:1px solid var(--crit);border-radius:6px;padding:8px 10px;display:grid;gap:4px;color:var(--crit);font-size:.88rem}
+.profil{display:grid;gap:10px;border-top:1px solid var(--line);padding-top:10px}
+.profil svg{width:100%;height:auto;display:block}
+.profil .leg{display:flex;gap:12px;flex-wrap:wrap;font-size:.8rem;color:var(--muted)}
+.profil .leg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:middle}
+.crisebar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;margin:0 0 10px;border:2px solid var(--crit);border-radius:8px;background:color-mix(in srgb,var(--crit) 12%,transparent);color:var(--crit);font-weight:600}
+.crisebar[hidden]{display:none}
+.criseconf{display:grid;gap:8px;padding:10px 12px;margin:0 0 10px;border:1px solid var(--crit);border-radius:8px;font-size:.9rem}
+.criseconf[hidden]{display:none}
+.vext table{width:100%;min-width:0;border-collapse:collapse;font-size:.86rem}
+.vext td,.vext th{padding:3px 8px;border-bottom:1px solid var(--line);text-align:left}
 .tendbox{border:1px solid var(--warn);border-radius:6px;padding:8px 10px;display:grid;gap:4px;color:var(--warn);font-size:.88rem}
 .autobox svg{width:100%;height:70px;display:block}
 .tl-seg{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;font-size:.84rem;padding:3px 0;border-bottom:1px dashed var(--line)}
@@ -551,7 +569,9 @@ header.top .hright{grid-column:1 / -1}
 
   <div class="tabpane" id="tab-reseau">
   <section class="panel" id="encart">
-    <div class="panel-head"><h2>Répéteurs ADRASEC</h2><span class="reading" id="encartInfo"></span></div>
+    <div class="panel-head"><h2>Répéteurs ADRASEC</h2><span style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="reading" id="encartInfo"></span><button class="btn small danger" type="button" id="criseGo" title="Réserver d'un coup tous les répéteurs ADRASEC (region denyf *), passer la région par défaut du nœud companion en #fr-06 et ouvrir une main courante">🚨 Mode crise réseau</button></span></div>
+    <div class="crisebar" id="criseBar" hidden role="status"><span style="flex:1" id="criseTxt"></span><button class="btn small" type="button" id="criseDetail">Détail</button><button class="btn small danger on" type="button" id="criseFin">Fin de crise</button></div>
+    <div class="criseconf" id="criseConf" hidden></div>
     <div class="ecards" id="ecards"></div>
   </section>
   <section class="summary" id="summary" aria-label="Synthèse des états"></section>
@@ -734,6 +754,11 @@ header.top .hright{grid-column:1 / -1}
   </div>
 
   <div class="tabpane" id="tab-stats" hidden>
+    <section class="panel vext">
+      <div class="panel-head"><h2>Ce que la France voit de nous</h2><span style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="reading" id="vxInfo"></span><label style="margin:0;display:flex;gap:6px;align-items:center;font-size:.86rem"><input type="checkbox" id="vxAuto" style="width:auto;margin:0"> une fois par jour</label><button class="btn small" type="button" id="vxGo">Interroger maintenant</button></span></div>
+      <p class="hint" style="margin:0">Données de l'analyseur public MeshCore France (meshstats.serveurperso.in) : observateurs qui entendent nos répéteurs, et messages privés de votre companion vus en inondation hors des Alpes-Maritimes (signe d'un chemin inconnu vers le destinataire). Seules les clés publiques de nos répéteurs sont envoyées.</p>
+      <div id="vxBody"></div>
+    </section>
     <section class="panel">
       <div class="panel-head"><h2>Disponibilité des répéteurs</h2><span class="reading">Part des interrogations réussies</span></div>
       <div class="table-wrap"><table style="min-width:640px"><thead><tr><th>Répéteur</th><th>7 jours</th><th></th><th>30 jours</th><th></th><th>Dernière coupure</th></tr></thead><tbody id="dispoRows"></tbody></table></div>
@@ -1178,17 +1203,49 @@ header.top .hright{grid-column:1 / -1}
 
   /* ---------- synthèse ---------- */
   /* ---------- encart des répéteurs ADRASEC ---------- */
-  let offConfirm = null, resConfirm = null, encartBusy = {};
+  let offConfirm = null, resConfirm = null, encartBusy = {}, fwRep = {}, vueExt = {}, vueExtAuto = true;
   function nodesEncart(){
     return allNodes.filter(n => (n.proprio !== "externe" && !["prevu","supprime"].includes(n.statut)) || normNom(n.nom) === "fr06mouginsf4jcf")
       .filter(n => n.statut !== "supprime")
       .sort((a,b) => a.nom.localeCompare(b.nom));
   }
   function pylSvg(col, w){ const h = Math.round(w*1.4); return `<svg width="${w}" height="${h}" viewBox="0 0 20 28" aria-hidden="true"><g fill="none" stroke="${col}" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"><path d="M10 6 L4 27 M10 6 L16 27 M5.6 21 H14.4 M7 15.5 H13 M8.4 10.5 H11.6 M5.6 21 L13 15.5 M14.4 21 L7 15.5 M7 15.5 L11.6 10.5 M13 15.5 L8.4 10.5 M3 27 H17"/><path d="M5.2 4.2 A6.5 6.5 0 0 1 5.2 -2.2 M14.8 4.2 A6.5 6.5 0 0 0 14.8 -2.2" stroke-width="1.4"/></g><circle cx="10" cy="5" r="2.2" fill="${col}"/></svg>`; }
+  /* ---------- mode crise du réseau ---------- */
+  let criseEtat = {}, criseConfirm = null, criseBusy = false, criseVoir = false;
+  function renderCrise2(){
+    const c = criseEtat || {}, act = !!c.actif;
+    $("#criseGo").hidden = act; $("#criseGo").disabled = !liaison.connecte || criseBusy;
+    $("#criseBar").hidden = !act && !criseBusy;
+    if (criseBusy) $("#criseTxt").textContent = criseBusy;
+    else if (act) $("#criseTxt").innerHTML = `🚨 MODE CRISE RÉSEAU actif depuis ${esc(fmtDate(c.debut))} (${esc(ago(c.debut))}) : répéteurs ADRASEC réservés, région du companion #fr-06`
+      + (criseVoir ? `<br><span style="font-weight:400">${(c.resultats||[]).map(r => `${r.ok ? "✓" : "✗"} ${esc(r.nom)} : ${esc(r.texte)}`).join("<br>")}</span>` : "");
+    $("#criseFin").disabled = !liaison.connecte || !!criseBusy; $("#criseDetail").hidden = !act;
+    const cf = $("#criseConf");
+    if (!criseConfirm) { cf.hidden = true; return; }
+    if (cf.dataset.mode === criseConfirm && !cf.hidden) return;
+    cf.dataset.mode = criseConfirm; cf.hidden = false;
+    cf.innerHTML = criseConfirm === "debut" ? `<strong style="color:var(--crit)">Activer le mode crise réseau ?</strong>
+      <span>1. Tous les répéteurs ADRASEC (mot de passe enregistré) sont <b>réservés</b> : <span class="mono">region denyf *</span> + enregistrement. Ils ne relaient plus le trafic public sans région.<br>
+      2. La région par défaut de votre nœud companion passe en <b>#fr-06</b> : vos messages ne passent plus que par les répéteurs qui connaissent cette région.<br>
+      3. Une <b>main courante</b> « Crise réseau MeshCore » est ouverte si aucune n'est en cours.<br>
+      Les membres doivent avoir #fr-06 (ou au moins une région) sur leur nœud pour passer par les répéteurs. Durée : environ 1 minute par répéteur.</span>
+      <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="criseOk" style="width:auto;margin:0"> Je confirme l'activation du mode crise réseau.</label>
+      <div class="actions"><button class="btn small danger on" type="button" id="criseValider">Activer le mode crise</button><button class="btn small" type="button" id="criseAnnuler">Annuler</button></div>`
+      : `<strong style="color:var(--crit)">Mettre fin au mode crise ?</strong>
+      <span>Les répéteurs réservés par le mode crise sont <b>rouverts</b> au trafic public (<span class="mono">region allowf *</span>) ; ceux qui étaient déjà réservés avant restent réservés. La région par défaut du companion est rétablie. La main courante reste ouverte : clôturez-la vous-même avec son bilan.</span>
+      <div class="actions"><button class="btn small danger" type="button" id="criseValider">Mettre fin à la crise</button><button class="btn small" type="button" id="criseAnnuler">Annuler</button></div>`;
+  }
+  async function lancerCrise(actif){
+    criseBusy = actif ? "Activation du mode crise : réservation des répéteurs un par un (environ 1 min chacun)…" : "Fin de crise : réouverture des répéteurs (environ 1 min chacun)…";
+    criseConfirm = null; renderCrise2();
+    let r; try { r = await api.mode_crise(actif); } catch(e) { r = {ok:false, erreur:String(e)}; }
+    criseBusy = false; toast(r.message || r.erreur); refresh(true);
+  }
   function renderEncart(){
     const list = nodesEncart();
     const on = list.filter(n => !n.eteint && n.statut === "en-ligne").length;
     $("#encartInfo").textContent = list.length ? `${on} en ligne sur ${list.length}` : "";
+    renderCrise2();
     if (inside("#ecards .warn")) return;
     $("#ecards").innerHTML = list.length ? list.map(n => {
       const s = n.eteint ? statusOf(n) : (STATUTS[n.statut] || STATUTS["en-ligne"]), d = dispo[n.id] || {}, busy = encartBusy[n.id];
@@ -1953,6 +2010,75 @@ const HOT_MIN = 360; // 6 heures
   async function loadHistory(id){
     histFor = id; hist = (await api.historique(id, 30)).filter(p => p.ts >= Date.now()/1000 - 7*86400);
     if (histFor === id && !editing) renderFiche();
+    const n = allNodes.find(x => x.id === id);
+    if (n && n.proprio !== "externe" && n.statut !== "prevu" && (!profils[id] || Date.now() - profils[id].lu > 120000)) {
+      try { const p = await api.profil_brouillage(id, profilJours); if (p && p.ok) { profils[id] = {...p, lu: Date.now()}; if (histFor === id && !editing) renderFiche(); } } catch(e) {}
+    }
+  }
+
+  /* ---------- configuration du répéteur et conformité ---------- */
+  let cfgBusy = null, cfgHisto = {}, arrConfirm = null, profils = {}, profilJours = 14;
+  const CFG_ORDRE = ["nom","firmware","radio","tx","dutycycle","af","rxgain","agc","rxdelay","txdelay","repeat","floodMax","advertInterval","floodAdvertInterval","lat","lon","gpsAdvert","regions","regionDefaut","ownerInfo","loopDetect"];
+  const CFG_LIB = {nom:"Nom", firmware:"Firmware", radio:"Radio (MHz, kHz, SF, CR)", tx:"Puissance (dBm)", dutycycle:"Cycle d'émission", af:"Facteur af",
+    rxgain:"Gain RX renforcé", agc:"Remise à zéro AGC (s)", rxdelay:"rxdelay", txdelay:"txdelay", repeat:"Relais actif", floodMax:"Sauts max (flood.max)",
+    advertInterval:"Advert local (min)", floodAdvertInterval:"Advert inondation (h)", lat:"Latitude annoncée", lon:"Longitude annoncée",
+    gpsAdvert:"Position annoncée (gps advert)", regions:"Régions", regionDefaut:"Région par défaut", ownerInfo:"Infos propriétaire", loopDetect:"Détection de boucles"};
+  function configHtml(n){
+    const c = n.config || {}, pb = n.conformite || [], h = cfgHisto[n.id];
+    const peut = n.aMotDePasse && liaison.connecte;
+    const precis = c.lat && c.lon && (String(c.lat).split(".")[1] || "").length > 2;
+    return `<div class="cfgbox"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+        <strong style="font-size:.9rem">Configuration et conformité radio${c.date ? ` <span class="muted" style="font-weight:400">· relevée le ${fmtDate(c.date)} (${ago(c.date)})</span>` : ""}</strong>
+        <span style="display:flex;gap:6px;flex-wrap:wrap">${n.aMotDePasse ? `<button class="btn small" data-cfgrelever="${esc(n.id)}" ${peut && !cfgBusy ? "" : "disabled"} title="Lit tous les réglages du répéteur (environ 1 minute), vérifie la conformité et enregistre une copie">${cfgBusy === n.id ? "Relevé en cours…" : "Relever maintenant"}</button>` : ""}
+        <button class="btn small" data-cfghisto="${esc(n.id)}">${h ? "Masquer l'historique" : "Historique des versions"}</button><button class="btn small" data-cfgdossier="1" title="Dossier des copies de configuration (dans votre dossier de sauvegarde)">Dossier</button></span></div>
+      ${!c.date ? `<span class="reading">${n.aMotDePasse ? "Pas encore relevée : elle l'est automatiquement une fois par jour pendant la collecte, ou tout de suite avec « Relever maintenant »." : "Mot de passe admin requis pour relever la configuration."}</span>` : `
+      ${pb.length ? `<div class="confko"><strong>⚠ ${pb.length} écart${pb.length > 1 ? "s" : ""}</strong>${pb.map(x => `<span>• ${esc(x)}</span>`).join("")}</div>` : `<span class="confok">✓ Conforme : cycle d'émission ≤ 10 %, canal dans la sous-bande 869,40 – 869,65 MHz, mêmes paramètres radio que la flotte</span>`}
+      ${n.configChangements ? `<span class="reading" style="color:var(--warn)">Dernier changement détecté le ${fmtDate(n.configChangements.date)} : ${esc(n.configChangements.liste.join(" ; "))}</span>` : ""}
+      <table>${CFG_ORDRE.filter(k => c[k] != null && c[k] !== "").map(k => `<tr><td>${esc(CFG_LIB[k] || k)}</td><td class="mono">${esc(c[k])}</td></tr>`).join("")}</table>`}
+      ${h ? (h.versions.length ? `<div class="neigh"><span class="muted" style="font-size:.82rem">Copies enregistrées dans ${esc(h.dossier)}</span>${h.versions.map(v => `<span style="font-size:.84rem"><b>${esc(fmtDate(v.date))}</b> ${v.changements.length ? "— " + esc(v.changements.join(" ; ")) : `<span class="muted">— première copie</span>`}</span>`).join("")}</div>` : `<span class="reading">Aucune copie enregistrée pour l'instant.</span>`) : ""}
+      ${n.aMotDePasse && c.lat ? `<div class="row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${arrConfirm === n.id
+        ? `<span style="color:var(--warn);font-size:.86rem">La position annoncée sur le réseau (cartes publiques) sera arrondie à 2 décimales (≈ 1 km). La position sur votre carte n'est pas modifiée.</span><button class="btn small danger" data-arrgo="${esc(n.id)}">Confirmer l'arrondi</button><button class="btn small" data-arrno="1">Annuler</button>`
+        : `<button class="btn small" data-arrondir="${esc(n.id)}" ${peut ? "" : "disabled"} title="Remplace la position précise annoncée par le répéteur par une position arrondie à environ 1 km">Arrondir la position annoncée (≈ 1 km)</button>${precis ? `<span class="muted" style="font-size:.82rem">position annoncée précise : ${esc(c.lat)}, ${esc(c.lon)}</span>` : `<span class="muted" style="font-size:.82rem">position déjà arrondie</span>`}`}</div>` : ""}
+    </div>`;
+  }
+
+  /* ---------- brouillage : profil horaire ---------- */
+  function profilHtml(n){
+    const p = profils[n.id];
+    if (!p) return `<div class="profil"><strong style="font-size:.9rem">Brouillage : profil horaire</strong><span class="reading">Calcul en cours…</span></div>`;
+    if (!p.mesures) return "";
+    const W = 480, H = 96, hb = p.heures, bv = hb.map(x => x.bruit).filter(v => v != null), ev = hb.map(x => x.err).filter(v => v != null);
+    const bar = (vals, lo, hi, col, unit, dig) => { const bw = (W - 30) / 24;
+      return `<svg viewBox="0 0 ${W} ${H + 16}" role="img"><line x1="26" x2="${W}" y1="${H}" y2="${H}" stroke="var(--line)"/>
+        ${vals.map((v, i) => v == null ? "" : (() => { const hh = Math.max(2, (v - lo) / ((hi - lo) || 1) * (H - 8)); return `<rect x="${(28 + i * bw).toFixed(1)}" y="${(H - hh).toFixed(1)}" width="${(bw - 2).toFixed(1)}" height="${hh.toFixed(1)}" fill="${col}" opacity=".85"><title>${i} h : ${fmtNum(v, dig)} ${unit}</title></rect>`; })()).join("")}
+        ${[0, 6, 12, 18, 23].map(i => `<text x="${(28 + i * bw + bw / 2).toFixed(1)}" y="${H + 12}" font-size="9" text-anchor="middle" fill="var(--muted)" font-family="var(--f-mono)">${i}h</text>`).join("")}
+        <text x="0" y="10" font-size="9" fill="var(--muted)" font-family="var(--f-mono)">${fmtNum(hi, dig)}</text><text x="0" y="${H}" font-size="9" fill="var(--muted)" font-family="var(--f-mono)">${fmtNum(lo, dig)}</text></svg>`; };
+    const bLo = bv.length ? Math.min(...bv) - 2 : -125, bHi = bv.length ? Math.max(...bv) + 1 : -95, eHi = ev.length ? Math.max(...ev, 1) : 1;
+    const j = p.parJour, t0 = j.length ? new Date(j[0].jour).getTime() : 0, t1 = j.length ? new Date(j[j.length - 1].jour).getTime() + 86400000 : 1;
+    const X = t => 28 + (t - t0) / ((t1 - t0) || 1) * (W - 32);
+    const jb = j.filter(x => x.bruit != null), je = j.filter(x => x.err != null);
+    const bl = jb.length ? Math.min(...jb.map(x => x.bruit)) - 2 : -125, bh = jb.length ? Math.max(...jb.map(x => x.bruit)) + 1 : -95, eh = je.length ? Math.max(...je.map(x => x.err), 1) : 1;
+    const Yb = v => H - 4 - (v - bl) / ((bh - bl) || 1) * (H - 12), Ye = v => H - 4 - v / eh * (H - 12);
+    const ligne = (arr, Y, key) => arr.map((x, i) => `${i ? "L" : "M"}${X(new Date(x.jour).getTime() + 43200000).toFixed(1)},${Y(x[key]).toFixed(1)}`).join(" ");
+    const serie = `<svg viewBox="0 0 ${W} ${H + 16}" role="img"><line x1="26" x2="${W}" y1="${H}" y2="${H}" stroke="var(--line)"/>
+      ${p.reperes.map(r => { const x = X(new Date(r.date).getTime()); return x < 26 || x > W ? "" : `<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="4" y2="${H}" stroke="var(--crit)" stroke-dasharray="3 3"><title>${esc(fmtDate(r.date))} : ${esc(r.texte)}</title></line><circle cx="${x.toFixed(1)}" cy="6" r="3.5" fill="var(--crit)"><title>${esc(fmtDate(r.date))} : ${esc(r.texte)}</title></circle>`; }).join("")}
+      ${jb.length > 1 ? `<path d="${ligne(jb, Yb, "bruit")}" fill="none" stroke="var(--accent)" stroke-width="2"/>` : ""}
+      ${je.length > 1 ? `<path d="${ligne(je, Ye, "err")}" fill="none" stroke="var(--test)" stroke-width="2" stroke-dasharray="5 3"/>` : ""}
+      ${j.filter((x, i) => i % Math.ceil(j.length / 7 || 1) === 0).map(x => `<text x="${X(new Date(x.jour).getTime() + 43200000).toFixed(1)}" y="${H + 12}" font-size="9" text-anchor="middle" fill="var(--muted)" font-family="var(--f-mono)">${esc(x.jour.slice(8, 10) + "/" + x.jour.slice(5, 7))}</text>`).join("")}</svg>`;
+    const mx = bv.length ? hb.reduce((a, b) => (b.bruit ?? -999) > (a.bruit ?? -999) ? b : a) : null, mn = bv.length ? hb.reduce((a, b) => (b.bruit ?? 999) < (a.bruit ?? 999) ? b : a) : null;
+    const ecart = mx && mn ? mx.bruit - mn.bruit : 0;
+    return `<div class="profil"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap"><strong style="font-size:.9rem">Brouillage : profil horaire <span class="muted" style="font-weight:400">· ${p.jours} jours, ${p.mesures} mesures</span></strong>
+        <select id="profilJours" data-id="${esc(n.id)}" style="width:auto;padding:2px 6px;font-size:.82rem">${[7, 14, 30, 60].map(d => `<option value="${d}" ${d === p.jours ? "selected" : ""}>${d} jours</option>`).join("")}</select></div>
+      ${p.mesures < 24 ? `<span class="reading">Peu de mesures pour l'instant : le profil sera fiable après quelques jours de collecte horaire.</span>` : ""}
+      <span style="font-size:.84rem">Bruit médian par heure (dBm)${ecart >= 3 ? ` — <b style="color:var(--warn)">${fmtNum(ecart, 0)} dB d'écart</b> entre ${mn.h} h (calme) et ${mx.h} h (bruyant) : un brouillage qui suit l'activité de la journée (téléphonie, etc.)` : ecart ? " — bruit régulier sur la journée" : ""}</span>
+      ${bar(hb.map(x => x.bruit), bLo, bHi, "var(--accent)", "dBm", 0)}
+      <span style="font-size:.84rem">Erreurs de réception par heure (médiane)</span>
+      ${bar(hb.map(x => x.err), 0, eHi, "var(--test)", "erreurs/h", 0)}
+      <span style="font-size:.84rem">Évolution jour par jour, avec les réglages modifiés (repères rouges)</span>
+      ${serie}
+      <div class="leg"><span><i style="background:var(--accent)"></i>bruit médian du jour</span><span><i style="background:var(--test)"></i>erreurs RX par heure</span><span><i style="background:var(--crit)"></i>réglage modifié (survoler)</span></div>
+      <div class="row" style="display:flex;gap:6px;flex-wrap:wrap"><input id="repTexte" data-id="${esc(n.id)}" placeholder="Noter un réglage terrain (ex. filtre changé, antenne remontée)" style="flex:1;min-width:220px"><button class="btn small" data-repajout="${esc(n.id)}">Ajouter le repère</button></div>
+    </div>`;
   }
 
   /* ---------- fiche ---------- */
@@ -1990,7 +2116,7 @@ const HOT_MIN = 360; // 6 heures
         ${row("Site", esc([n.site,n.commune].filter(Boolean).join(" · ")) + (!empty(n.alt) ? ` <span class="muted">(${fmtNum(n.alt)} m)</span>` : ""))}
         ${row("Matériel", esc(n.materiel))}
         ${row("Antenne", esc(n.antenne))}
-        ${row("Firmware", n.firmware ? `<span class="mono">${esc(n.firmware)}</span>${fwOld(n)?`<span class="flag">→ ${esc(refFw())}</span>`:""}` : "")}
+        ${row("Firmware", n.firmware ? `<span class="mono">${esc(n.firmware)}</span>${fwOld(n)?`<span class="flag">→ ${esc(refFw())}</span>`:""}${own && fwRep.version && cmpVer(n.firmware, fwRep.version) < 0 ? ` <a class="flag" href="${esc(fwRep.url || "#")}" target="_blank" rel="noopener" title="Version publiée par MeshCore le ${esc(fwRep.date)}">MeshCore ${esc(fwRep.version)} disponible</a>` : own && fwRep.version ? ` <span class="muted">· à jour (dernière : ${esc(fwRep.version)})</span>` : ""}` : "")}
         ${row("Puissance TX", !empty(n.tx) ? `<span class="num">${fmtNum(n.tx)} dBm</span>` : "")}
         ${row("Bruit", !empty(n.bruit) ? `<span class="num">${fmtNum(n.bruit)} dBm</span>` : "")}
         ${row("Erreurs RX", !empty(n.erreursRx) ? `<span class="num">${fmtNum(n.erreursRx)}</span>` : "")}
@@ -2010,6 +2136,8 @@ const HOT_MIN = 360; // 6 heures
       ${sparks}
       ${(n.tendances||[]).length ? `<div class="tendbox"><strong>Alerte précoce</strong>${n.tendances.map(t => `<span>⚠ ${esc(t.texte)} <span class="muted">(depuis ${fmtDate(t.depuis)})</span></span>`).join("")}</div>` : ""}
       ${own && n.autonomie ? autonomieHtml(n.autonomie) : ""}
+      ${own && n.role === "repeteur" ? configHtml(n) : ""}
+      ${own && n.role === "repeteur" ? profilHtml(n) : ""}
       ${(n.telemetrie||[]).length || n.horloge ? `<div class="neigh"><strong style="font-size:.9rem">Télémétrie${n.telemetrieDate?` <span class="muted" style="font-weight:400">· lue le ${fmtDate(n.telemetrieDate)} (${ago(n.telemetrieDate)})</span>`:""}</strong>
         ${n.horloge ? horlogeHtml(n) : ""}
         ${(n.telemetrie||[]).length ? `<div class="tele">${n.telemetrie.map(t => `<span>${esc(teleLabel(t))}</span>`).join("")}</div>` : ""}</div>` : ""}
@@ -2501,7 +2629,22 @@ const HOT_MIN = 360; // 6 heures
     for (const n of own) { try { statsCache[n.id] = await api.statistiques(n.id); } catch(e) {} }
     if (tab === "stats") renderStats(true);
   }
+  let vxBusy = false;
+  function renderVueExt(){
+    const v = vueExt || {};
+    $("#vxAuto").checked = vueExtAuto; $("#vxGo").disabled = vxBusy; $("#vxGo").textContent = vxBusy ? "Interrogation…" : "Interroger maintenant";
+    $("#vxInfo").textContent = v.date ? "Dernière lecture " + ago(v.date) : "Jamais interrogé";
+    if (!v.ok) { $("#vxBody").innerHTML = `<div class="empty">${v.erreur ? esc(v.erreur) : "Cliquez « Interroger maintenant »."}</div>`; return; }
+    const f = v.fuites || [];
+    $("#vxBody").innerHTML = (v.companionConnu ? (f.length
+        ? `<div class="confko"><strong>⚠ ${v.nbFuites} message(s) privé(s) probablement de votre companion vu(s) en inondation hors du 06</strong>${f.slice(0, 8).map(x => `<span>${esc(fmtDate(x.date))} · vu par ${esc(x.observateur)} (${esc(x.iata || "?")}) · via ${esc(x.via)}</span>`).join("")}<span class="muted">Ouvrez la conversation concernée et utilisez « Découvrir le chemin » ou « Chemin… ».</span></div>`
+        : `<span class="confok">✓ Aucun message privé de votre companion vu en inondation hors des Alpes-Maritimes</span>`)
+        : `<span class="reading">Connectez une fois le nœud companion pour que ses messages puissent être reconnus.</span>`)
+      + (v.repeteurs || []).map(r => `<div style="margin-top:10px"><strong class="mono">${esc(r.nom)}</strong> <span class="muted">· ${r.connu ? `connu depuis ${esc(fmtDay(r.premier))}, entendu ${esc(ago(r.dernier))} · ${r.observateurs.length} observateur(s) dont ${r.horsDepartement} hors du 06${r.relais24h != null ? " · " + r.relais24h + " relais en 24 h" : ""}` : "inconnu de l'analyseur"}</span>
+        ${r.observateurs.length ? `<table><thead><tr><th>Observateur</th><th>Zone</th><th>Paquets</th><th>Ses annonces</th><th>Dernier</th></tr></thead><tbody>${r.observateurs.slice(0, 10).map(o => `<tr><td>${esc(o.nom)}</td><td>${esc(o.iata)}${o.iata === "NCE" ? "" : ` <span class="muted">(hors 06)</span>`}</td><td class="num">${o.paquets}</td><td class="num">${o.propres || ""}</td><td>${o.dernier ? esc(ago(o.dernier)) : ""}</td></tr>`).join("")}</tbody></table>` : ""}</div>`).join("");
+  }
   function renderStats(fromLoad){
+    renderVueExt();
     const own = nodes.filter(n => n.proprio!=="externe" && n.statut!=="prevu");
     $("#dispoRows").innerHTML = own.length ? own.map(n => {
       const d = dispo[n.id] || {}, st = statsCache[n.id], c = st && st.j30.coupures[0];
@@ -2646,6 +2789,7 @@ const HOT_MIN = 360; // 6 heures
     messages = st.messages || []; exercice = st.exercice; exercices = st.exercices || []; reglages = st.reglages || {}; appel = st.appel || null; resil = st.resilience || null;
     mc = st.mc || {entrees:[], moyens:[]};
     aprsData = st.aprs || aprsData;
+    criseEtat = st.crise || {}; fwRep = st.fwRepeteur || {}; vueExt = st.vueExterne || {}; vueExtAuto = st.vueExterneAuto !== false;
     alertes = st.alertes || []; traces = st.traces || {}; couvertures = st.couvertures || []; dispo = st.dispo || {}; maj = st.maj;
     const top = alertes.find(a => !a.vue);
     if (top && lastAlertId !== null && top.id !== lastAlertId && (top.niveau==="critique" || top.niveau==="attention" || top.niveau==="message")) bip();
@@ -2718,6 +2862,22 @@ const HOT_MIN = 360; // 6 heures
     if (mdel) { await api.supprimer_message(+mdel.dataset.msgdel); refresh(true); return; }
     if (t.closest("#mdetClose") || t.id === "mdet") { fermerDetail(); return; }
     if (t.closest("#battBadge")) { tab = "reglages"; editing = null; renderAll(); setTimeout(() => { $("#optEtal").scrollIntoView({block:"center"}); $("#optEtal").focus(); }, 50); return; }
+    const crl = t.closest("[data-cfgrelever]");
+    if (crl) { cfgBusy = crl.dataset.cfgrelever; renderFiche(); toast("Relevé de la configuration : environ 1 minute…");
+      let r; try { r = await api.relever_config(cfgBusy); } catch(err) { r = {ok:false, erreur:String(err)}; }
+      const id = cfgBusy; cfgBusy = null; toast(r.ok ? r.message + (r.changements && r.changements.length ? " · changements : " + r.changements.join(" ; ") : "") : r.erreur);
+      if (cfgHisto[id]) cfgHisto[id] = await api.historique_config(id); refresh(true); return; }
+    const chi = t.closest("[data-cfghisto]");
+    if (chi) { const id = chi.dataset.cfghisto; if (cfgHisto[id]) delete cfgHisto[id]; else { const r = await api.historique_config(id); if (r.ok) cfgHisto[id] = r; else toast(r.erreur); } renderFiche(); return; }
+    if (t.closest("[data-cfgdossier]")) { const r = await api.ouvrir_dossier_configs(); toast(r.ok ? "Dossier : " + r.chemin : r.erreur); return; }
+    const arr = t.closest("[data-arrondir]"); if (arr) { arrConfirm = arr.dataset.arrondir; renderFiche(); return; }
+    if (t.closest("[data-arrno]")) { arrConfirm = null; renderFiche(); return; }
+    const arg = t.closest("[data-arrgo]");
+    if (arg) { const id = arg.dataset.arrgo; arrConfirm = null; arg.disabled = true; toast("Arrondi de la position annoncée…");
+      const r = await api.arrondir_position(id); toast(r.ok ? r.message : r.erreur); refresh(true); return; }
+    const rpa = t.closest("[data-repajout]");
+    if (rpa) { const id = rpa.dataset.repajout, v = $("#repTexte").value.trim(); if (!v) { toast("Décrivez le réglage (ex. filtre changé)."); return; }
+      const r = await api.noter_reglage(id, v); if (r.ok) { delete profils[id]; toast("Repère ajouté"); await refresh(true); loadHistory(id); } else toast(r.erreur); return; }
     const dv = t.closest("[data-decouvrir]");
     if (dv) { decBusy = dv.dataset.decouvrir; renderFiche(); toast("Découverte des voisins lancée : réponse dans 30 s environ");
       let r; try { r = await api.decouvrir_voisins(decBusy); } catch(err) { r = {ok:false, erreur:String(err)}; }
@@ -2870,6 +3030,15 @@ const HOT_MIN = 360; // 6 heures
       case "rpDirBtn": { await api.choisir_dossier_rapport(); refresh(true); return; }
       case "rpNow": { t.disabled = true; toast("Création du rapport…"); const r = await api.generer_rapport(); t.disabled = false; toast(r.ok ? "Rapport enregistré : " + r.chemin + (r.mail ? (r.mail.ok ? " · envoyé par e-mail" : " · e-mail : " + r.mail.erreur) : "") : r.erreur); refresh(true); return; }
       case "rpOpen": { const r = await api.ouvrir_dossier_rapports(); if (!r.ok) toast(r.erreur); return; }
+      case "vxGo": { vxBusy = true; renderVueExt(); let r; try { r = await api.vue_externe(); } catch(err) { r = {ok:false, erreur:String(err)}; }
+        vxBusy = false; if (!r.ok) toast(r.erreur); refresh(true); return; }
+      case "criseGo": criseConfirm = "debut"; renderCrise2(); return;
+      case "criseFin": criseConfirm = "fin"; renderCrise2(); return;
+      case "criseAnnuler": criseConfirm = null; renderCrise2(); return;
+      case "criseDetail": criseVoir = !criseVoir; renderCrise2(); return;
+      case "criseValider": { const deb = criseConfirm === "debut";
+        if (deb && !$("#criseOk").checked) { toast("Cochez la case de confirmation."); return; }
+        lancerCrise(deb); return; }
       case "floodAnnuler": floodPend = null; $("#floodBox").hidden = true; return;
       case "floodChemin": if (floodPend) ouvrirChemin(floodPend.cle); return;
       case "floodDecouvrir": if (floodPend) { const fp = floodPend; await decouvrirChemin(fp.cle); const c = (liaison.contactsMessagerie||[]).find(x => x.cle === fp.cle); if (c && c.chemin !== "inondation") { $("#floodBox").querySelector("b").textContent = "Chemin trouvé."; $("#floodTxt").textContent = "Le message partira directement par " + (c.relais.length ? c.relais.join(" → ") : "liaison directe") + ", sans inondation.";
@@ -3015,6 +3184,8 @@ const HOT_MIN = 360; // 6 heures
     if (e.target.id === "regDefaut") { const r = await api.regler_region(null, e.target.value === "__aucune" ? "" : e.target.value, true); toast(r.ok ? "Région par défaut du nœud enregistrée" : r.erreur); refresh(true); return; }
     if (e.target.id === "optCorr") { await api.regler_options({corrBattCompanion: +e.target.value || 0}); toast("Correction enregistrée : prise en compte à la prochaine lecture (1 min)"); refresh(true); }
     if (e.target.id === "optHorloge") { await api.regler_options({horlogeAuto: e.target.checked}); refresh(true); }
+    if (e.target.id === "profilJours") { profilJours = +e.target.value; const id = e.target.dataset.id; delete profils[id]; loadHistory(id); return; }
+    if (e.target.id === "vxAuto") { await api.regler_vue_externe(e.target.checked); refresh(true); return; }
     if (e.target.id === "flConfirmer") { await api.regler_inondation({confirmer: e.target.checked}); refresh(true); }
     if (e.target.id === "flMax") { await api.regler_inondation({maxParMessage: +e.target.value}); toast("Réglage enregistré"); refresh(true); }
     if (e.target.id === "flSeuil") { await api.regler_inondation({seuilJour: +e.target.value || 0}); toast("Seuil d'alerte enregistré"); refresh(true); }

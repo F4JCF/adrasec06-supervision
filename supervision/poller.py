@@ -14,13 +14,15 @@ import concurrent.futures
 import logging
 import math
 import hashlib
+import json
 import random
 import re
 import threading
 import time
 from collections import deque
+from pathlib import Path
 
-from .store import Store, now_iso
+from .store import Store, data_dir, now_iso
 
 log = logging.getLogger("supervision")
 
@@ -47,6 +49,74 @@ def list_serial_ports() -> list[dict]:
         ports.append({"port": p.device, "description": desc, "probable": hint})
     ports.sort(key=lambda x: (not x["probable"], x["port"]))
     return ports
+
+
+def _ts_iso(iso: str) -> float:
+    from datetime import datetime as _d
+    try:
+        return _d.fromisoformat(iso).timestamp()
+    except (TypeError, ValueError):
+        return 0.0
+
+
+# réglages relevés une fois par jour sur chaque répéteur ADRASEC (clé, commande console)
+PARAMS_CONFIG = [
+    ("nom", "get name"), ("firmware", "ver"), ("radio", "get radio"), ("tx", "get tx"),
+    ("dutycycle", "get dutycycle"), ("af", "get af"), ("rxgain", "get radio.rxgain"), ("agc", "get agc.reset.interval"),
+    ("rxdelay", "get rxdelay"), ("txdelay", "get txdelay"), ("repeat", "get repeat"), ("floodMax", "get flood.max"),
+    ("advertInterval", "get advert.interval"), ("floodAdvertInterval", "get flood.advert.interval"),
+    ("lat", "get lat"), ("lon", "get lon"), ("gpsAdvert", "gps advert"), ("regions", "region"),
+    ("regionDefaut", "region default"), ("ownerInfo", "get owner.info"), ("loopDetect", "get loop.detect"),
+]
+LIB_CONFIG = {"nom": "Nom", "firmware": "Firmware", "radio": "Radio (MHz, kHz, SF, CR)", "tx": "Puissance (dBm)",
+              "dutycycle": "Cycle d'émission", "af": "Facteur de temps d'antenne (af)", "rxgain": "Gain RX renforcé",
+              "agc": "Remise à zéro AGC (s)", "rxdelay": "rxdelay", "txdelay": "txdelay", "repeat": "Relais actif",
+              "floodMax": "Sauts max (flood.max)", "advertInterval": "Advert local (min)",
+              "floodAdvertInterval": "Advert inondation (h)", "lat": "Latitude annoncée", "lon": "Longitude annoncée",
+              "gpsAdvert": "Position annoncée (gps advert)", "regions": "Régions", "regionDefaut": "Région par défaut",
+              "ownerInfo": "Infos propriétaire", "loopDetect": "Détection de boucles"}
+BANDE = (869.4, 869.65)  # sous-bande SRD 10 % / 500 mW (ARCEP)
+DUTY_MAX = 10.0
+
+
+def _val_cli(reponse):
+    """Valeur utile d'une réponse console (« > 22 » → « 22 ») ; None si la commande est inconnue ou en erreur."""
+    r = (reponse or "").strip()
+    if not r or r.lower().startswith(("err", "unknown", "??", "error")) or "not found" in r.lower():
+        return None
+    return r[1:].strip() if r.startswith(">") else r
+
+
+def _duty(cfg: dict):
+    """Cycle d'émission en % : « dutycycle » (firmware ≥ 1.15) sinon déduit du facteur af (af 1 = 50 %, af 9 = 10 %)."""
+    m = re.search(r"(\d+(?:\.\d+)?)", str(cfg.get("dutycycle") or ""))
+    if m:
+        return float(m.group(1))
+    try:
+        return round(100 / (1 + float(cfg.get("af"))), 1)
+    except (TypeError, ValueError, ZeroDivisionError):
+        return None
+
+
+def conformite(cfg: dict) -> list[str]:
+    """Écarts au cadre ARCEP de la sous-bande 869,4 – 869,65 MHz (10 % de cycle d'émission, 500 mW PAR)."""
+    pb = []
+    d = _duty(cfg)
+    if d is not None and d > DUTY_MAX + 0.05:
+        pb.append(f"Cycle d'émission {d:g} % : au-delà des 10 % autorisés (ARCEP). Commande : set dutycycle 10")
+    try:
+        f, bw = [float(x) for x in str(cfg.get("radio") or "").split(",")[:2]]
+        bas, haut = f - bw / 2000, f + bw / 2000
+        if bas < BANDE[0] - 1e-6 or haut > BANDE[1] + 1e-6:
+            pb.append(f"Canal {bas:.4f} – {haut:.4f} MHz : déborde de la sous-bande 869,400 – 869,650 MHz")
+    except (TypeError, ValueError):
+        pass
+    try:
+        if int(float(cfg.get("tx"))) > 27:
+            pb.append(f"Puissance {cfg.get('tx')} dBm : au-delà de 500 mW (27 dBm) avant gain d'antenne")
+    except (TypeError, ValueError):
+        pass
+    return pb
 
 
 AVANCE_TOLEREE = 600  # secondes : une horloge de répéteur en avance de moins de 10 min n'est pas corrigée
@@ -257,6 +327,8 @@ class Poller:
             if ev and ev.type != EventType.ERROR:
                 p = ev.payload or {}
                 self.local_name = (p.get("name") or "").strip("\x00 ")
+                if p.get("public_key"):
+                    self.store.set_config("cle_companion", str(p.get("public_key")))
                 self.radio = {k: p.get(k) for k in ("radio_freq", "radio_bw", "radio_sf", "radio_cr", "tx_power")}
                 if abs(p.get("adv_lat") or 0) > 0.01 and abs(p.get("adv_lon") or 0) > 0.01:
                     self.position = {"lat": p["adv_lat"], "lon": p["adv_lon"]}
@@ -549,6 +621,12 @@ class Poller:
             if libre is not None:
                 fields["floodPublic"] = libre
                 fields["floodPublicLu"] = now_iso()
+            try:
+                derniere = (node.get("config") or {}).get("date") or ""
+                if not derniere or time.time() - _ts_iso(derniere) > 22 * 3600:
+                    fields.update(await self._relever_config(node, contact))
+            except Exception as e:  # noqa: BLE001
+                log.warning("relevé de configuration %s : %s", name, e)
             tx = await self._cli(contact, "get tx")
             if tx:
                 m = re.search(r"(-?\d+)", tx)
@@ -2696,6 +2774,273 @@ class Poller:
 
 
     # ---------- redémarrage et extinction à distance ----------
+    # ---------- configuration des répéteurs : relevé, conformité, sauvegarde ----------
+    async def _relever_config(self, node: dict, contact: dict) -> dict:
+        """Lit tous les réglages du répéteur (connecté en admin), vérifie la conformité, sauvegarde sur disque."""
+        name = node.get("nom", "")
+        cfg = {}
+        for cle, cmd in PARAMS_CONFIG:
+            v = _val_cli(await self._cli(contact, cmd, timeout=12))
+            if v is not None:
+                cfg[cle] = v.replace("\n", " ").strip()
+        if len(cfg) < 3:
+            return {}
+        cfg["date"] = now_iso()
+        fields = {"config": cfg}
+        pb = conformite(cfg)
+        # cohérence de la flotte : mêmes paramètres radio que les autres répéteurs ADRASEC
+        for n2 in self.store.list_nodes():
+            r2 = (n2.get("config") or {}).get("radio")
+            if n2.get("id") != node.get("id") and n2.get("proprio") == "adrasec" and r2 and cfg.get("radio") \
+                    and n2.get("statut") not in ("prevu", "supprime") and r2 != cfg["radio"]:
+                pb.append(f"Paramètres radio {cfg['radio']} différents de {n2.get('nom')} ({r2})")
+        fields["conformite"] = pb
+        sig = "|".join(pb)
+        if sig != (node.get("conformiteSignature") or ""):
+            fields["conformiteSignature"] = sig
+            if pb:
+                self.alerte("attention", name, f"{name} : " + " ; ".join(pb))
+                self.store.add_journal(name, "AUTO", "Conformité radio : " + " ; ".join(pb), auto=True)
+            elif node.get("conformiteSignature"):
+                self.store.add_journal(name, "AUTO", "Conformité radio : de nouveau conforme.", auto=True)
+        try:
+            diff = self._sauver_config(name, cfg)
+            if diff:
+                fields["configChangements"] = {"date": cfg["date"], "liste": diff}
+                self.store.add_journal(name, "AUTO", "Configuration modifiée : " + " ; ".join(diff), auto=True)
+        except Exception as e:  # noqa: BLE001
+            log.warning("sauvegarde de la configuration %s : %s", name, e)
+        self._log(f"Configuration de {name} relevée ({len(cfg) - 1} réglages)" + (f", {len(pb)} écart(s)" if pb else ""))
+        return fields
+
+    def dossier_configs(self) -> Path:
+        base = self.store.get_config("dossier_sauvegarde", "") or ""
+        d = Path(base) / "Configurations répéteurs" if base else data_dir() / "configurations-repeteurs"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    @staticmethod
+    def _diff_config(avant: dict, apres: dict) -> list[str]:
+        out = []
+        for k in [k for k, _ in PARAMS_CONFIG]:
+            a, b = (avant or {}).get(k), (apres or {}).get(k)
+            if a != b and not (a is None and b is None):
+                out.append(f"{LIB_CONFIG.get(k, k)} : {a if a is not None else '—'} → {b if b is not None else '—'}")
+        return out
+
+    def _sauver_config(self, name: str, cfg: dict) -> list[str]:
+        """Fichier JSON daté dans « Configurations répéteurs/<nom> » si quelque chose a changé ; 30 versions gardées."""
+        d = self.dossier_configs() / re.sub(r'[<>:"/\\|?*]', "_", name)
+        d.mkdir(parents=True, exist_ok=True)
+        fichiers = sorted(d.glob("*.json"))
+        avant = None
+        if fichiers:
+            try:
+                avant = json.loads(fichiers[-1].read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                avant = None
+        diff = self._diff_config(avant, cfg) if avant else []
+        if avant is None or diff:
+            (d / f"{time.strftime('%Y-%m-%d_%H%M')}.json").write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+            for f in sorted(d.glob("*.json"))[:-30]:
+                try:
+                    f.unlink()
+                except OSError:
+                    pass
+        return diff
+
+    def historique_config(self, node_id: str) -> dict:
+        node = self.store.get_node(node_id)
+        if node is None:
+            return {"ok": False, "erreur": "Nœud inconnu."}
+        d = self.dossier_configs() / re.sub(r'[<>:"/\\|?*]', "_", node.get("nom", ""))
+        versions = []
+        prec = None
+        for f in sorted(d.glob("*.json")) if d.exists() else []:
+            try:
+                c = json.loads(f.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            versions.append({"fichier": f.name, "date": c.get("date"), "changements": self._diff_config(prec, c) if prec else []})
+            prec = c
+        versions.reverse()
+        return {"ok": True, "dossier": str(d), "versions": versions[:30],
+                "actuelle": node.get("config") or {}, "libelles": LIB_CONFIG}
+
+    def relever_config(self, node_id: str) -> dict:
+        if self.mc is None:
+            return {"ok": False, "erreur": "Aucun nœud connecté."}
+        node = self.store.get_node(node_id)
+        if node is None:
+            return {"ok": False, "erreur": "Nœud inconnu."}
+        if not self.store.password(node_id):
+            return {"ok": False, "erreur": "Saisissez d'abord le mot de passe admin de ce répéteur (Modifier)."}
+        self.prioritaire += 1
+        try:
+            return self._submit(self._relever_prio(node), timeout=300)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "erreur": f"Relevé impossible : {e}"}
+        finally:
+            self.prioritaire -= 1
+
+    async def _relever_prio(self, node: dict) -> dict:
+        if not await self._attendre_la_main("Relevé de configuration"):
+            return {"ok": False, "erreur": "L'interrogation en cours ne s'est pas terminée à temps. Réessayez."}
+        contact = await self._login_admin(node)
+        if isinstance(contact, dict) and contact.get("erreur"):
+            return contact
+        fields = await self._relever_config(node, contact)
+        if not fields:
+            return {"ok": False, "erreur": f"{node.get('nom')} n'a pas répondu aux commandes de lecture."}
+        self.store.patch_node(node["id"], fields)
+        pb = fields.get("conformite") or []
+        return {"ok": True, "message": f"Configuration relevée et sauvegardée" + (f" · {len(pb)} écart(s) de conformité" if pb else " · conforme"),
+                "changements": (fields.get("configChangements") or {}).get("liste", [])}
+
+    async def _login_admin(self, node: dict):
+        """Contact du répéteur après connexion admin ; sinon {"ok": False, "erreur": …}."""
+        name = node.get("nom", "")
+        contact = self._contact_for(name)
+        if contact is None:
+            res = await self.mc.commands.get_contacts()
+            if res is not None and res.type != EventType.ERROR:
+                self._contacts = dict(res.payload or {})
+            contact = self._contact_for(name)
+        if contact is None:
+            return {"ok": False, "erreur": f"{name} n'est pas dans les contacts du nœud companion."}
+        login = await self.mc.commands.send_login_sync(contact, self.store.password(node["id"]), min_timeout=8)
+        if not (login and login.type == EventType.LOGIN_SUCCESS):
+            return {"ok": False, "erreur": f"Connexion admin refusée par {name} (mot de passe ou portée)."}
+        return contact
+
+    # ---------- position annoncée arrondie ----------
+    def arrondir_position(self, node_id: str, operateur: str = "") -> dict:
+        if self.mc is None:
+            return {"ok": False, "erreur": "Aucun nœud connecté."}
+        node = self.store.get_node(node_id)
+        if node is None or not self.store.password(node_id):
+            return {"ok": False, "erreur": "Mot de passe admin requis."}
+        self.prioritaire += 1
+        try:
+            return self._submit(self._arrondir_prio(node, operateur), timeout=180)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "erreur": f"Arrondi impossible : {e}"}
+        finally:
+            self.prioritaire -= 1
+
+    async def _arrondir_prio(self, node: dict, operateur: str) -> dict:
+        if not await self._attendre_la_main("Arrondi de la position"):
+            return {"ok": False, "erreur": "L'interrogation en cours ne s'est pas terminée à temps. Réessayez."}
+        contact = await self._login_admin(node)
+        if isinstance(contact, dict) and contact.get("erreur"):
+            return contact
+        name = node.get("nom", "")
+        try:
+            lat = float(_val_cli(await self._cli(contact, "get lat")))
+            lon = float(_val_cli(await self._cli(contact, "get lon")))
+        except (TypeError, ValueError):
+            return {"ok": False, "erreur": f"{name} n'a pas donné sa position actuelle."}
+        if abs(lat) < 0.01 and abs(lon) < 0.01:
+            return {"ok": False, "erreur": f"{name} n'annonce aucune position : rien à arrondir."}
+        la, lo = round(lat, 2), round(lon, 2)
+        r1 = await self._cli(contact, f"set lat {la}")
+        r2 = await self._cli(contact, f"set lon {lo}")
+        if not (r1 and r1.strip().upper().startswith("OK") and r2 and r2.strip().upper().startswith("OK")):
+            return {"ok": False, "erreur": f"{name} a refusé la nouvelle position ({(r1 or '').strip()} / {(r2 or '').strip()})."}
+        gps = _val_cli(await self._cli(contact, "gps advert")) or ""
+        note = ""
+        if "share" in gps:  # position GPS en direct : on passe à la position enregistrée (arrondie)
+            r3 = await self._cli(contact, "gps advert prefs")
+            note = " Position GPS en direct remplacée par la position arrondie." if r3 and "ok" in r3.lower() else \
+                " Attention : le répéteur annonce sa position GPS en direct (gps advert share), non modifiable à distance."
+        await self._cli(contact, "advert")
+        texte = f"Position annoncée arrondie : {lat:.5f}, {lon:.5f} → {la:.2f}, {lo:.2f} (≈ 1 km).{note}"
+        self.store.add_journal(name, operateur or "PC", texte)
+        self.store.patch_node(node["id"], {"latAnnonce": la, "lonAnnonce": lo, "posAnnonceDate": now_iso(),
+                                           "derniereRequete": {"libelle": "Arrondir la position annoncée", "date": now_iso(),
+                                                               "ok": True, "resultat": f"{la:.2f}, {lo:.2f}", "operateur": operateur or "PC"}})
+        self._log(f"{name} : {texte}")
+        return {"ok": True, "message": texte}
+
+    # ---------- mode crise du réseau ----------
+    def etat_crise(self) -> dict:
+        return self.store.get_config("crise_reseau", {}) or {}
+
+    def mode_crise(self, actif: bool, operateur: str = "") -> dict:
+        if self.mc is None:
+            return {"ok": False, "erreur": "Aucun nœud connecté : connectez le nœud companion."}
+        self.prioritaire += 1
+        try:
+            return self._submit(self._mode_crise(bool(actif), operateur), timeout=900)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "erreur": f"Mode crise : {e}"}
+        finally:
+            self.prioritaire -= 1
+
+    async def _mode_crise(self, actif: bool, operateur: str) -> dict:
+        if not await self._attendre_la_main("Mode crise"):
+            return {"ok": False, "erreur": "L'interrogation en cours ne s'est pas terminée à temps. Réessayez."}
+        etat = self.etat_crise()
+        if actif and etat.get("actif"):
+            return {"ok": False, "erreur": "Le mode crise est déjà actif."}
+        if not actif and not etat.get("actif"):
+            return {"ok": False, "erreur": "Le mode crise n'est pas actif."}
+        reps = [n for n in self.store.list_nodes() if n.get("proprio") == "adrasec" and n.get("role") == "repeteur"
+                and n.get("statut") not in ("prevu", "supprime") and not n.get("eteint") and self.store.password(n["id"])]
+        resultats = []
+        avant = etat.get("avant") or {}
+        for n in reps:
+            if actif:
+                cmd = "region denyf *"
+            else:
+                if not (avant.get("repeteurs") or {}).get(n["id"], True):
+                    resultats.append({"nom": n.get("nom"), "ok": True, "texte": "déjà réservé avant la crise : laissé réservé"})
+                    continue
+                cmd = "region allowf *"
+            try:
+                r = await self._commande(n, cmd, operateur or "PC")
+            except Exception as e:  # noqa: BLE001
+                r = {"ok": False, "erreur": str(e)}
+            resultats.append({"nom": n.get("nom"), "ok": bool(r.get("ok")), "texte": r.get("reponse") or r.get("erreur") or ""})
+        region_txt = ""
+        try:
+            if actif:
+                ev = await self.mc.commands.get_default_flood_scope()
+                ancienne = ((ev.payload or {}).get("scope_name") or "") if ev is not None and ev.type != EventType.ERROR \
+                    else (self.store.get_config("region_defaut", "") or "")
+                ev = await self.mc.commands.set_default_flood_scope("#fr-06")
+                ok = ev is not None and ev.type != EventType.ERROR
+                if ok:
+                    self.store.set_config("region_defaut", "#fr-06")
+                region_txt = "région par défaut du nœud companion : #fr-06" if ok else "région par défaut du companion NON modifiée"
+            else:
+                ancienne = avant.get("regionDefaut", "")
+                ev = await self.mc.commands.set_default_flood_scope(ancienne or None)
+                ok = ev is not None and ev.type != EventType.ERROR
+                if ok:
+                    self.store.set_config("region_defaut", ancienne)
+                region_txt = f"région par défaut du companion rétablie : {ancienne or 'aucune'}" if ok else "région par défaut du companion NON rétablie"
+        except Exception as e:  # noqa: BLE001
+            ancienne = ""
+            region_txt = f"région par défaut du companion : erreur ({e})"
+        n_ok = sum(1 for r in resultats if r["ok"])
+        if actif:
+            etat = {"actif": True, "debut": now_iso(), "operateur": operateur,
+                    "avant": {"regionDefaut": ancienne, "repeteurs": {n["id"]: n.get("floodPublic", True) is not False for n in reps}},
+                    "resultats": resultats}
+            texte = (f"MODE CRISE RÉSEAU activé : {n_ok}/{len(reps)} répéteur(s) ADRASEC réservé(s) (region denyf *), {region_txt}.")
+        else:
+            etat = {"actif": False, "debut": etat.get("debut"), "fin": now_iso(), "resultats": resultats}
+            texte = f"Fin du mode crise réseau : {n_ok}/{len(reps)} répéteur(s) traité(s), {region_txt}."
+        echecs = [f"{r['nom']} ({r['texte']})" for r in resultats if not r["ok"]]
+        if echecs:
+            texte += " Échecs : " + " ; ".join(echecs)
+        self.store.set_config("crise_reseau", etat)
+        self.store.add_journal("", operateur or "PC", texte, nature="evenement")
+        self.alerte("critique" if actif else "info", "", texte)
+        self._log(texte)
+        return {"ok": not echecs, "message": texte, "resultats": resultats, "erreur": texte if echecs else None}
+
     @staticmethod
     def _flood_public(reponse):
         """Réponse de « region get * » : « * F » si le trafic sans région est relayé, « * » s'il est refusé."""

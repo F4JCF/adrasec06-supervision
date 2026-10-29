@@ -17,12 +17,19 @@ from . import aprs, courriel, firmware, rapports, resilience, systeme, taches, v
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.25.0"
+VERSION = "1.26.0"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
 )
+
+
+def _ts(iso) -> float:
+    try:
+        return datetime.fromisoformat(str(iso)).timestamp()
+    except (TypeError, ValueError):
+        return 0.0
 
 
 class Api:
@@ -33,6 +40,7 @@ class Api:
         self._poller = poller
         self._window = None
         self._quitter = None
+        self._alerte = None
         self._taches = None
         self._aprs = None
         self._courrier = None
@@ -143,6 +151,10 @@ class Api:
             "aprs": {"etat": self._aprs.etat if self._aprs else {}, "reglages": self._aprs.reglages() if self._aprs else {},
                      "stations": self._store.aprs_stations(12), "traces": self._store.aprs_traces(6)},
             "couvertures": self._store.list_coverage(),
+            "crise": self._poller.etat_crise(),
+            "fwRepeteur": self._store.get_config("fw_repeteur", {}) or {},
+            "vueExterne": self._store.get_config("vue_externe", {}) or {},
+            "vueExterneAuto": bool(self._store.get_config("vue_externe_auto", True)),
             "appel": self._store.appel(),
             "resilience": self._resilience.etat() if self._resilience else None,
             "dispo": {n["id"]: {"j7": self._store.availability(n["id"], 7)["pct"],
@@ -414,6 +426,105 @@ class Api:
     def historique(self, node_id, jours=7):
         return self._store.history(node_id, int(jours))
 
+    def profil_brouillage(self, node_id, jours=14):
+        """Bruit et erreurs de réception par heure de la journée et par jour, avec les réglages modifiés (repères)."""
+        jours = max(2, min(60, int(jours or 14)))
+        node = self._store.get_node(node_id)
+        if node is None:
+            return {"ok": False, "erreur": "Nœud inconnu."}
+        h = self._store.history(node_id, jours)
+        par_heure = {i: {"bruit": [], "err": [], "dt": 0.0} for i in range(24)}
+        par_jour = {}
+        prec = None
+        for m in h:
+            t = time.localtime(m["ts"])
+            j = time.strftime("%Y-%m-%d", t)
+            pj = par_jour.setdefault(j, {"bruit": [], "err": 0, "dt": 0.0})
+            if m.get("bruit") is not None:
+                par_heure[t.tm_hour]["bruit"].append(m["bruit"])
+                pj["bruit"].append(m["bruit"])
+            if prec and m.get("erreurs") is not None and prec.get("erreurs") is not None:
+                d, dt = m["erreurs"] - prec["erreurs"], m["ts"] - prec["ts"]
+                if d >= 0 and 0 < dt <= 6 * 3600:  # compteur remis à zéro au redémarrage : intervalle ignoré
+                    par_heure[t.tm_hour]["err"].append(d * 3600 / dt)
+                    pj["err"] += d
+                    pj["dt"] += dt
+            prec = m
+
+        def med(l):
+            l = sorted(l)
+            return None if not l else (l[len(l) // 2] if len(l) % 2 else (l[len(l) // 2 - 1] + l[len(l) // 2]) / 2)
+        heures = [{"h": i, "bruit": med(v["bruit"]), "err": med(v["err"]), "n": len(v["bruit"])} for i, v in par_heure.items()]
+        jours_l = [{"jour": j, "bruit": med(v["bruit"]), "err": round(v["err"] * 3600 / v["dt"], 1) if v["dt"] > 0 else None}
+                   for j, v in sorted(par_jour.items())]
+        cles = ("set ", "radio.rxgain", "agc", "dutycycle", "region", "Configuration modifiée", "réservé", "rouvert",
+                "Redémarrage", "filtre", "antenne")
+        reperes = [{"date": e["date"], "texte": e["texte"][:200]} for e in self._store.list_journal(3000)
+                   if e.get("noeud") == node.get("nom") and any(c.lower() in (e.get("texte") or "").lower() for c in cles)
+                   and _ts(e["date"]) >= time.time() - jours * 86400]
+        return {"ok": True, "jours": jours, "heures": heures, "parJour": jours_l, "reperes": reperes[:40], "mesures": len(h)}
+
+    def noter_reglage(self, node_id, texte):
+        """Repère manuel sur les courbes (ex. « filtre changé », « antenne remontée »)."""
+        node = self._store.get_node(node_id)
+        texte = (texte or "").strip()
+        if node is None or not texte:
+            return {"ok": False, "erreur": "Texte vide."}
+        self._store.add_journal(node.get("nom", ""), self._store.get_config("operateur", "") or "PC", "Réglage terrain : " + texte[:200])
+        return {"ok": True}
+
+    # ----- configuration des répéteurs, position, crise, vue extérieure -----
+    def relever_config(self, node_id):
+        r = self._poller.relever_config(node_id)
+        self._noter_requete(node_id, "relever config", r)
+        return r
+
+    def historique_config(self, node_id):
+        return self._poller.historique_config(node_id)
+
+    def ouvrir_dossier_configs(self):
+        try:
+            d = self._poller.dossier_configs()
+            if sys.platform.startswith("win"):
+                os.startfile(str(d))  # noqa: S606
+            return {"ok": True, "chemin": str(d)}
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "erreur": str(e)}
+
+    def arrondir_position(self, node_id):
+        r = self._poller.arrondir_position(node_id, self._store.get_config("operateur", ""))
+        self._noter_requete(node_id, "arrondir position", r)
+        return r
+
+    def mode_crise(self, actif):
+        op = self._store.get_config("operateur", "") or ""
+        if actif and not self._store.current_exercise():
+            self._store.start_exercise(f"Crise réseau MeshCore — {datetime.now().strftime('%d/%m/%Y %H:%M')}", "intervention", op,
+                                       description="Main courante ouverte automatiquement par le mode crise réseau.")
+        r = self._poller.mode_crise(bool(actif), op)
+        self._store._bump()
+        return r
+
+    def vue_externe(self):
+        from . import externe
+        r = externe.vue_externe(self._store)
+        if r.get("ok"):
+            externe.verifier_fuites(self._store, self._alerte or (lambda *a: None))
+        self._store.set_config("vue_externe_ts", time.time())
+        self._store._bump()
+        return r
+
+    def regler_vue_externe(self, actif):
+        self._store.set_config("vue_externe_auto", bool(actif))
+        self._store._bump()
+        return {"ok": True}
+
+    def verifier_firmware_repeteurs(self):
+        from . import externe
+        r = externe.verifier_firmware(self._store, self._alerte or (lambda *a: None))
+        self._store._bump()
+        return r
+
     def ports(self):
         return list_serial_ports()
 
@@ -562,6 +673,7 @@ class Api:
                 "start ota": "Préparer la mise à jour (OTA)", "ver": "Vérifier la version", "clock sync": "Remettre l'heure",
                 "clock": "Lire l'heure du nœud", "reinit chemin": "Réinitialiser le chemin",
                 "test liaison": "Tester la liaison", "decouvrir voisins": "Découvrir les voisins",
+                "relever config": "Relever la configuration", "arrondir position": "Arrondir la position annoncée",
                 "region denyf *": "Réserver à l'ADRASEC (region denyf *)", "region allowf *": "Rouvrir au trafic public (region allowf *)"}
 
     def _noter_requete(self, node_id, cmd, r):
@@ -1091,6 +1203,7 @@ def main():
     api._taches = taches.Taches(store, alerte, VERSION)
     api._aprs = aprs.AprsIS(store, VERSION)
     api._courrier = courrier
+    api._alerte = alerte
     api._web = web.Tableau(store, api.tableau_donnees)
     api._resilience = resilience.TestResilience(store, poller, api, alerte)
     html = resource_path("ui/index.html")

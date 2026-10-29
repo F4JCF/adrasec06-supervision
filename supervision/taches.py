@@ -170,6 +170,10 @@ class Taches:
                 self.rapport_si_besoin()
             except Exception as e:  # noqa: BLE001
                 log.warning("Rapport hebdomadaire : %s", e)
+            try:
+                self.externe_si_besoin()
+            except Exception as e:  # noqa: BLE001
+                log.warning("Données extérieures : %s", e)
             if self.store.get_config("maj_auto", True) and time.time() - derniere_verif > 6 * 3600:
                 derniere_verif = time.time()
                 r = verifier_maj(self.version)
@@ -180,6 +184,22 @@ class Taches:
                         self.alerte("info", "", f"Nouvelle version {r['derniere']} disponible (Réglages → Mettre à jour).")
                     self.store._bump()
             time.sleep(600)
+
+    def externe_si_besoin(self):
+        """Nettoyage des régions, firmware MeshCore (12 h), analyseur public (24 h, si activé)."""
+        from . import externe
+        externe.nettoyer_regions(self.store)
+        now = time.time()
+        if now - float(self.store.get_config("fw_verif_ts", 0) or 0) > 12 * 3600:
+            self.store.set_config("fw_verif_ts", now)
+            externe.verifier_firmware(self.store, self.alerte)
+            self.store._bump()
+        if self.store.get_config("vue_externe_auto", True) and now - float(self.store.get_config("vue_externe_ts", 0) or 0) > 24 * 3600:
+            self.store.set_config("vue_externe_ts", now)
+            r = externe.vue_externe(self.store)
+            if r.get("ok"):
+                externe.verifier_fuites(self.store, self.alerte)
+            self.store._bump()
 
     def sauvegarde_si_besoin(self) -> str | None:
         dossier = self.store.get_config("dossier_sauvegarde", "")
