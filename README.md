@@ -161,6 +161,11 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 - **Companions amis** : bouton « + Ami » (Messagerie → Messages directs) pour ajouter un companion à partir de sa carte de contact « meshcore://… » ou de sa clé publique complète + son nom ; bouton « ☆ Ajouter aux amis / ★ Ami » dans chaque conversation directe ; les amis sont en tête de liste et repérés en doré sur la carte.
 - **Découvrir les voisins** dans la fiche d'un répéteur (commande discover.neighbors), console distante, étalonnage de la batterie du companion.
 
+### Nouveautés de la version 1.26.1
+
+- Fiche des répéteurs : message clair quand le nœud companion n'est pas connecté (le relevé de configuration en a besoin).
+- Correction : le détail de certains messages ne s'ouvrait pas (position enregistrée sous forme de texte).
+
 ### Nouveautés de la version 1.26
 
 - Configuration et conformité radio (fiche de chaque répéteur ADRASEC) : relevé de tous les réglages une fois par jour (ou « Relever maintenant ») ; alerte si le cycle d'émission dépasse 10 % (ARCEP), si le canal déborde de la sous-bande 869,40 – 869,65 MHz, ou si les paramètres radio diffèrent des autres répéteurs.

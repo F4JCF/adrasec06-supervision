@@ -1183,11 +1183,19 @@ class Poller:
                 lat, lon = c.get("adv_lat") or None, c.get("adv_lon") or None
                 repert.append({"cle": k, "nom": c.get("adv_name"), "lat": lat, "lon": lon, "adrasec": False})
 
+        def _f(v):
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return None
+
         def pos(x):
-            return x.get("lat") is not None and x.get("lon") is not None and abs(x["lat"]) > 0.01
+            la, lo = _f(x.get("lat")), _f(x.get("lon"))
+            return la is not None and lo is not None and abs(la) > 0.01
 
         def dist(a, b):
-            return math.hypot((a["lat"] - b["lat"]) * 111, (a["lon"] - b["lon"]) * 111 * math.cos(math.radians(a["lat"])))
+            la, lb = _f(a["lat"]), _f(b["lat"])
+            return math.hypot((la - lb) * 111, (_f(a["lon"]) - _f(b["lon"])) * 111 * math.cos(math.radians(la)))
 
         def resoudre(hexpath: str, taille: int) -> list[dict]:
             taille = max(1, int(taille or 1))
