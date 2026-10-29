@@ -17,7 +17,7 @@ from . import aprs, courriel, firmware, rapports, resilience, systeme, taches, v
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.26.2"
+VERSION = "1.26.3"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -490,6 +490,9 @@ class Api:
             return {"ok": True, "chemin": str(d)}
         except Exception as e:  # noqa: BLE001
             return {"ok": False, "erreur": str(e)}
+
+    def regler_region_repeteur(self, node_id, region=""):
+        return self._poller.regler_region_repeteur(node_id, region, self._store.get_config("operateur", ""))
 
     def arrondir_position(self, node_id):
         r = self._poller.arrondir_position(node_id, self._store.get_config("operateur", ""))

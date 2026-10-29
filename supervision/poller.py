@@ -2882,7 +2882,9 @@ class Poller:
         try:
             diff = self._sauver_config(name, cfg)
             if diff:
-                fields["configChangements"] = {"date": cfg["date"], "liste": diff}
+                fields["configChangements"] = {"date": cfg["date"], "liste": diff, "v": VERSION_CONFIG}
+            elif (node.get("configChangements") or {}).get("v") != VERSION_CONFIG:
+                fields["configChangements"] = None
                 self.store.add_journal(name, "AUTO", "Configuration modifiée : " + " ; ".join(diff), auto=True)
         except Exception as e:  # noqa: BLE001
             log.warning("sauvegarde de la configuration %s : %s", name, e)
@@ -2996,6 +2998,49 @@ class Poller:
         if not (login and login.type == EventType.LOGIN_SUCCESS):
             return {"ok": False, "erreur": f"Connexion admin refusée par {name} (mot de passe ou portée)."}
         return contact
+
+    # ---------- région par défaut d'un répéteur ----------
+    def regler_region_repeteur(self, node_id: str, region: str, operateur: str = "") -> dict:
+        if self.mc is None:
+            return {"ok": False, "erreur": "Aucun nœud connecté."}
+        node = self.store.get_node(node_id)
+        if node is None or not self.store.password(node_id):
+            return {"ok": False, "erreur": "Mot de passe admin requis."}
+        region = (region or "").strip().lstrip("#")
+        if region and not re.fullmatch(r"[A-Za-z0-9_\-]{1,28}", region):
+            return {"ok": False, "erreur": "Nom de région invalide (lettres, chiffres, tirets ; ex. fr, fr-06)."}
+        self.prioritaire += 1
+        try:
+            return self._submit(self._region_repeteur_prio(node, region, operateur), timeout=120)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "erreur": f"Réglage impossible : {e}"}
+        finally:
+            self.prioritaire = max(0, self.prioritaire - 1)
+
+    async def _region_repeteur_prio(self, node: dict, region: str, operateur: str) -> dict:
+        if not await self._attendre_la_main("Région par défaut du répéteur"):
+            return {"ok": False, "erreur": "L'interrogation en cours ne s'est pas terminée à temps. Réessayez."}
+        contact = await self._login_admin(node)
+        if isinstance(contact, dict) and contact.get("erreur"):
+            return contact
+        name = node.get("nom", "")
+        await self._vider_reponses(contact, 1.5)
+        rep = await self._cli(contact, f"region default {region or '<null>'}", timeout=15,
+                              valide=lambda t: "default scope" in t.lower() or t.lower().startswith("err"))
+        if not rep or "default scope is now" not in rep.lower():
+            return {"ok": False, "erreur": f"{name} a refusé le réglage ({(rep or 'pas de réponse').strip()})."}
+        lu = _val_cli(await self._cli(contact, "region default", timeout=12, valide=VALIDE_CONFIG["regionDefaut"])) or rep.strip()
+        regions = _val_cli(await self._cli(contact, "region", timeout=12, valide=VALIDE_CONFIG["regions"]))
+        cfg = dict(node.get("config") or {})
+        cfg["regionDefaut"] = lu
+        if regions:
+            cfg["regions"] = regions.replace("\n", " ").strip()
+        texte = f"Région par défaut de {name} : {('#' + region) if region else 'aucune'} (enregistrée dans le répéteur)."
+        self.store.patch_node(node["id"], {"config": cfg, "derniereRequete": {"libelle": "Région par défaut", "date": now_iso(),
+                                           "ok": True, "resultat": lu, "operateur": operateur or "PC"}})
+        self.store.add_journal(name, operateur or "PC", texte)
+        self._log(texte)
+        return {"ok": True, "message": texte}
 
     # ---------- position annoncée arrondie ----------
     def arrondir_position(self, node_id: str, operateur: str = "") -> dict:

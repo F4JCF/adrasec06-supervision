@@ -161,6 +161,12 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 - **Companions amis** : bouton « + Ami » (Messagerie → Messages directs) pour ajouter un companion à partir de sa carte de contact « meshcore://… » ou de sa clé publique complète + son nom ; bouton « ☆ Ajouter aux amis / ★ Ami » dans chaque conversation directe ; les amis sont en tête de liste et repérés en doré sur la carte.
 - **Découvrir les voisins** dans la fiche d'un répéteur (commande discover.neighbors), console distante, étalonnage de la batterie du companion.
 
+### Nouveautés de la version 1.26.3
+
+- Région par défaut d'un répéteur réglable depuis sa fiche (commande « region default », enregistrée dans le répéteur, relue pour vérification).
+- Le bandeau « Dernier changement détecté » issu d'un relevé erroné de la 1.26.0/1.26.1 n'est plus affiché.
+- Une position déjà arrondie (ex. 43.5900001) n'est plus présentée comme « précise ».
+
 ### Nouveautés de la version 1.26.2
 
 - Correction du relevé de configuration : une réponse tardive d'une commande précédente pouvait décaler toutes les valeurs d'une ligne (ex. puissance 22 lue comme « cycle d'émission 22 % »). Chaque réponse est maintenant vérifiée avant d'être retenue ; les copies erronées de la 1.26.0/1.26.1 sont écartées et le relevé est refait à la prochaine collecte.

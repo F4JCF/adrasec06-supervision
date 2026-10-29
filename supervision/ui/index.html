@@ -2026,7 +2026,11 @@ const HOT_MIN = 360; // 6 heures
   function configHtml(n){
     const c = n.config || {}, pb = n.conformite || [], h = cfgHisto[n.id];
     const peut = n.aMotDePasse && liaison.connecte;
-    const precis = c.lat && c.lon && (String(c.lat).split(".")[1] || "").length > 2;
+    const r2 = v => Math.abs(+v - Math.round(+v * 100) / 100) > 0.00005;
+    const precis = c.lat && c.lon && (r2(c.lat) || r2(c.lon));
+    const regsRep = [...new Set(String(c.regions || "").split(/\s+/).map(x => x.replace(/\^$/, "")).filter(x => x && x !== "F" && x !== "*"))];
+    const regDef = (String(c.regionDefaut || "").match(/is\s+(?:now\s+)?(\S+)/) || [])[1] || "";
+    const regDefNom = regDef === "<null>" ? "" : regDef.replace(/^#/, "");
     return `<div class="cfgbox"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
         <strong style="font-size:.9rem">Configuration et conformité radio${c.date ? ` <span class="muted" style="font-weight:400">· relevée le ${fmtDate(c.date)} (${ago(c.date)})</span>` : ""}</strong>
         <span style="display:flex;gap:6px;flex-wrap:wrap">${n.aMotDePasse ? `<button class="btn small" data-cfgrelever="${esc(n.id)}" ${peut && !cfgBusy ? "" : "disabled"} title="Lit tous les réglages du répéteur (environ 1 minute), vérifie la conformité et enregistre une copie">${cfgBusy === n.id ? "Relevé en cours…" : "Relever maintenant"}</button>` : ""}
@@ -2034,9 +2038,14 @@ const HOT_MIN = 360; // 6 heures
       ${n.aMotDePasse && !liaison.connecte ? `<span class="reading" style="color:var(--warn)">Nœud companion non connecté : connectez-le (Bluetooth ou USB) pour relever la configuration. Le relevé se fait aussi tout seul à la première collecte après la connexion.</span>` : ""}
       ${!c.date ? `<span class="reading">${n.aMotDePasse ? "Pas encore relevée : elle l'est automatiquement une fois par jour pendant la collecte, ou tout de suite avec « Relever maintenant » (environ 1 minute)." : "Mot de passe admin requis pour relever la configuration."}</span>` : `
       ${pb.length ? `<div class="confko"><strong>⚠ ${pb.length} écart${pb.length > 1 ? "s" : ""}</strong>${pb.map(x => `<span>• ${esc(x)}</span>`).join("")}</div>` : `<span class="confok">✓ Conforme : cycle d'émission ≤ 10 %, canal dans la sous-bande 869,40 – 869,65 MHz, mêmes paramètres radio que la flotte</span>`}
-      ${n.configChangements ? `<span class="reading" style="color:var(--warn)">Dernier changement détecté le ${fmtDate(n.configChangements.date)} : ${esc(n.configChangements.liste.join(" ; "))}</span>` : ""}
+      ${n.configChangements && n.configChangements.v === 2 ? `<span class="reading" style="color:var(--warn)">Dernier changement détecté le ${fmtDate(n.configChangements.date)} : ${esc(n.configChangements.liste.join(" ; "))}</span>` : ""}
       <table>${CFG_ORDRE.filter(k => c[k] != null && c[k] !== "").map(k => `<tr><td>${esc(CFG_LIB[k] || k)}</td><td class="mono">${esc(c[k])}</td></tr>`).join("")}</table>`}
       ${h ? (h.versions.length ? `<div class="neigh"><span class="muted" style="font-size:.82rem">Copies enregistrées dans ${esc(h.dossier)}</span>${h.versions.map(v => `<span style="font-size:.84rem"><b>${esc(fmtDate(v.date))}</b> ${v.changements.length ? "— " + esc(v.changements.join(" ; ")) : `<span class="muted">— première copie</span>`}</span>`).join("")}</div>` : `<span class="reading">Aucune copie enregistrée pour l'instant.</span>`) : ""}
+      ${n.aMotDePasse && c.date ? `<div class="row" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><span style="font-size:.86rem">Région par défaut du répéteur</span>
+        <select id="regRep-${esc(n.id)}" style="width:auto;padding:3px 6px;font-size:.84rem"><option value="" ${!regDefNom ? "selected" : ""}>aucune</option>
+          ${[...new Set([...regsRep, "fr", "fr-06", ...(regDefNom ? [regDefNom] : [])])].map(r => `<option value="${esc(r)}" ${r === regDefNom ? "selected" : ""}>#${esc(r)}</option>`).join("")}<option value="__autre">autre…</option></select>
+        <input id="regRepAutre-${esc(n.id)}" placeholder="nom de la région" style="width:10em;padding:3px 6px;font-size:.84rem" hidden>
+        <button class="btn small" data-regrep="${esc(n.id)}" ${peut && !cfgBusy ? "" : "disabled"} title="Commande « region default » : région appliquée aux inondations émises par le répéteur lui-même (ses annonces). Enregistrée dans le répéteur.">Appliquer</button></div>` : ""}
       ${n.aMotDePasse && c.lat ? `<div class="row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${arrConfirm === n.id
         ? `<span style="color:var(--warn);font-size:.86rem">La position annoncée sur le réseau (cartes publiques) sera arrondie à 2 décimales (≈ 1 km). La position sur votre carte n'est pas modifiée.</span><button class="btn small danger" data-arrgo="${esc(n.id)}">Confirmer l'arrondi</button><button class="btn small" data-arrno="1">Annuler</button>`
         : `<button class="btn small" data-arrondir="${esc(n.id)}" ${peut ? "" : "disabled"} title="Remplace la position précise annoncée par le répéteur par une position arrondie à environ 1 km">Arrondir la position annoncée (≈ 1 km)</button>${precis ? `<span class="muted" style="font-size:.82rem">position annoncée précise : ${esc(c.lat)}, ${esc(c.lon)}</span>` : `<span class="muted" style="font-size:.82rem">position déjà arrondie</span>`}`}</div>` : ""}
@@ -2871,6 +2880,12 @@ const HOT_MIN = 360; // 6 heures
     const chi = t.closest("[data-cfghisto]");
     if (chi) { const id = chi.dataset.cfghisto; if (cfgHisto[id]) delete cfgHisto[id]; else { const r = await api.historique_config(id); if (r.ok) cfgHisto[id] = r; else toast(r.erreur); } renderFiche(); return; }
     if (t.closest("[data-cfgdossier]")) { const r = await api.ouvrir_dossier_configs(); toast(r.ok ? "Dossier : " + r.chemin : r.erreur); return; }
+    const rgr = t.closest("[data-regrep]");
+    if (rgr) { const id = rgr.dataset.regrep, sel = $("#regRep-" + CSS.escape(id)); let v = sel.value;
+      if (v === "__autre") { v = $("#regRepAutre-" + CSS.escape(id)).value.trim(); if (!v) { toast("Indiquez le nom de la région."); return; } }
+      cfgBusy = id; renderFiche(); toast("Réglage de la région par défaut du répéteur…");
+      let r; try { r = await api.regler_region_repeteur(id, v); } catch(err) { r = {ok:false, erreur:String(err)}; }
+      cfgBusy = null; toast(r.ok ? r.message : r.erreur); refresh(true); return; }
     const arr = t.closest("[data-arrondir]"); if (arr) { arrConfirm = arr.dataset.arrondir; renderFiche(); return; }
     if (t.closest("[data-arrno]")) { arrConfirm = null; renderFiche(); return; }
     const arg = t.closest("[data-arrgo]");
@@ -3185,6 +3200,7 @@ const HOT_MIN = 360; // 6 heures
     if (e.target.id === "regDefaut") { const r = await api.regler_region(null, e.target.value === "__aucune" ? "" : e.target.value, true); toast(r.ok ? "Région par défaut du nœud enregistrée" : r.erreur); refresh(true); return; }
     if (e.target.id === "optCorr") { await api.regler_options({corrBattCompanion: +e.target.value || 0}); toast("Correction enregistrée : prise en compte à la prochaine lecture (1 min)"); refresh(true); }
     if (e.target.id === "optHorloge") { await api.regler_options({horlogeAuto: e.target.checked}); refresh(true); }
+    if (e.target.id && e.target.id.startsWith("regRep-")) { const a = document.getElementById("regRepAutre-" + e.target.id.slice(7)); if (a) { a.hidden = e.target.value !== "__autre"; if (!a.hidden) a.focus(); } return; }
     if (e.target.id === "profilJours") { profilJours = +e.target.value; const id = e.target.dataset.id; delete profils[id]; loadHistory(id); return; }
     if (e.target.id === "vxAuto") { await api.regler_vue_externe(e.target.checked); refresh(true); return; }
     if (e.target.id === "flConfirmer") { await api.regler_inondation({confirmer: e.target.checked}); refresh(true); }
