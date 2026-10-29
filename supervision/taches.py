@@ -188,7 +188,11 @@ class Taches:
     def externe_si_besoin(self):
         """Nettoyage des régions, firmware MeshCore (12 h), analyseur public (24 h, si activé)."""
         from . import externe
+        now_ts = time.time
         externe.nettoyer_regions(self.store)
+        if now_ts() - float(self.store.get_config("purge_ts", 0) or 0) > 24 * 3600:
+            self.store.set_config("purge_ts", now_ts())
+            externe.purger_noeuds(self.store, int(self.store.get_config("purge_jours", 100) or 100))
         now = time.time()
         if now - float(self.store.get_config("fw_verif_ts", 0) or 0) > 12 * 3600:
             self.store.set_config("fw_verif_ts", now)

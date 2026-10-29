@@ -161,6 +161,13 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 - **Companions amis** : bouton « + Ami » (Messagerie → Messages directs) pour ajouter un companion à partir de sa carte de contact « meshcore://… » ou de sa clé publique complète + son nom ; bouton « ☆ Ajouter aux amis / ★ Ami » dans chaque conversation directe ; les amis sont en tête de liste et repérés en doré sur la carte.
 - **Découvrir les voisins** dans la fiche d'un répéteur (commande discover.neighbors), console distante, étalonnage de la batterie du companion.
 
+### Nouveautés de la version 1.26.5
+
+- Boutons : contour orange, texte en blanc (couleur du texte du thème).
+- « Salle de crise (plein écran) » déplacé sous « Mode crise réseau », au-dessus des répéteurs ADRASEC.
+- Autonomie : « bilan positif / stable / baisse lente » sur 7 jours (tendance des minima journaliers, et non l'état de charge de l'instant).
+- Les nœuds voisins (externes) qui n'ont plus été reçus depuis 100 jours sont retirés automatiquement (une fois par jour, noté au journal). La date retenue est l'heure de réception par le companion, jamais l'horodatage de l'annonce. Les répéteurs ADRASEC ne sont jamais retirés ; un nœud retiré revient s'il est de nouveau entendu.
+
 ### Nouveautés de la version 1.26.4
 
 - Tous les boutons d'action sont en orange (les actions sensibles restent en rouge) pour les repérer plus facilement.

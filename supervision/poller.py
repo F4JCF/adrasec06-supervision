@@ -509,19 +509,21 @@ class Poller:
             last_seen = None
             if c.get("last_advert"):
                 last_seen = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(c["last_advert"]))
+            vu_le = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(c["lastmod"])) if c.get("lastmod") else None
             if node is None and name in (self.store.get_config("ignores", []) or []):
                 continue
             if node is None:
                 self.store.save_node({
                     "nom": name, "proprio": "externe", "statut": "en-ligne", "role": ROLE_BY_TYPE[t],
                     "lat": round(lat, 5) if has_pos else "", "lon": round(lon, 5) if has_pos else "",
-                    "voisins": [], "decouvert": True, "dernierAdvert": last_seen,
+                    "voisins": [], "decouvert": True, "dernierAdvert": last_seen, "vuLe": vu_le or now_iso(), "creeLe": now_iso(),
                     "cle": c.get("public_key", "")[:12], "cleComplete": c.get("public_key", ""),
                     **({"latAnnonce": round(lat, 5), "lonAnnonce": round(lon, 5)} if has_pos else {}),
                 }, bump=False)
                 added += 1
             else:
                 fields = {"dernierAdvert": last_seen, "cle": c.get("public_key", "")[:12], "cleComplete": c.get("public_key", ""),
+                          **({"vuLe": vu_le} if vu_le and vu_le > str(node.get("vuLe") or "") else {}),
                           "chemin": self._chemin(c), "cheminDate": now_iso()}
                 if has_pos:
                     fields.update(latAnnonce=round(lat, 5), lonAnnonce=round(lon, 5), posAnnonceDate=last_seen)

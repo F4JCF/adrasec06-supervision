@@ -131,3 +131,35 @@ def nettoyer_regions(store: Store) -> int:
     if len(garde) != len(par):
         store.set_config("regions_repeteurs", garde)
     return len(par) - len(garde)
+
+
+def purger_noeuds(store: Store, jours: int = 100) -> list[str]:
+    """Retire les nœuds voisins (externes) qui n'ont plus été reçus depuis « jours » jours.
+
+    La date retenue est celle de réception par notre nœud companion (vuLe), ou de la dernière interrogation
+    réussie (maj) — jamais l'horodatage de l'annonce, qui dépend de l'horloge du nœud distant (souvent fausse).
+    Les répéteurs ADRASEC et les sites prévus ne sont jamais retirés. Un nœud retiré revient s'il est de nouveau entendu.
+    """
+    from datetime import datetime
+    def ts(v):
+        try:
+            return datetime.fromisoformat(str(v)).timestamp()
+        except (TypeError, ValueError):
+            return 0.0
+    limite = time.time() - jours * 86400
+    retires = []
+    for n in store.list_nodes():
+        if n.get("proprio") != "externe" or n.get("statut") in ("prevu",):
+            continue
+        if not n.get("vuLe") and not n.get("creeLe"):  # nœud d'avant cette version : le délai part d'aujourd'hui
+            store.patch_node(n["id"], {"creeLe": now_iso()})
+            continue
+        dernier = max(ts(n.get("vuLe")), ts(n.get("maj")), ts(n.get("creeLe")))
+        if dernier and dernier < limite:
+            store.purge_node(n["id"])
+            retires.append(n.get("nom") or n["id"])
+    if retires:
+        store.add_journal("", "AUTO", f"{len(retires)} nœud(s) voisin(s) retiré(s) : plus reçus depuis {jours} jours ("
+                          + ", ".join(retires[:20]) + (" …" if len(retires) > 20 else "") + ").", auto=True)
+        store._bump()
+    return retires

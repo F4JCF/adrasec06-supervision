@@ -180,6 +180,12 @@ class Store:
         n.update(fields)
         return self.save_node(n)
 
+    def purge_node(self, node_id: str):
+        """Retire un nœud sans l'ajouter aux ignorés : il revient s'il est de nouveau entendu."""
+        with self._lock:
+            self._cx.execute("DELETE FROM noeuds WHERE id=?", (node_id,))
+            self._cx.commit()
+
     def delete_node(self, node_id: str):
         n = self.get_node(node_id)
         if n and n.get("proprio") == "externe" and n.get("nom"):

@@ -63,10 +63,10 @@ header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:spac
 .dot{width:10px;height:10px;border-radius:50%;flex:none;background:var(--c,var(--plan))}
 .dot.hollow{background:transparent;border:2px solid var(--c,var(--plan))}
 .summary .spacer{flex:1}
-.btn{border:1px solid var(--accent);background:var(--panel);color:var(--accent);padding:7px 14px;border-radius:4px;font-weight:600}
+.btn{border:1px solid var(--accent);background:var(--panel);color:var(--fg);padding:7px 14px;border-radius:4px;font-weight:600}
 .btn:hover{background:color-mix(in srgb,var(--accent) 14%,var(--panel))}
 .btn:disabled{opacity:.45;cursor:not-allowed}
-a.btn,a.btn:visited{color:var(--accent);text-decoration:none}
+a.btn,a.btn:visited{color:var(--fg);text-decoration:none}
 .secnav{display:flex;gap:6px;flex-wrap:wrap;column-span:all}
 .sectitle{color:var(--accent)}
 .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
@@ -530,7 +530,6 @@ header.top .hright{grid-column:1 / -1}
     <div class="hclock" aria-live="off"><b id="hClock">--:--:--</b><span id="hDate"></span></div>
     <div class="hright" style="display:flex;gap:8px;justify-content:flex-end;align-items:center;flex-wrap:wrap">
       <div class="radio" id="radio" aria-label="Paramètres radio du réseau"></div>
-      <button class="btn small" id="crOpen" type="button">Salle de crise (plein écran)</button>
     </div>
   </header>
   <section class="update" id="update" hidden></section>
@@ -574,7 +573,7 @@ header.top .hright{grid-column:1 / -1}
 
   <div class="tabpane" id="tab-reseau">
   <section class="panel" id="encart">
-    <div class="panel-head"><h2>Répéteurs ADRASEC</h2><span style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="reading" id="encartInfo"></span><button class="btn small danger" type="button" id="criseGo" title="Réserver d'un coup tous les répéteurs ADRASEC (region denyf *), passer la région par défaut du nœud companion en #fr-06 et ouvrir une main courante">🚨 Mode crise réseau</button></span></div>
+    <div class="panel-head"><h2>Répéteurs ADRASEC</h2><span style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="reading" id="encartInfo"></span><span style="display:grid;gap:6px;justify-items:stretch"><button class="btn small danger" type="button" id="criseGo" title="Réserver d'un coup tous les répéteurs ADRASEC (region denyf *), passer la région par défaut du nœud companion en #fr-06 et ouvrir une main courante">🚨 Mode crise réseau</button><button class="btn small" id="crOpen" type="button" title="Affichage plein écran pour le PC de crise : carte, répéteurs, canal ADRASEC 06, main courante">🖥 Salle de crise (plein écran)</button></span></span></div>
     <div class="crisebar" id="criseBar" hidden role="status"><span style="flex:1" id="criseTxt"></span><button class="btn small" type="button" id="criseDetail">Détail</button><button class="btn small danger on" type="button" id="criseFin">Fin de crise</button></div>
     <div class="criseconf" id="criseConf" hidden></div>
     <div class="ecards" id="ecards"></div>
@@ -1068,7 +1067,7 @@ header.top .hright{grid-column:1 / -1}
         <path d="${ligne}" fill="none" stroke="var(--accent)" stroke-width="2" vector-effect="non-scaling-stroke"/>
         ${serie.map((x, i) => `<circle cx="${X(i)}" cy="${Y(x[1])}" r="2.4" fill="var(--accent)"><title>${esc(fmtDay(x[0]))} : ${fmtNum(x[1], 2)} V</title></circle>`).join("")}</svg>`;
     }
-    const p = a.pente * 1000, txt = a.jours != null ? `autonomie estimée <b>≈ ${a.jours} jours</b> avant 3,30 V` : (p >= -5 ? "batterie stable ou en recharge" : "baisse lente");
+    const p = a.pente * 1000, txt = a.jours != null ? `autonomie estimée <b>≈ ${a.jours} jours</b> avant 3,30 V` : (p >= 5 ? "bilan positif : la batterie récupère d'un jour à l'autre (le solaire couvre la consommation)" : p >= -5 ? "bilan stable d'un jour à l'autre" : "baisse lente");
     return `<div class="neigh autobox"><strong style="font-size:.9rem">Batterie sur ${serie.length} jours <span class="muted" style="font-weight:400">· minimum de chaque jour</span></strong>${svg}
       <span style="font-size:.86rem">Dernier minimum ${fmtNum(a.minJour, 2)} V · tendance ${p > 0 ? "+" : ""}${fmtNum(p, 0)} mV/jour · ${txt}</span>
       <span class="muted" style="font-size:.76rem">Trait rouge : 3,30 V, seuil où l'accu est presque vide. Estimation sur les 7 derniers jours.</span></div>`;
@@ -1263,7 +1262,7 @@ header.top .hright{grid-column:1 / -1}
         ${horlogeVignette(n)}
         ${(() => { const tp = temperature(n); return `<div class="hvig" title="${n.telemetrieDate ? "Télémétrie lue le " + esc(fmtDate(n.telemetrieDate)) : "Le répéteur ne transmet pas sa température"}"><span class="lbl">Température</span>${tp == null ? `<b class="muted">—</b><span class="muted">non transmise</span>` : `<b style="color:${tp >= 60 ? "var(--crit)" : tp >= 45 ? "var(--warn)" : tp <= -5 ? "var(--test)" : "inherit"}">${fmtNum(tp, 1)} °C</b>${n.telemetrieDate ? `<span class="muted">${ago(n.telemetrieDate)}</span>` : ""}`}</div>`; })()}
         ${n.autonomie ? (n.autonomie.jours != null ? `<div class="hvig"><span class="lbl">Autonomie</span><b style="color:${n.autonomie.jours < 7 ? "var(--crit)" : n.autonomie.jours < 20 ? "var(--warn)" : "var(--fg)"}">≈ ${n.autonomie.jours} j</b><span class="muted">${fmtNum(n.autonomie.pente*1000,0)} mV/jour</span></div>`
-          : `<div class="hvig" title="L'autonomie n'est estimée que si la tension minimale du jour baisse de plus de 5 mV par jour (7 derniers jours)"><span class="lbl">Autonomie</span><b style="color:var(--ok)">${n.autonomie.pente >= 0.005 ? "en charge" : n.autonomie.pente >= -0.005 ? "stable" : "baisse lente"}</b><span class="muted">${n.autonomie.pente >= 0 ? "+" : ""}${fmtNum(n.autonomie.pente*1000,0)} mV/jour</span></div>`) : ""}
+          : `<div class="hvig" title="Tendance de la tension minimale de chaque jour sur les 7 derniers jours (pas l'état de charge de l'instant). « Bilan positif » : la batterie récupère d'un jour à l'autre (le solaire couvre la consommation). L'autonomie en jours n'est estimée que si cette tendance baisse de plus de 5 mV par jour."><span class="lbl">Autonomie</span><b style="color:var(--ok)">${n.autonomie.pente >= 0.005 ? "bilan positif" : n.autonomie.pente >= -0.005 ? "stable" : "baisse lente"}</b><span class="muted">${n.autonomie.pente >= 0 ? "+" : ""}${fmtNum(n.autonomie.pente*1000,0)} mV/j sur 7 j</span></div>`) : ""}
         ${n.floodPublic === false ? `<div class="hvig" title="region denyf * : les messages sans région (trafic public non régionalisé) ne sont plus relayés. Les messages en région (#fr-06, #fr…) et les messages à chemin direct passent toujours."><span class="lbl">Trafic public</span><b style="color:var(--crit)">⛔ réservé ADRASEC</b>${n.floodPublicLu ? `<span class="muted">${ago(n.floodPublicLu)}</span>` : ""}</div>` : ""}
         ${(n.tendances||[]).length ? `<div class="tendv">${n.tendances.slice(0,2).map(t => `<span title="${esc(t.texte)} (depuis ${esc(fmtDate(t.depuis))})">⚠ ${esc(t.texte)}</span>`).join("")}</div>` : ""}`}
         ${busy ? `<span class="reading">${esc(busy)}</span>` : ""}
