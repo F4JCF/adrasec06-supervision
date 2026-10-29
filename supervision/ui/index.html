@@ -67,6 +67,7 @@ header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:spac
 .btn:hover{border-color:var(--fg)}
 .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .btn.danger{color:var(--crit);border-color:var(--crit)}
+.btn.danger.on{background:var(--crit);color:#fff}
 .btn.small{padding:4px 10px;font-size:.85rem}
 
 /* Grille principale */
@@ -1177,7 +1178,7 @@ header.top .hright{grid-column:1 / -1}
 
   /* ---------- synthèse ---------- */
   /* ---------- encart des répéteurs ADRASEC ---------- */
-  let offConfirm = null, encartBusy = {};
+  let offConfirm = null, resConfirm = null, encartBusy = {};
   function nodesEncart(){
     return allNodes.filter(n => (n.proprio !== "externe" && !["prevu","supprime"].includes(n.statut)) || normNom(n.nom) === "fr06mouginsf4jcf")
       .filter(n => n.statut !== "supprime")
@@ -1199,7 +1200,9 @@ header.top .hright{grid-column:1 / -1}
           <span>Firmware<b>${esc(n.firmware || "—")}</b></span><span>Err. RX<b>${fmtNum(n.erreursRx)}</b></span><span>Lu<b>${n.maj ? ago(n.maj).replace("il y a ","") : "—"}</b></span></div>
         ${horlogeVignette(n)}
         ${(() => { const tp = temperature(n); return `<div class="hvig" title="${n.telemetrieDate ? "Télémétrie lue le " + esc(fmtDate(n.telemetrieDate)) : "Le répéteur ne transmet pas sa température"}"><span class="lbl">Température</span>${tp == null ? `<b class="muted">—</b><span class="muted">non transmise</span>` : `<b style="color:${tp >= 60 ? "var(--crit)" : tp >= 45 ? "var(--warn)" : tp <= -5 ? "var(--test)" : "inherit"}">${fmtNum(tp, 1)} °C</b>${n.telemetrieDate ? `<span class="muted">${ago(n.telemetrieDate)}</span>` : ""}`}</div>`; })()}
-        ${n.autonomie && n.autonomie.jours != null ? `<div class="hvig"><span class="lbl">Autonomie</span><b style="color:${n.autonomie.jours < 7 ? "var(--crit)" : n.autonomie.jours < 20 ? "var(--warn)" : "var(--fg)"}">≈ ${n.autonomie.jours} j</b><span class="muted">${fmtNum(n.autonomie.pente*1000,0)} mV/jour</span></div>` : ""}
+        ${n.autonomie ? (n.autonomie.jours != null ? `<div class="hvig"><span class="lbl">Autonomie</span><b style="color:${n.autonomie.jours < 7 ? "var(--crit)" : n.autonomie.jours < 20 ? "var(--warn)" : "var(--fg)"}">≈ ${n.autonomie.jours} j</b><span class="muted">${fmtNum(n.autonomie.pente*1000,0)} mV/jour</span></div>`
+          : `<div class="hvig" title="L'autonomie n'est estimée que si la tension minimale du jour baisse de plus de 5 mV par jour (7 derniers jours)"><span class="lbl">Autonomie</span><b style="color:var(--ok)">${n.autonomie.pente >= 0.005 ? "en charge" : n.autonomie.pente >= -0.005 ? "stable" : "baisse lente"}</b><span class="muted">${n.autonomie.pente >= 0 ? "+" : ""}${fmtNum(n.autonomie.pente*1000,0)} mV/jour</span></div>`) : ""}
+        ${n.floodPublic === false ? `<div class="hvig" title="region denyf * : les messages sans région (trafic public non régionalisé) ne sont plus relayés. Les messages en région (#fr-06, #fr…) et les messages à chemin direct passent toujours."><span class="lbl">Trafic public</span><b style="color:var(--crit)">⛔ réservé ADRASEC</b>${n.floodPublicLu ? `<span class="muted">${ago(n.floodPublicLu)}</span>` : ""}</div>` : ""}
         ${(n.tendances||[]).length ? `<div class="tendv">${n.tendances.slice(0,2).map(t => `<span title="${esc(t.texte)} (depuis ${esc(fmtDate(t.depuis))})">⚠ ${esc(t.texte)}</span>`).join("")}</div>` : ""}`}
         ${busy ? `<span class="reading">${esc(busy)}</span>` : ""}
         ${n.derniereRequete ? (q => `<div class="dreq" title="${esc(q.libelle)} — ${esc(fmtDate(q.date))}${q.operateur ? " par " + esc(q.operateur) : ""}\n${esc(q.resultat || "")}">
@@ -1207,12 +1210,20 @@ header.top .hright{grid-column:1 / -1}
           <span class="l1"><b>${esc(q.libelle)}</b><span class="muted"> · ${fmtDate(q.date)} (${ago(q.date)})</span></span>
           <span class="l2" style="color:${q.ok ? "var(--ok)" : "var(--crit)"}">${q.ok ? "✓" : "✗"} ${esc(q.resultat || "")}</span></div>`)(n.derniereRequete)
           : `<div class="dreq"><span class="lbl">Dernière requête</span><span class="l1 muted">Aucune depuis ce PC</span></div>`}
-        ${offConfirm === n.id ? `<div class="warn"><strong>Éteindre ${esc(n.nom)} ?</strong>
+        ${resConfirm === n.id ? (n.floodPublic === false ? `<div class="warn"><strong>Rouvrir ${esc(n.nom)} au trafic public ?</strong>
+            <span>Le répéteur relaiera de nouveau <b>tous</b> les messages sans région (region allowf *), comme les répéteurs publics. Le réglage est enregistré dans le répéteur.</span>
+            <div class="acts"><button class="btn small danger" data-resgo="${esc(n.id)}" data-v="0">Rouvrir au trafic public</button><button class="btn small" data-resno="1">Annuler</button></div></div>`
+          : `<div class="warn"><strong>Réserver ${esc(n.nom)} à l'ADRASEC ?</strong>
+            <span>Commande <b class="mono">region denyf *</b> : le répéteur <b>ne relaiera plus les messages sans région</b> (adverts et messages publics non régionalisés, messages privés envoyés sans région).
+            Il relaiera toujours les messages en région qu'il connaît (#fr-06 du canal adrasec06, #fr…) et les messages à chemin direct. Le réglage est enregistré dans le répéteur et survit à un redémarrage.</span>
+            <label><input type="checkbox" id="resOk-${esc(n.id)}"> Je confirme : les stations dont le nœud n'utilise pas de région ne passeront plus par ce répéteur.</label>
+            <div class="acts"><button class="btn small danger" data-resgo="${esc(n.id)}" data-v="1">Réserver à l'ADRASEC</button><button class="btn small" data-resno="1">Annuler</button></div></div>`) :
+        offConfirm === n.id ? `<div class="warn"><strong>Éteindre ${esc(n.nom)} ?</strong>
             <span>Le répéteur s'arrête complètement. Il <b>ne pourra être rallumé que sur place</b> : aucune commande à distance ne pourra le réveiller. Le réseau perd ce relais d'ici là.</span>
             <label><input type="checkbox" id="offOk-${esc(n.id)}"> Je confirme qu'une intervention sur place sera nécessaire pour le rallumer.</label>
             <div class="acts"><button class="btn small danger" data-offgo="${esc(n.id)}">Éteindre définitivement</button><button class="btn small" data-offno="1">Annuler</button></div></div>` : `
         <div class="acts"><button class="btn small" data-efiche="${esc(n.id)}">Fiche</button>
-          ${n.eteint ? `<button class="btn small" data-ereprise="${esc(n.id)}">Rallumé : reprendre la surveillance</button>` : (n.aMotDePasse && liaison.connecte ? `<button class="btn small" data-ereboot="${esc(n.id)}" ${busy?"disabled":""}>Redémarrer</button><button class="btn small danger" data-eoff="${esc(n.id)}" ${busy?"disabled":""}>Éteindre</button>` : `<span class="reading">${!liaison.connecte ? "Connectez le nœud companion pour agir" : "Mot de passe admin requis pour agir"}</span>`)}</div>`}
+          ${n.eteint ? `<button class="btn small" data-ereprise="${esc(n.id)}">Rallumé : reprendre la surveillance</button>` : (n.aMotDePasse && liaison.connecte ? `<button class="btn small" data-ereboot="${esc(n.id)}" ${busy?"disabled":""}>Redémarrer</button><button class="btn small danger" data-eoff="${esc(n.id)}" ${busy?"disabled":""}>Éteindre</button><button class="btn small danger${n.floodPublic === false ? " on" : ""}" data-eres="${esc(n.id)}" ${busy?"disabled":""} title="${n.floodPublic === false ? "Réservé à l'ADRASEC (region denyf *) : cliquer pour rouvrir au trafic public" : "Réserver ce répéteur à l'ADRASEC (region denyf *) : il ne relaiera plus le trafic public sans région"}">${n.floodPublic === false ? "⛔ Réservé ADRASEC" : "⛔ Réserver ADRASEC"}</button>` : `<span class="reading">${!liaison.connecte ? "Connectez le nœud companion pour agir" : "Mot de passe admin requis pour agir"}</span>`)}</div>`}
       </article>`; }).join("") : `<div class="empty">Aucun répéteur ADRASEC actif.</div>`;
   }
 
@@ -2658,8 +2669,19 @@ const HOT_MIN = 360; // 6 heures
     if (tb) { tab = tb.dataset.tab; editing = null; renderAll(); if (tab==="reseau" && lmap) setTimeout(()=>lmap.invalidateSize(),0); return; }
     const ef = t.closest("[data-efiche]");
     if (ef) { pick(ef.dataset.efiche); $("#fiche").scrollIntoView({block:"nearest",behavior:"smooth"}); return; }
+    const ers = t.closest("[data-eres]");
+    if (ers) { resConfirm = ers.dataset.eres; offConfirm = null; renderEncart(); return; }
+    if (t.closest("[data-resno]")) { resConfirm = null; renderEncart(); return; }
+    const rg = t.closest("[data-resgo]");
+    if (rg) {
+      const id = rg.dataset.resgo, reserver = rg.dataset.v === "1";
+      if (reserver && !$("#resOk-" + CSS.escape(id))?.checked) { toast("Cochez la case de confirmation pour réserver le répéteur."); return; }
+      resConfirm = null; encartBusy[id] = reserver ? "Réservation en cours (region denyf *, enregistrement, vérification)…" : "Réouverture en cours (region allowf *, enregistrement, vérification)…"; renderEncart();
+      const r = await api.commande(id, reserver ? "region denyf *" : "region allowf *"); delete encartBusy[id];
+      toast(r.ok ? r.reponse : r.erreur); refresh(true); return;
+    }
     const eo = t.closest("[data-eoff]");
-    if (eo) { offConfirm = eo.dataset.eoff; renderEncart(); return; }
+    if (eo) { offConfirm = eo.dataset.eoff; resConfirm = null; renderEncart(); return; }
     if (t.closest("[data-offno]")) { offConfirm = null; renderEncart(); return; }
     const eg = t.closest("[data-offgo]");
     if (eg) {

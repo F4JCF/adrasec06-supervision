@@ -161,6 +161,12 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 - **Companions amis** : bouton « + Ami » (Messagerie → Messages directs) pour ajouter un companion à partir de sa carte de contact « meshcore://… » ou de sa clé publique complète + son nom ; bouton « ☆ Ajouter aux amis / ★ Ami » dans chaque conversation directe ; les amis sont en tête de liste et repérés en doré sur la carte.
 - **Découvrir les voisins** dans la fiche d'un répéteur (commande discover.neighbors), console distante, étalonnage de la batterie du companion.
 
+### Nouveautés de la version 1.25
+
+- Bouton rouge « ⛔ Réserver ADRASEC » sur chaque répéteur ADRASEC (mot de passe admin requis) : envoie « region denyf * » puis « region save », et vérifie l'état avec « region get * ». Le répéteur ne relaie plus les messages sans région ; il relaie toujours les messages en région qu'il connaît (#fr-06, #fr…) et les messages à chemin direct. Confirmation obligatoire (case à cocher). Le même bouton rouvre le répéteur au trafic public (« region allowf * »).
+- L'état « réservé ADRASEC » est relu à chaque collecte et affiché sur la carte du répéteur.
+- Autonomie : la carte du répéteur affiche « en charge », « stable » ou « baisse lente » quand aucune durée ne peut être estimée.
+
 ### Nouveautés de la version 1.24.1
 
 - Remise à l'heure des répéteurs : une horloge en avance de moins de 10 minutes n'est plus signalée comme une erreur (le firmware MeshCore refuse de reculer une horloge ; inutile de redémarrer le répéteur). Au-delà, le logiciel indique qu'un redémarrage est nécessaire.

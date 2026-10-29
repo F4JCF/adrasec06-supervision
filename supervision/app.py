@@ -17,7 +17,7 @@ from . import aprs, courriel, firmware, rapports, resilience, systeme, taches, v
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.24.1"
+VERSION = "1.25.0"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -561,7 +561,8 @@ class Api:
                 "powersaving on": "Économie d'énergie : activer", "powersaving off": "Économie d'énergie : désactiver",
                 "start ota": "Préparer la mise à jour (OTA)", "ver": "Vérifier la version", "clock sync": "Remettre l'heure",
                 "clock": "Lire l'heure du nœud", "reinit chemin": "Réinitialiser le chemin",
-                "test liaison": "Tester la liaison", "decouvrir voisins": "Découvrir les voisins"}
+                "test liaison": "Tester la liaison", "decouvrir voisins": "Découvrir les voisins",
+                "region denyf *": "Réserver à l'ADRASEC (region denyf *)", "region allowf *": "Rouvrir au trafic public (region allowf *)"}
 
     def _noter_requete(self, node_id, cmd, r):
         try:

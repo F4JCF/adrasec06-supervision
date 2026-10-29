@@ -545,6 +545,10 @@ class Poller:
                                              "operateur": "AUTO"}
                 h = h2 or h
             fields.update(h)
+            libre = self._flood_public(await self._cli(contact, "region get *"))
+            if libre is not None:
+                fields["floodPublic"] = libre
+                fields["floodPublicLu"] = now_iso()
             tx = await self._cli(contact, "get tx")
             if tx:
                 m = re.search(r"(-?\d+)", tx)
@@ -1376,6 +1380,8 @@ class Poller:
         "ver": "ver",
         "clock sync": "clock sync",
         "clock": "clock",
+        "region denyf *": "region denyf *",
+        "region allowf *": "region allowf *",
     }
 
     def commande(self, node_id: str, cmd: str, operateur: str = "") -> dict:
@@ -1669,6 +1675,8 @@ class Poller:
         if cmd == "start ota":
             self.store.patch_node(node["id"], {"otaDebut": now_iso(), "otaFirmwareAvant": node.get("firmware", ""),
                                                "otaReponse": (reponse or "").strip()})
+        if cmd in ("region denyf *", "region allowf *"):
+            return await self._reserver(node, contact, cmd, reponse, operateur)
         if cmd == "clock sync" and reponse:
             h = self._horloge(await self._cli(contact, "clock"))
             self.store.patch_node(node["id"], h)
@@ -2688,6 +2696,46 @@ class Poller:
 
 
     # ---------- redémarrage et extinction à distance ----------
+    @staticmethod
+    def _flood_public(reponse):
+        """Réponse de « region get * » : « * F » si le trafic sans région est relayé, « * » s'il est refusé."""
+        r = (reponse or "").strip()
+        if not r.startswith("*"):
+            return None
+        return r.rstrip().endswith("F")
+
+    async def _reserver(self, node: dict, contact: dict, cmd: str, reponse, operateur: str) -> dict:
+        """Réserve le répéteur (region denyf *) ou le rouvre au trafic public (region allowf *), puis enregistre."""
+        name = node.get("nom", "")
+        reserver = "denyf" in cmd
+        if not reponse or not reponse.strip().upper().startswith("OK"):
+            texte = f"{name} : changement refusé ({(reponse or 'pas de réponse').strip()})."
+            self.store.add_journal(name, operateur or "AUTO", texte)
+            return {"ok": False, "erreur": texte}
+        save = await self._cli(contact, "region save", timeout=20)
+        libre = self._flood_public(await self._cli(contact, "region get *", timeout=15))
+        fields = {"floodPublicLu": now_iso()}
+        if libre is not None:
+            fields["floodPublic"] = libre
+        self.store.patch_node(node["id"], fields)
+        par = dict(self.store.get_config("regions_repeteurs", {}) or {})
+        if name in par and libre is not None:
+            l = [x for x in par[name] if x != "*"]
+            par[name] = (["*"] if libre else []) + l
+            self.store.set_config("regions_repeteurs", par)
+        bon = libre is not None and libre != reserver
+        sauve = bool(save) and save.strip().upper().startswith("OK")
+        if reserver:
+            texte = (f"{name} réservé : il ne relaie plus les messages sans région (trafic public non régionalisé)"
+                     if bon else f"{name} : réservation demandée, mais l'état n'a pas pu être vérifié")
+        else:
+            texte = (f"{name} rouvert : il relaie de nouveau tout le trafic public"
+                     if bon else f"{name} : réouverture demandée, mais l'état n'a pas pu être vérifié")
+        texte += "." if sauve else " (attention : non enregistré, sera perdu au prochain redémarrage)."
+        self.store.add_journal(name, operateur or "AUTO", texte)
+        self._log(texte)
+        return {"ok": bon, "reponse": texte} if bon else {"ok": False, "erreur": texte}
+
     async def _arret(self, node: dict, contact: dict, cmd: str, operateur: str) -> dict:
         """reboot / poweroff : le répéteur n'envoie aucune réponse ; on vérifie ensuite son état."""
         name = node.get("nom", "")
