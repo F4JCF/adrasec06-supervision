@@ -478,6 +478,11 @@ header.top .hright{grid-column:1 / -1}
 .ct-wrap th button{border:0;background:none;padding:0;font:inherit;color:inherit;letter-spacing:inherit;text-transform:inherit;cursor:pointer}
 .ct-wrap th button[aria-sort]{color:var(--accent)}
 .ct-wrap td{white-space:nowrap}
+.chm{display:inline-flex;align-items:center;gap:5px;font-size:.78rem;font-weight:600;padding:1px 8px;border-radius:999px;border:1px solid var(--c);color:var(--c);white-space:nowrap}
+.chm::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--c)}
+.chdot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--c);margin-right:6px;vertical-align:middle;flex:none}
+.floodbox{margin:8px 12px 0;padding:8px 12px;border:1px solid var(--warn);border-radius:8px;background:color-mix(in srgb,var(--warn) 10%,transparent);display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:.88rem}
+.floodbox[hidden]{display:none}
 .ct-type{font-family:var(--f-mono);font-size:.72rem;border:1px solid var(--c);color:var(--c);border-radius:3px;padding:0 5px}
 .lov-list{display:grid;gap:2px;align-content:start;align-self:start}
 .lov-list button{display:grid;grid-template-columns:minmax(120px,1.3fr) auto minmax(150px,2fr);gap:10px;align-items:center;text-align:left;border:0;border-left:3px solid var(--c);background:none;padding:6px 10px;color:var(--fg)}
@@ -621,6 +626,11 @@ header.top .hright{grid-column:1 / -1}
         <div class="appelbox" id="appelPanel" hidden></div>
         <div class="msgs" id="msgs"></div>
         <div style="padding:8px 12px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><select id="tplSel" style="width:auto;max-width:100%"><option value="">Message type…</option></select><span class="reading">[heure] et [indicatif] sont remplis automatiquement · la suppression d'un message ne concerne que ce PC</span></div>
+        <div class="floodbox" id="floodBox" hidden role="alert"><span style="flex:1;min-width:240px"><b style="color:var(--warn)">Chemin inconnu.</b> <span id="floodTxt">Ce message partira en inondation : il sera relayé par des dizaines de répéteurs, parfois dans toute la France.</span></span>
+          <button class="btn small" type="button" id="floodDecouvrir" title="Une seule inondation de découverte, puis la route est mémorisée pour les messages suivants">Découvrir le chemin d'abord</button>
+          <button class="btn small" type="button" id="floodChemin">Définir le chemin…</button>
+          <button class="btn small primary" type="button" id="floodForcer">Envoyer quand même</button>
+          <button class="btn small" type="button" id="floodAnnuler">Annuler</button></div>
         <form class="compose" id="compose">
           <textarea id="msgText" placeholder="Votre message (150 octets max.)" aria-label="Message"></textarea>
           <div style="display:grid;gap:4px;justify-items:end"><span class="count" id="msgCount">0 / 150</span><button class="btn primary" type="submit" id="msgSend">Envoyer</button></div>
@@ -780,6 +790,14 @@ header.top .hright{grid-column:1 / -1}
       <div class="actions" style="flex-wrap:wrap"><label class="line" style="margin:0">Région par défaut du nœud companion <select id="regDefaut" style="width:auto"></select></label>
         <button class="btn small" id="regLire" type="button">Lire les régions des répéteurs ADRASEC</button><span class="reading" id="regInfo"></span></div>
       <div id="regRep" style="display:grid;gap:2px;font-size:.88rem"></div>
+      <div class="panel-head" style="margin-top:6px"><h2>Messages privés : chemins et inondations</h2></div>
+      <p style="margin:0">Un message privé dont le chemin est inconnu part en <b>inondation</b> : tous les répéteurs qui l'entendent le relaient, parfois dans toute la France. Une fois le chemin appris (ou défini à la main dans la Messagerie), les messages suivants vont directement au destinataire.</p>
+      <label class="line"><input type="checkbox" id="flConfirmer"> Demander confirmation avant d'envoyer un message privé en inondation</label>
+      <div class="fgrid">
+        <label>Inondations au plus, par message privé<select id="flMax"><option value="0">0 : jamais (chemin obligatoire)</option><option value="1">1 (recommandé)</option><option value="2">2</option></select></label>
+        <label>Alerte au-delà de … inondations par contact et par jour (0 = jamais)<input id="flSeuil" type="number" min="0" max="999" style="width:6em"></label>
+      </div>
+      <p class="hint">Un chemin <b>verrouillé</b> (bouton 🔒 dans la conversation) n'est jamais effacé : si l'accusé de réception ne revient pas, le message est marqué « non confirmé » au lieu de repartir en inondation. <span id="flInfo"></span></p>
       <div class="panel-head" style="margin-top:6px"><h2>Alertes par e-mail</h2></div>
       <p style="margin:0">Répéteur hors ligne, batterie faible, alerte précoce… sont aussi envoyés par e-mail (regroupés par minute). Pour Infomaniak : serveur mail.infomaniak.com, port 465, SSL, identifiant = votre adresse complète.</p>
       <label class="line"><input type="checkbox" id="mlOn"> Envoyer les alertes par e-mail</label>
@@ -854,7 +872,7 @@ header.top .hright{grid-column:1 / -1}
     </div>
   </div>
 </div>
-<div id="mchemin" hidden role="dialog" aria-modal="true" aria-labelledby="mcheminTitle" style="position:fixed;inset:0;z-index:2600;background:rgba(5,10,15,.55);display:grid;place-items:center;padding:16px">
+<div id="mchemin" hidden role="dialog" aria-modal="true" aria-labelledby="mcheminTitle" style="position:fixed;inset:0;z-index:2700;background:rgba(5,10,15,.55);display:grid;place-items:center;padding:16px">
   <div class="mdet-box" style="width:min(820px,100%)">
     <div class="mdet-head"><h2 id="mcheminTitle">Chemin vers le contact</h2><button class="btn small" id="chAnnuler" type="button">Annuler (Échap)</button></div>
     <div style="display:grid;gap:12px;padding:16px;overflow:auto;min-height:0">
@@ -867,6 +885,7 @@ header.top .hright{grid-column:1 / -1}
         <div style="display:flex;gap:6px;flex-wrap:wrap"><input id="chAjout" list="chRepeteurs" placeholder="Nom du répéteur ou identifiant (ex. 47a0)" style="flex:1;min-width:240px"><datalist id="chRepeteurs"></datalist><button class="btn small" id="chAjoutBtn" type="button">Ajouter ce relais</button></div>
       </div>
       <div class="path" id="chApercu" style="flex-wrap:wrap"></div>
+      <label id="chVerrouZone" style="margin:0;display:flex;gap:8px;align-items:center;font-size:.92rem"><input type="checkbox" id="chVerrou" style="width:auto;flex:none;margin:0"> Verrouiller ce chemin : ne jamais l'effacer ni le remplacer par une inondation en cas d'échec</label>
       <div class="actions"><button class="btn primary" id="chAppliquer" type="button">Appliquer le chemin</button><span class="reading" id="chMsg"></span></div>
     </div>
   </div>
@@ -1259,6 +1278,21 @@ header.top .hright{grid-column:1 / -1}
     const r = await api.candidats_appel(); apStations = r.stations || []; apOp = r.operateur || "";
     apRendre(); $("#apGo").focus();
   }
+  /* ---------- confirmation avant inondation, découverte du chemin ---------- */
+  let floodPend = null, decCheminBusy = null;
+  const dms_cle = k => { const c = (liaison.contactsMessagerie||[]).find(x => x.cle.startsWith(k.slice(2))); return c ? c.cle : ""; };
+  function demanderFlood(p){
+    floodPend = p; const fl = liaison.inondation || {};
+    $("#floodBox").querySelector("b").textContent = "Chemin inconnu.";
+    $("#floodTxt").textContent = `Ce message partira en inondation (${fl.maxParMessage === 2 ? "2 fois au plus" : "1 fois"}) : il sera relayé par des dizaines de répéteurs, parfois dans toute la France. Mieux vaut découvrir ou définir le chemin d'abord.`;
+    $("#floodForcer").textContent = "Envoyer quand même"; $("#floodDecouvrir").hidden = false;
+    $("#floodBox").hidden = false; $("#floodDecouvrir").focus();
+  }
+  async function decouvrirChemin(cle){
+    if (decCheminBusy) return; decCheminBusy = cle; renderAll(); toast("Découverte du chemin : une seule inondation, réponse attendue jusqu'à 1 minute…");
+    let r; try { r = await api.decouvrir_chemin(cle); } catch(e) { r = {ok:false, erreur:String(e)}; }
+    decCheminBusy = null; toast(r.ok ? r.message : r.erreur); await refresh(true); return r;
+  }
   /* ---------- chemin manuel vers un contact ---------- */
   let chData = null, chMode = "relais", chRelais = [];
   const AIDE_CH = {relais: "Les messages directs passeront par ces répéteurs, dans cet ordre (le premier doit être entendu par votre nœud, le dernier doit entendre le contact).",
@@ -1268,6 +1302,7 @@ header.top .hright{grid-column:1 / -1}
     const r = await api.chemin_contact(cle);
     if (!r.ok) { $("#chListe").innerHTML = ""; $("#chMsg").textContent = r.erreur; return; }
     chData = r; chMode = r.mode === "inondation" ? "relais" : r.mode;
+    { const cm = (liaison.contactsMessagerie || []).find(x => x.cle === r.cle) || ctListe.find(x => x.cle === r.cle); chData.verrouInit = !!(cm && cm.verrou); $("#chVerrou").checked = chData.verrouInit; }
     chRelais = r.actuels.map(a => ({cle: a.cle || a.hash, nom: a.nom}));
     $("#mcheminTitle").textContent = "Chemin vers " + r.nom;
     $("#chActuel").textContent = "Chemin actuel : " + (r.mode === "inondation" ? "inconnu (inondation)" : r.mode === "direct" ? "direct, sans relais" : r.actuels.map(a => a.nom + (a.ambigu ? " (?)" : "")).join(" → "));
@@ -1277,7 +1312,7 @@ header.top .hright{grid-column:1 / -1}
   function chRendre(){
     document.querySelectorAll("#chMode button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.chmode === chMode)));
     $("#chAide").textContent = AIDE_CH[chMode];
-    $("#chRelaisZone").hidden = chMode !== "relais";
+    $("#chRelaisZone").hidden = chMode !== "relais"; $("#chVerrouZone").hidden = chMode === "inondation";
     const t = (chData && chData.taille) || 1;
     $("#chListe").innerHTML = chRelais.length ? chRelais.map((x, i) => `<li><div class="row"><span><b>${esc(x.nom)}</b> <span class="muted mono">${esc(String(x.cle).slice(0, 2*t).toUpperCase())}</span></span>
       <button class="btn small" data-chup="${i}" ${i ? "" : "disabled"} title="Monter">↑</button><button class="btn small" data-chdown="${i}" ${i < chRelais.length - 1 ? "" : "disabled"} title="Descendre">↓</button><button class="btn small danger" data-chdel="${i}" title="Retirer">×</button></div></li>`).join("")
@@ -1545,6 +1580,9 @@ header.top .hright{grid-column:1 / -1}
     s = s.replace(/\bTonight\b/g, "Ce soir").replace(/\bToday\b/g, "Aujourd'hui").replace(/\bTomorrow\b/g, "Demain");
     return s;
   }
+  const CHM = {direct:["direct","var(--ok)","Contact à portée directe : aucun relais"], relais:["via relais","var(--test)","Chemin connu : les messages vont directement au destinataire par ces relais"], inondation:["chemin inconnu","var(--warn)","Chemin inconnu : le prochain message partira en inondation sur tout le réseau"]};
+  const badgeChemin = (mode, relais, verrou, nb) => { const [l, c, t] = CHM[mode] || CHM.inondation; const n = nb ?? (relais ? relais.length : 0);
+    return `<span class="chm" style="--c:${c}" title="${esc(t + (relais && relais.length ? " : " + relais.join(" → ") : "") + (verrou ? " · chemin verrouillé" : ""))}">${verrou ? "🔒 " : ""}${l}${mode === "relais" && n ? " (" + n + ")" : ""}</span>`; };
   const txtMsg = m => m.sens === "recu" ? esc(unitesFr(m.texte)) : esc(m.texte);
   /* ---------- liste triable des contacts ---------- */
   let ctListe = [], ctType = "tous", ctTri = "annonce";
@@ -1573,8 +1611,8 @@ header.top .hright{grid-column:1 / -1}
       <td><span class="ct-type" style="--c:${CT_COUL[c.type]}">${CT_NOM[c.type]}</span></td>
       <td>${c.annonce ? ago(new Date(c.annonce*1000).toISOString()) : "—"}</td>
       <td class="num">${c.km != null ? fmtNum(c.km, c.km < 10 ? 1 : 0) + " km" : "—"}</td>
-      <td class="muted">${c.sauts == null || c.sauts < 0 ? "inondation" : c.sauts === 0 ? "direct" : c.sauts + " relais"}</td>
-      <td>${c.type === "compagnon" ? `<button class="btn small" type="button" data-ctmsg="${esc(c.cle)}">Message</button> <button class="btn small" type="button" data-ctami="${esc(c.cle)}" title="${c.ami ? "Retirer de vos amis" : "Ajouter à vos amis"}">${c.ami ? "★" : "☆"}</button>` : ""}</td></tr>`).join("")
+      <td>${badgeChemin(c.sauts == null || c.sauts < 0 ? "inondation" : c.sauts === 0 ? "direct" : "relais", null, c.verrou, c.sauts)}</td>
+      <td style="white-space:nowrap">${c.type === "compagnon" ? `<button class="btn small" type="button" data-ctmsg="${esc(c.cle)}">Message</button> <button class="btn small" type="button" data-ctami="${esc(c.cle)}" title="${c.ami ? "Retirer de vos amis" : "Ajouter à vos amis"}">${c.ami ? "★" : "☆"}</button> ` : ""}${liaison.connecte ? `<button class="btn small" type="button" data-cheminedit="${esc(c.cle)}" title="Voir ou choisir les relais par lesquels passent les messages vers ce contact">Chemin…</button>` : ""}</td></tr>`).join("")
       : `<tr><td colspan="6"><div class="empty">Aucun contact${q ? " pour cette recherche" : ""}.</div></td></tr>`;
   }
   document.addEventListener("input", e => { if (e.target.id === "ctRech") renderContacts(); });
@@ -2249,15 +2287,17 @@ const HOT_MIN = 360; // 6 heures
     const contacts = liaison.contactsMessagerie || [];
     const dms = {};
     messages.filter(m => m.canal == null).forEach(m => { const k = (m.contact_cle||"").slice(0,12); dms[k] = dms[k] || {cle:k, nom:m.contact||k, n:0}; dms[k].n++; });
-    contacts.forEach(c => { const k = c.cle.slice(0,12); dms[k] = Object.assign(dms[k] || {n:0}, {cle:k, full:c.cle, nom:c.nom, ami:!!c.ami, annonce:c.annonce}); });
+    contacts.forEach(c => { const k = c.cle.slice(0,12); dms[k] = Object.assign(dms[k] || {n:0}, {cle:k, full:c.cle, nom:c.nom, ami:!!c.ami, annonce:c.annonce,
+      chemin:c.chemin, relais:c.relais || [], verrou:!!c.verrou, region:c.region || "", floodsJour:c.floodsJour || 0}); });
     const normC = x => String(x || "").toLowerCase().replace(/[^a-z0-9]/g, "");
     const chPrio = chans.filter(c => normC(c.nom).includes("adrasec06"));
     if (!conv) conv = "c:" + (chPrio[0] || chans[0]).index;
     const cnt = k => messages.filter(m => convKey(m)===k).length;
     // la conversation ouverte est lue : on mémorise le nombre de messages reçus
     vus[conv] = Math.max(vus[conv] || 0, dernierRecu(conv)); saveVus();
-    const item = (k, label) => { const u = k === conv ? 0 : nonLus(k);
-      return `<button data-conv="${esc(k)}" aria-pressed="${conv===k}" class="${u ? "unread" : ""}" title="${u ? u + " message(s) non lu(s)" : ""}"><span>${esc(label)}</span><span class="n">${u ? u : (cnt(k) || "")}</span></button>`; };
+    const item = (k, label) => { const u = k === conv ? 0 : nonLus(k); const dd = k.startsWith("d:") ? dms[k.slice(2)] : null;
+      const dot = dd && dd.chemin ? `<i class="chdot" style="--c:${(CHM[dd.chemin] || CHM.inondation)[1]}" title="${esc((CHM[dd.chemin] || CHM.inondation)[2])}"></i>` : "";
+      return `<button data-conv="${esc(k)}" aria-pressed="${conv===k}" class="${u ? "unread" : ""}" title="${u ? u + " message(s) non lu(s)" : ""}"><span>${dot}${esc(label)}</span><span class="n">${u ? u : (cnt(k) || "")}</span></button>`; };
     const amisL = Object.values(dms).filter(d => d.ami).sort((a,b) => (nonLus("d:"+b.cle)-nonLus("d:"+a.cle)) || a.nom.localeCompare(b.nom));
     const prio = chPrio.length || amisL.length ? `<h3 class="prio">★ Prioritaires</h3>` + chPrio.map(c => item("c:"+c.index, (c.genre === "prive" ? "🔒 " : "") + diese(c.nom))).join("") + amisL.map(d => item("d:"+d.cle, "★ " + d.nom)).join("") : "";
     $("#convs").innerHTML = prio + `<h3>Canaux</h3>` + chans.filter(c => !chPrio.includes(c)).map(c => item("c:"+c.index, (c.genre === "prive" ? "🔒 " : "") + diese(c.nom))).join("") +
@@ -2278,7 +2318,20 @@ const HOT_MIN = 360; // 6 heures
     $("#threadActs").innerHTML = list.length ? (convConfirm
       ? `<span class="reading" style="color:var(--crit)">Supprimer les ${list.length} message(s) de cette conversation sur ce PC ?</span><button class="btn small danger" id="convClearYes">Oui, supprimer</button><button class="btn small" id="convClearNo">Non</button>`
       : `<button class="btn small" id="convClear">Vider la conversation</button>`) : "";
-    if (!isChan) { const d = dms[conv.slice(2)]; if (d && d.full) $("#threadActs").insertAdjacentHTML("afterbegin", `<button class="btn small${d.ami ? " primary" : ""}" data-toggleami="${esc(d.full)}" title="${d.ami ? "Retirer de vos amis" : "Ajouter à vos amis : en tête de liste et repéré en doré sur la carte"}">${d.ami ? "★ Ami" : "☆ Ajouter aux amis"}</button>`); }
+    if (!isChan) { const d = dms[conv.slice(2)]; if (d && d.full) {
+      $("#threadActs").insertAdjacentHTML("afterbegin", `<button class="btn small${d.ami ? " primary" : ""}" data-toggleami="${esc(d.full)}" title="${d.ami ? "Retirer de vos amis" : "Ajouter à vos amis : en tête de liste et repéré en doré sur la carte"}">${d.ami ? "★ Ami" : "☆ Ajouter aux amis"}</button>`);
+      if (liaison.connecte && d.chemin) {
+        const regs = [...new Set(["#fr-06", "#fr", "#paca", "#06", ...((liaison.regions || {}).connues || []), ...(d.region && d.region !== "*" ? [d.region] : [])])];
+        $("#threadActs").insertAdjacentHTML("afterbegin", `<button class="btn small" type="button" data-cheminedit="${esc(d.full)}" title="Voir ou choisir les relais par lesquels passent vos messages vers ce contact">Chemin…</button>`
+          + `<button class="btn small" type="button" data-decchemin="${esc(d.full)}" title="Une seule inondation de découverte : le contact renvoie la route, mémorisée pour les messages suivants">${decCheminBusy === d.full ? "Découverte…" : "Découvrir le chemin"}</button>`
+          + (d.chemin !== "inondation" || d.verrou ? `<button class="btn small${d.verrou ? " primary" : ""}" type="button" data-verrouchemin="${esc(d.full)}" data-v="${d.verrou ? 0 : 1}" title="${d.verrou ? "Déverrouiller : le chemin pourra de nouveau être effacé et remplacé par une inondation en cas d'échec" : "Verrouiller : ce chemin ne sera jamais effacé ni remplacé par une inondation"}">${d.verrou ? "🔒 Verrouillé" : "🔓 Verrouiller"}</button>` : "")
+          + `<select id="regContact" data-cle="${esc(d.full)}" title="Région (portée) des inondations vers ce contact" style="width:auto;padding:3px 6px;font-size:.82rem">
+            <option value="" ${!d.region ? "selected" : ""}>Région : par défaut${(liaison.regions || {}).defaut ? " (" + esc(liaison.regions.defaut) + ")" : ""}</option>
+            <option value="*" ${d.region === "*" ? "selected" : ""}>Région : aucune (forcée)</option>
+            ${regs.map(r => `<option value="${esc(r)}" ${r === d.region ? "selected" : ""}>Région : ${esc(r)}</option>`).join("")}<option value="__autre">Région : autre…</option></select>`);
+      }
+      if (d.chemin) $("#threadSub").insertAdjacentHTML("beforeend", `<br>Chemin : ${badgeChemin(d.chemin, d.relais, d.verrou)}${d.chemin === "relais" && d.relais.length ? ` <span class="mono" style="font-size:.78rem">${esc(d.relais.join(" → "))}</span>` : ""}${d.floodsJour ? ` · <span style="color:var(--warn)">${d.floodsJour} inondation(s) vers ce contact aujourd'hui</span>` : ""}`);
+    } }
     const estAdr = isChan && /adrasec ?0?6/i.test((chans.find(c => "c:"+c.index===conv)||{}).nom || "");
     if (estAdr && liaison.connecte && !(appel && appel.enCours)) $("#threadActs").innerHTML = `<button class="btn small primary" id="appelGo" title="Choisir les stations à appeler, envoyer l'appel sur ce canal et pointer les réponses">Appel des stations…</button>` + $("#threadActs").innerHTML;
     if (isChan) $("#threadActs").insertAdjacentHTML("afterbegin", `<button class="btn small" type="button" data-parcanal="${chCour.index}" title="Paramètres du canal : partage (QR code, clé), notifications, rétention, expéditeurs bloqués">⚙ Paramètres</button><button class="btn small" type="button" data-participants="${chCour.index}" title="Participants : stations qui ont écrit sur ce canal">👥 ${new Set(list.filter(m => m.sens === "recu" && m.auteur).map(m => normNomP(m.auteur))).size} · ✉ ${list.length}</button>`);
@@ -2307,6 +2360,7 @@ const HOT_MIN = 360; // 6 heures
     if (atBottom || lastMsgCount !== messages.length) box.scrollTop = box.scrollHeight;
     lastMsgCount = messages.length;
     $("#msgSend").disabled = !liaison.connecte;
+    if (floodPend && floodPend.conv !== conv) { floodPend = null; $("#floodBox").hidden = true; }
     seenMsgs = messages.filter(m => m.sens==="recu").length;
   }
 
@@ -2508,7 +2562,8 @@ const HOT_MIN = 360; // 6 heures
     }
   }
   setInterval(() => { if (crise) $("#crClock").textContent = new Date().toLocaleTimeString("fr-FR"); }, 1000);
-  document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.id === "regAutre") { e.preventDefault(); const v = e.target.value.trim(), c = +e.target.dataset.canal; if (v && v !== "#") api.regler_region(c, v, false).then(r => { toast(r.ok ? `Région ${v} pour ce canal` : r.erreur); refresh(true); }); return; } if (e.key === "Escape" && !$("#mami").hidden) { $("#mami").hidden = true; return; } if (e.key === "Enter" && (e.target.id === "partNouv" || e.target.id === "partNote")) { e.preventDefault(); $("#partAjout").click(); return; } if (e.key === "Escape" && !$("#mpart").hidden) { $("#mpart").hidden = true; return; } if (e.key === "Escape" && !$("#mparam").hidden) { $("#mparam").hidden = true; return; } if (e.key === "Escape" && !$("#mmaj").hidden) { $("#mmaj").hidden = true; return; } if (e.key === "Escape" && !$("#mcontacts").hidden) { $("#mcontacts").hidden = true; return; } if (e.key === "Escape" && !$("#mami").hidden) { $("#mami").hidden = true; return; } if (e.target.id === "coCmd" && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); coPos = Math.max(0, Math.min(coHisto.length, coPos + (e.key === "ArrowUp" ? -1 : 1))); e.target.value = coHisto[coPos] || ""; return; } if (e.key === "Escape" && !$("#mconsole").hidden) { $("#mconsole").hidden = true; return; } if (e.key === "Enter" && e.target.id === "chAjout") { e.preventDefault(); chAjouter(); return; } if (e.key === "Escape" && !$("#mchemin").hidden) { $("#mchemin").hidden = true; return; } if (e.key === "Enter" && e.target.id === "apAjout") { e.preventDefault(); $("#apAjoutBtn").click(); return; } if (e.key === "Escape" && !$("#mappel").hidden) { $("#mappel").hidden = true; return; } if (e.key === "Escape" && !$("#mcomp").hidden) { $("#mcomp").hidden = true; return; } if (e.key === "Escape" && !$("#mdet").hidden) { fermerDetail(); return; } if (e.key === "Escape" && crise) openCrise(false); });
+  document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.id === "regContactAutre") { e.preventDefault(); const v = e.target.value.trim(); if (v && v !== "#") api.regler_region_contact(e.target.dataset.cle, v).then(r => { toast(r.ok ? `Région ${v} pour ce contact` : r.erreur); refresh(true); }); return; }
+    if (e.key === "Enter" && e.target.id === "regAutre") { e.preventDefault(); const v = e.target.value.trim(), c = +e.target.dataset.canal; if (v && v !== "#") api.regler_region(c, v, false).then(r => { toast(r.ok ? `Région ${v} pour ce canal` : r.erreur); refresh(true); }); return; } if (e.key === "Escape" && !$("#mami").hidden) { $("#mami").hidden = true; return; } if (e.key === "Enter" && (e.target.id === "partNouv" || e.target.id === "partNote")) { e.preventDefault(); $("#partAjout").click(); return; } if (e.key === "Escape" && !$("#mpart").hidden) { $("#mpart").hidden = true; return; } if (e.key === "Escape" && !$("#mparam").hidden) { $("#mparam").hidden = true; return; } if (e.key === "Escape" && !$("#mmaj").hidden) { $("#mmaj").hidden = true; return; } if (e.key === "Escape" && !$("#mcontacts").hidden) { $("#mcontacts").hidden = true; return; } if (e.key === "Escape" && !$("#mami").hidden) { $("#mami").hidden = true; return; } if (e.target.id === "coCmd" && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); coPos = Math.max(0, Math.min(coHisto.length, coPos + (e.key === "ArrowUp" ? -1 : 1))); e.target.value = coHisto[coPos] || ""; return; } if (e.key === "Escape" && !$("#mconsole").hidden) { $("#mconsole").hidden = true; return; } if (e.key === "Enter" && e.target.id === "chAjout") { e.preventDefault(); chAjouter(); return; } if (e.key === "Escape" && !$("#mchemin").hidden) { $("#mchemin").hidden = true; return; } if (e.key === "Enter" && e.target.id === "apAjout") { e.preventDefault(); $("#apAjoutBtn").click(); return; } if (e.key === "Escape" && !$("#mappel").hidden) { $("#mappel").hidden = true; return; } if (e.key === "Escape" && !$("#mcomp").hidden) { $("#mcomp").hidden = true; return; } if (e.key === "Escape" && !$("#mdet").hidden) { fermerDetail(); return; } if (e.key === "Escape" && !$("#floodBox").hidden) { floodPend = null; $("#floodBox").hidden = true; return; } if (e.key === "Escape" && crise) openCrise(false); });
 
   /* ---------- messages types ---------- */
   function fillTemplate(t){
@@ -2538,6 +2593,10 @@ const HOT_MIN = 360; // 6 heures
     $("#aprsState").textContent = (ae.message || "") + (ae.paquets ? ` · ${ae.paquets} position(s) reçue(s)` : "") + ((aprsData.stations||[]).length ? ` · ${aprsData.stations.length} station(s) sur 12 h` : "");
     if (document.activeElement !== $("#tplEdit")) $("#tplEdit").value = (r.modeles || []).join("\n");
     $("#optHorloge").checked = r.horlogeAuto !== false;
+    { const fl = liaison.inondation || {}; $("#flConfirmer").checked = fl.confirmer !== false;
+      if (document.activeElement !== $("#flMax")) $("#flMax").value = String(fl.maxParMessage ?? 1);
+      if (document.activeElement !== $("#flSeuil")) $("#flSeuil").value = fl.seuilJour ?? 5;
+      $("#flInfo").textContent = fl.aujourdhui ? `Aujourd'hui : ${fl.aujourdhui} message(s) privé(s) envoyé(s) en inondation.` : ""; }
     { const rg = liaison.regions || {}; if (document.activeElement !== $("#regDefaut")) {
         const o = [...new Set(["#fr", "#paca", "#06", ...(rg.connues || []), ...(rg.defaut ? [rg.defaut] : [])])];
         $("#regDefaut").innerHTML = `<option value="__aucune" ${!rg.defaut ? "selected" : ""}>aucune</option>` + o.map(x => `<option value="${esc(x)}" ${x === rg.defaut ? "selected" : ""}>${esc(x)}</option>`).join(""); }
@@ -2703,7 +2762,13 @@ const HOT_MIN = 360; // 6 heures
       testBusy = null; toast(r.message || r.erreur || "Test terminé"); refresh(true); renderFiche(); return;
     }
     const rv = t.closest("[data-renvoyer]");
-    if (rv) { rv.disabled = true; rv.textContent = "Renvoi…"; const r = await api.renvoyer_message(+rv.dataset.renvoyer); toast(r.ok ? "Message renvoyé (3 essais, en attente de l'accusé de réception)" : r.erreur); refresh(true); return; }
+    if (rv) { rv.disabled = true; rv.textContent = "Renvoi…"; const r = await api.renvoyer_message(+rv.dataset.renvoyer, false);
+      if (r.confirmer) { const m = messages.find(x => x.id === +rv.dataset.renvoyer); demanderFlood({conv, mid: +rv.dataset.renvoyer, cle: (dms_cle(conv)), texte: m ? m.texte : ""}); rv.disabled = false; rv.textContent = "Renvoyer"; return; }
+      toast(r.ok ? "Message renvoyé, en attente de l'accusé de réception" : r.erreur); refresh(true); return; }
+    const dc = t.closest("[data-decchemin]");
+    if (dc) { decouvrirChemin(dc.dataset.decchemin); return; }
+    const vc = t.closest("[data-verrouchemin]");
+    if (vc) { const r = await api.verrouiller_chemin(vc.dataset.verrouchemin, vc.dataset.v === "1"); toast(r.ok ? r.message : r.erreur); refresh(true); return; }
     const rc = t.closest("[data-reinitchemin]");
     if (rc) {
       cheminBusy = rc.dataset.reinitchemin; renderFiche(); toast("Réinitialisation du chemin… (jusqu'à 30 s)");
@@ -2783,10 +2848,20 @@ const HOT_MIN = 360; // 6 heures
       case "rpDirBtn": { await api.choisir_dossier_rapport(); refresh(true); return; }
       case "rpNow": { t.disabled = true; toast("Création du rapport…"); const r = await api.generer_rapport(); t.disabled = false; toast(r.ok ? "Rapport enregistré : " + r.chemin + (r.mail ? (r.mail.ok ? " · envoyé par e-mail" : " · e-mail : " + r.mail.erreur) : "") : r.erreur); refresh(true); return; }
       case "rpOpen": { const r = await api.ouvrir_dossier_rapports(); if (!r.ok) toast(r.erreur); return; }
+      case "floodAnnuler": floodPend = null; $("#floodBox").hidden = true; return;
+      case "floodChemin": if (floodPend) ouvrirChemin(floodPend.cle); return;
+      case "floodDecouvrir": if (floodPend) { const fp = floodPend; await decouvrirChemin(fp.cle); const c = (liaison.contactsMessagerie||[]).find(x => x.cle === fp.cle); if (c && c.chemin !== "inondation") { $("#floodBox").querySelector("b").textContent = "Chemin trouvé."; $("#floodTxt").textContent = "Le message partira directement par " + (c.relais.length ? c.relais.join(" → ") : "liaison directe") + ", sans inondation.";
+          $("#floodForcer").textContent = "Envoyer"; $("#floodDecouvrir").hidden = true; $("#floodForcer").focus(); } } return;
+      case "floodForcer": { if (!floodPend) return; const fp = floodPend; t.disabled = true;
+        const r = fp.mid ? await api.renvoyer_message(fp.mid, true) : await api.envoyer_message(fp.texte, null, fp.cle, true); t.disabled = false;
+        floodPend = null; $("#floodBox").hidden = true;
+        if (r.ok) { if (!fp.mid) { $("#msgText").value = ""; $("#msgCount").textContent = "0 / 150"; } refresh(true); } else toast(r.erreur); return; }
       case "chAnnuler": $("#mchemin").hidden = true; return;
       case "chAjoutBtn": chAjouter(); return;
       case "chAppliquer": { t.disabled = true; $("#chMsg").textContent = "Enregistrement dans le nœud companion…";
         const r = await api.definir_chemin(chData.cle, chMode, chRelais.map(x => x.cle)); t.disabled = false;
+        if (r.ok && chMode !== "inondation" && $("#chVerrou").checked !== chData.verrouInit) await api.verrouiller_chemin(chData.cle, $("#chVerrou").checked);
+        if (r.ok && ctListe.length && !$("#mcontacts").hidden) { const rr = await api.liste_contacts(); ctListe = (rr && rr.contacts) || ctListe; renderContacts(); }
         if (r.ok) { $("#mchemin").hidden = true; toast(r.message); refresh(true); } else $("#chMsg").textContent = r.erreur; return; }
       case "trGo": { t.disabled = true; const r = await api.test_resilience(); t.disabled = false; toast(r.ok ? "Test de résilience lancé : écoute pendant 10 minutes" : r.erreur); refresh(true); return; }
       case "trStop": { await api.terminer_test_resilience(); toast("Fin du test : compte rendu en cours de création"); refresh(true); return; }
@@ -2918,6 +2993,11 @@ const HOT_MIN = 360; // 6 heures
     if (e.target.id === "regDefaut") { const r = await api.regler_region(null, e.target.value === "__aucune" ? "" : e.target.value, true); toast(r.ok ? "Région par défaut du nœud enregistrée" : r.erreur); refresh(true); return; }
     if (e.target.id === "optCorr") { await api.regler_options({corrBattCompanion: +e.target.value || 0}); toast("Correction enregistrée : prise en compte à la prochaine lecture (1 min)"); refresh(true); }
     if (e.target.id === "optHorloge") { await api.regler_options({horlogeAuto: e.target.checked}); refresh(true); }
+    if (e.target.id === "flConfirmer") { await api.regler_inondation({confirmer: e.target.checked}); refresh(true); }
+    if (e.target.id === "flMax") { await api.regler_inondation({maxParMessage: +e.target.value}); toast("Réglage enregistré"); refresh(true); }
+    if (e.target.id === "flSeuil") { await api.regler_inondation({seuilJour: +e.target.value || 0}); toast("Seuil d'alerte enregistré"); refresh(true); }
+    if (e.target.id === "regContact") { const v = e.target.value; if (v === "__autre") { e.target.insertAdjacentHTML("afterend", `<input id="regContactAutre" data-cle="${e.target.dataset.cle}" placeholder="#region puis Entrée" style="width:12em;padding:3px 6px;font-size:.82rem">`); $("#regContactAutre").focus(); return; }
+      const r = await api.regler_region_contact(e.target.dataset.cle, v); toast(r.ok ? (v ? `Région ${v === "*" ? "aucune (forcée)" : v} pour ce contact` : "Région par défaut du nœud pour ce contact") : r.erreur); refresh(true); return; }
     if (["mlOn","mlSrv","mlPort","mlSec","mlUser","mlPwd","mlFrom","mlTo","mlMsg"].includes(e.target.id)) mailDirty = true;
     if (["wbOn","wbPort","wbCode"].includes(e.target.id)) webDirty = true;
     if (["rpOn","rpJour","rpHeure","rpMail"].includes(e.target.id)) rapDirty = true;
@@ -2962,8 +3042,9 @@ const HOT_MIN = 360; // 6 heures
       const isChan = conv.startsWith("c:");
       let r;
       if (isChan) r = await api.envoyer_message(texte, +conv.slice(2), null);
-      else { const c = (liaison.contactsMessagerie||[]).find(x => x.cle.startsWith(conv.slice(2))); if (!c) { toast("Contact introuvable dans le nœud companion."); return; } r = await api.envoyer_message(texte, null, c.cle); }
-      if (r.ok) { $("#msgText").value = ""; $("#msgCount").textContent = "0 / 150"; refresh(true); } else toast(r.erreur);
+      else { const c = (liaison.contactsMessagerie||[]).find(x => x.cle.startsWith(conv.slice(2))); if (!c) { toast("Contact introuvable dans le nœud companion."); return; } r = await api.envoyer_message(texte, null, c.cle, false);
+        if (r.confirmer) { demanderFlood({conv, cle: c.cle, texte}); return; } }
+      if (r.ok) { $("#msgText").value = ""; $("#msgCount").textContent = "0 / 150"; floodPend = null; $("#floodBox").hidden = true; refresh(true); } else toast(r.erreur);
       return;
     }
     if (e.target.id === "covForm") {

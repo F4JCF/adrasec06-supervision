@@ -131,6 +131,7 @@ class Poller:
             "analyseCompanion": self.analyse_companion if self.mc is not None else None,
             "couvertureEnCours": self.couverture_en_cours,
             "contactsMessagerie": self.contacts_messagerie() if self.mc is not None else [],
+            "inondation": self.etat_inondation(),
             "amisAttente": self.store.get_config("amis_attente", []) or [],
         }
 
@@ -784,6 +785,7 @@ class Poller:
             except Exception:  # noqa: BLE001
                 pass
         amis = set(self.store.get_config("amis", []) or [])
+        verrous = set(self.store.get_config("chemins_verrouilles", []) or [])
         types = {1: "compagnon", 2: "repeteur", 3: "salon", 4: "capteur"}
         out = []
         for c in self._contacts.values():
@@ -796,14 +798,23 @@ class Poller:
             out.append({"cle": cle, "nom": c.get("adv_name") or cle[:12], "type": types.get(c.get("type"), "autre"),
                         "annonce": c.get("last_advert") or 0, "modif": c.get("lastmod") or 0,
                         "lat": float(la) if pos else None, "lon": float(lo) if pos else None,
-                        "sauts": c.get("out_path_len"), "ami": cle in amis})
+                        "sauts": c.get("out_path_len"), "ami": cle in amis, "verrou": cle[:12] in verrous})
         return {"ok": True, "contacts": out}
 
     def contacts_messagerie(self) -> list[dict]:
         amis = set(self.store.get_config("amis", []) or [])
-        out = [{"cle": c.get("public_key", ""), "nom": c.get("adv_name", ""), "ami": c.get("public_key", "") in amis,
-                "annonce": c.get("last_advert") or 0}
-               for c in self._contacts.values() if c.get("type") == 1 and c.get("adv_name")]
+        verrous = set(self.store.get_config("chemins_verrouilles", []) or [])
+        regions = self.store.get_config("regions_contacts", {}) or {}
+        jour = self._floods_du_jour()
+        out = []
+        for c in self._contacts.values():
+            if c.get("type") != 1 or not c.get("adv_name"):
+                continue
+            cle = c.get("public_key", "")
+            ch = self._chemin(c)
+            out.append({"cle": cle, "nom": c.get("adv_name", ""), "ami": cle in amis, "annonce": c.get("last_advert") or 0,
+                        "chemin": ch.get("type"), "relais": ch.get("relais") or [], "verrou": cle[:12] in verrous,
+                        "region": regions.get(cle[:12], ""), "floodsJour": int(jour.get(cle[:12], 0))})
         out.sort(key=lambda x: (not x["ami"], x["nom"].lower()))
         return out
 
@@ -1159,7 +1170,7 @@ class Poller:
                                 "sauts": p.get("path_len") if p.get("path_len") not in (255, None) else None})
         self.alerte("message", nom, f"Message de {nom} : {p.get('text', '')[:120]}")
 
-    def envoyer_message(self, texte: str, canal=None, contact_cle=None) -> dict:
+    def envoyer_message(self, texte: str, canal=None, contact_cle=None, forcer=False) -> dict:
         if self.mc is None:
             return {"ok": False, "erreur": "Aucun nœud connecté."}
         texte = (texte or "").strip()
@@ -1168,16 +1179,25 @@ class Poller:
         if len(texte.encode("utf-8")) > 150:
             return {"ok": False, "erreur": "Message trop long (150 octets maximum)."}
         try:
-            return self._submit(self._envoyer(texte, canal, contact_cle), timeout=30)
+            return self._submit(self._envoyer(texte, canal, contact_cle, bool(forcer)), timeout=30)
         except Exception as e:  # noqa: BLE001
             return {"ok": False, "erreur": f"Envoi impossible : {e}"}
 
-    async def _envoyer(self, texte, canal, contact_cle):
+    async def _envoyer(self, texte, canal, contact_cle, forcer=False):
         moi = self.local_name or "moi"
         if contact_cle:
             c = next((c for c in self._contacts.values() if c.get("public_key") == contact_cle), None)
             if c is None:
                 return {"ok": False, "erreur": "Contact introuvable dans le nœud companion."}
+            n = c.get("out_path_len", -1)
+            inconnu = n is None or n < 0
+            reg = self.reglages_inondation()
+            if inconnu and reg["maxParMessage"] == 0:
+                return {"ok": False, "erreur": "Chemin inconnu et inondation désactivée dans les Paramètres : "
+                                               "définissez ou découvrez d'abord le chemin vers ce contact."}
+            if inconnu and reg["confirmer"] and not forcer:
+                return {"ok": False, "confirmer": True,
+                        "erreur": "Chemin inconnu : ce message partira en inondation sur tout le réseau."}
             mid = self.store.add_message({"sens": "emis", "contact": c.get("adv_name"), "contact_cle": contact_cle[:12],
                                           "auteur": moi, "texte": texte, "statut": "envoi…"})
             asyncio.ensure_future(self._suivre_accuse(mid, c, texte))
@@ -1205,16 +1225,119 @@ class Poller:
         return {"ok": ok} if ok else {"ok": False, "erreur": "Le nœud companion a refusé l'envoi."}
 
     async def _suivre_accuse(self, mid: int, contact: dict, texte: str):
-        """Envoi avec jusqu'à 3 essais (les derniers en inondation) et attente de l'accusé de réception."""
+        """Envoi privé avec accusé de réception, en limitant les inondations.
+
+        - chemin connu : 2 essais directs ; ensuite, si le chemin n'est pas verrouillé, il est effacé
+          et le message repart en inondation (au plus « maxParMessage » fois) ;
+        - chemin inconnu : au plus « maxParMessage » inondations ;
+        - chemin verrouillé : jamais effacé ni remplacé par une inondation.
+        """
         try:
-            ev = await self.mc.commands.send_msg_with_retry(contact, texte, max_attempts=3, flood_after=2,
-                                                            max_flood_attempts=2, min_timeout=8)
-            self.store.set_message_status(mid, "reçu ✓" if ev is not None else "non confirmé ✗")
+            res = await self._envoi_prive(contact, texte)
         except Exception as e:  # noqa: BLE001
             log.warning("accusé de réception : %s", e)
             self.store.set_message_status(mid, "non confirmé ✗")
+            return
+        statut = "reçu ✓" if res["acquitte"] else "non confirmé ✗"
+        if res["floods"]:
+            statut += f" · {res['floods']} inondation{'s' if res['floods'] > 1 else ''}"
+        if not res["acquitte"] and res.get("bloque"):
+            statut += " · chemin verrouillé, pas d'inondation"
+        self.store.set_message_status(mid, statut)
 
-    def renvoyer_message(self, mid: int) -> dict:
+    async def _envoi_prive(self, contact: dict, texte: str) -> dict:
+        mc = self.mc
+        cle = contact.get("public_key") or ""
+        nom = contact.get("adv_name") or cle[:12]
+        reg = self.reglages_inondation()
+        verrou = cle[:12] in set(self.store.get_config("chemins_verrouilles", []) or [])
+        region = (self.store.get_config("regions_contacts", {}) or {}).get(cle[:12], "")
+        ts = int(time.time())
+        sent, early = set(), set()
+        acked = asyncio.get_running_loop().create_future()
+
+        def on_ack(ev):
+            code = (ev.attributes or {}).get("code") if hasattr(ev, "attributes") else None
+            if code is None:
+                code = (ev.payload or {}).get("code")
+            if code in sent:
+                if not acked.done():
+                    acked.set_result(code)
+            else:
+                early.add(code)
+
+        sub = mc.dispatcher.subscribe(EventType.ACK, on_ack)
+        floods = directs = essais = erreurs = 0
+        bloque = efface = False
+        if region:
+            try:
+                if region == "*":
+                    await mc.commands.force_unscoped()
+                else:
+                    await mc.commands.set_flood_scope(region)
+            except Exception as e:  # noqa: BLE001
+                log.warning("région %s : %s", region, e)
+        try:
+            while not acked.done() and essais < 6 and erreurs < 3:
+                n = contact.get("out_path_len", -1)
+                connu = n is not None and n >= 0
+                if connu and directs >= 2:
+                    if verrou:
+                        bloque = True
+                        break
+                    try:
+                        await mc.commands.reset_path(contact)
+                    except Exception:  # noqa: BLE001
+                        break
+                    contact["out_path_len"], contact["out_path"] = -1, ""
+                    efface = True
+                    continue
+                if not connu and floods >= reg["maxParMessage"]:
+                    bloque = bloque or reg["maxParMessage"] == 0
+                    break
+                ev = await mc.commands.send_msg(contact, texte, ts, attempt=essais)
+                essais += 1
+                if ev is None or ev.type == EventType.ERROR:
+                    erreurs += 1
+                    continue
+                p = ev.payload or {}
+                if p.get("type") == 1:
+                    floods += 1
+                else:
+                    directs += 1
+                code = p.get("expected_ack")
+                code = code.hex() if isinstance(code, (bytes, bytearray)) else code
+                sent.add(code)
+                if code in early and not acked.done():
+                    acked.set_result(code)
+                attente = max(8.0, (p.get("suggested_timeout") or 0) / 1000 * 1.2)
+                await asyncio.wait([acked], timeout=attente)
+        finally:
+            try:
+                sub.unsubscribe()
+            except Exception:  # noqa: BLE001
+                pass
+            if region:
+                try:
+                    await mc.commands.set_flood_scope(None)
+                except Exception:  # noqa: BLE001
+                    pass
+        ok = acked.done()
+        if floods:
+            self._compter_floods(cle, nom, floods)
+        if efface:
+            self.store.add_journal(nom, "AUTO", f"Message privé vers {nom} : chemin mémorisé effacé après 2 essais "
+                                               f"directs sans accusé, nouvel essai en inondation.", auto=True)
+        if ok and (floods or efface):  # un chemin a pu être appris : relecture des contacts
+            try:
+                r = await mc.commands.get_contacts()
+                if r is not None and r.type != EventType.ERROR:
+                    self._contacts = dict(r.payload or {})
+            except Exception:  # noqa: BLE001
+                pass
+        return {"acquitte": ok, "floods": floods, "bloque": bloque and not ok}
+
+    def renvoyer_message(self, mid: int, forcer=False) -> dict:
         m = self.store.get_message(int(mid))
         if not m or m.get("sens") != "emis":
             return {"ok": False, "erreur": "Message introuvable."}
@@ -1224,8 +1347,10 @@ class Poller:
                   if (c.get("public_key") or "").startswith(m.get("contact_cle") or "~")), None)
         if c is None:
             return {"ok": False, "erreur": "Contact introuvable dans le nœud companion."}
-        self.store.delete_message(int(mid))
-        return self.envoyer_message(m["texte"], contact_cle=c["public_key"])
+        r = self.envoyer_message(m["texte"], contact_cle=c["public_key"], forcer=forcer)
+        if r.get("ok"):
+            self.store.delete_message(int(mid))
+        return r
 
     # ---------- commandes à distance ----------
     COMMANDES = {
@@ -1913,6 +2038,8 @@ class Poller:
             if ev is None or ev.type == EventType.ERROR:
                 return {"ok": False, "erreur": "Le nœud companion a refusé la réinitialisation."}
             c["out_path_len"], c["out_path"] = -1, ""
+            k = (c.get("public_key") or "")[:12]
+            self.store.set_config("chemins_verrouilles", [x for x in (self.store.get_config("chemins_verrouilles", []) or []) if x != k])
             texte = "inondation (le réseau cherchera la route)"
         else:
             hmode = 0
@@ -1941,6 +2068,145 @@ class Poller:
         self.store.add_journal(nom, operateur or "PC", f"Chemin vers {nom} défini manuellement : {texte}.")
         self.store._bump()
         return {"ok": True, "message": f"Chemin vers {nom} : {texte}", "chemin": self._chemin(c)}
+
+    # ---------- limitation des inondations (messages privés) ----------
+    def reglages_inondation(self) -> dict:
+        try:
+            mx = int(self.store.get_config("floods_max_message", 1))
+        except (TypeError, ValueError):
+            mx = 1
+        try:
+            seuil = int(self.store.get_config("floods_seuil_jour", 5))
+        except (TypeError, ValueError):
+            seuil = 5
+        return {"confirmer": bool(self.store.get_config("floods_confirmer", True)),
+                "maxParMessage": max(0, min(2, mx)), "seuilJour": max(0, seuil)}
+
+    def regler_inondation(self, o: dict) -> dict:
+        o = o or {}
+        if "confirmer" in o:
+            self.store.set_config("floods_confirmer", bool(o["confirmer"]))
+        if "maxParMessage" in o:
+            try:
+                self.store.set_config("floods_max_message", max(0, min(2, int(o["maxParMessage"]))))
+            except (TypeError, ValueError):
+                pass
+        if "seuilJour" in o:
+            try:
+                self.store.set_config("floods_seuil_jour", max(0, min(999, int(o["seuilJour"]))))
+            except (TypeError, ValueError):
+                pass
+        self.store._bump()
+        return {"ok": True, **self.etat_inondation()}
+
+    def _floods_du_jour(self) -> dict:
+        return (self.store.get_config("floods_jours", {}) or {}).get(time.strftime("%Y-%m-%d"), {}) or {}
+
+    def etat_inondation(self) -> dict:
+        jour = self._floods_du_jour()
+        return {**self.reglages_inondation(), "aujourdhui": int(sum(int(v) for v in jour.values()))}
+
+    def _compter_floods(self, cle: str, nom: str, n: int):
+        """Compte les inondations envoyées par contact et par jour (7 jours gardés) ; alerte au-delà du seuil."""
+        j = time.strftime("%Y-%m-%d")
+        tous = dict(self.store.get_config("floods_jours", {}) or {})
+        tous = {k: v for k, v in tous.items() if k >= time.strftime("%Y-%m-%d", time.localtime(time.time() - 7 * 86400))}
+        jour = dict(tous.get(j, {}) or {})
+        avant = int(jour.get(cle[:12], 0))
+        jour[cle[:12]] = avant + n
+        tous[j] = jour
+        self.store.set_config("floods_jours", tous)
+        self.store.add_journal(nom, "AUTO", f"Message privé vers {nom} envoyé en inondation ({n} fois) : "
+                                           f"{avant + n} inondation(s) vers ce contact aujourd'hui.", auto=True)
+        seuil = self.reglages_inondation()["seuilJour"]
+        if seuil and avant < seuil <= avant + n:
+            self.alerte("attention", nom, f"Déjà {avant + n} messages en inondation vers {nom} aujourd'hui : "
+                                          f"définissez ou découvrez le chemin vers ce contact (Messagerie, bouton Chemin).")
+
+    def verrouiller_chemin(self, cle: str, verrou: bool, operateur: str = "") -> dict:
+        c = self._contact_par_cle(cle)
+        if c is None:
+            return {"ok": False, "erreur": "Contact introuvable dans le nœud companion."}
+        k = (c.get("public_key") or "")[:12]
+        n = c.get("out_path_len", -1)
+        if verrou and (n is None or n < 0):
+            return {"ok": False, "erreur": "Aucun chemin à verrouiller : définissez ou découvrez d'abord le chemin."}
+        liste = [x for x in (self.store.get_config("chemins_verrouilles", []) or []) if x != k]
+        if verrou:
+            liste.append(k)
+        self.store.set_config("chemins_verrouilles", liste)
+        nom = c.get("adv_name") or k
+        self.store.add_journal(nom, operateur or "PC", f"Chemin vers {nom} {'verrouillé' if verrou else 'déverrouillé'}.")
+        self.store._bump()
+        return {"ok": True, "message": f"Chemin vers {nom} {'verrouillé : il ne sera plus effacé ni remplacé par une inondation' if verrou else 'déverrouillé'}"}
+
+    def regler_region_contact(self, cle: str, region: str = "") -> dict:
+        c = self._contact_par_cle(cle)
+        if c is None:
+            return {"ok": False, "erreur": "Contact introuvable dans le nœud companion."}
+        region = (region or "").strip()
+        if region and region != "*" and not region.startswith("#"):
+            region = "#" + region
+        k = (c.get("public_key") or "")[:12]
+        rc = dict(self.store.get_config("regions_contacts", {}) or {})
+        if region:
+            rc[k] = region
+        else:
+            rc.pop(k, None)
+        self.store.set_config("regions_contacts", rc)
+        self.store._bump()
+        return {"ok": True}
+
+    def decouvrir_chemin(self, cle: str, operateur: str = "") -> dict:
+        if self.mc is None:
+            return {"ok": False, "erreur": "Aucun nœud connecté."}
+        try:
+            return self._submit(self._decouvrir_chemin(cle, operateur), timeout=90)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "erreur": f"Découverte impossible : {e}"}
+
+    async def _decouvrir_chemin(self, cle: str, operateur: str) -> dict:
+        """Une seule inondation de découverte : le contact renvoie la route, mémorisée par le nœud companion."""
+        c = self._contact_par_cle(cle)
+        if c is None:
+            return {"ok": False, "erreur": "Contact introuvable dans le nœud companion."}
+        nom = c.get("adv_name") or cle[:12]
+        region = (self.store.get_config("regions_contacts", {}) or {}).get((c.get("public_key") or "")[:12], "")
+        if region:
+            try:
+                if region == "*":
+                    await self.mc.commands.force_unscoped()
+                else:
+                    await self.mc.commands.set_flood_scope(region)
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            ev = await self.mc.commands.send_path_discovery_sync(c, min_timeout=20)
+        finally:
+            if region:
+                try:
+                    await self.mc.commands.set_flood_scope(None)
+                except Exception:  # noqa: BLE001
+                    pass
+        self._compter_floods(c.get("public_key") or "", nom, 1)
+        if ev is None or ev.type == EventType.ERROR:
+            return {"ok": False, "erreur": f"{nom} n'a pas répondu à la découverte (hors de portée, éteint, "
+                                           f"ou son nœud ne répond pas à cette demande). Essayez plus tard ou définissez le chemin à la main."}
+        try:
+            r = await self.mc.commands.get_contacts()
+            if r is not None and r.type != EventType.ERROR:
+                self._contacts = dict(r.payload or {})
+        except Exception:  # noqa: BLE001
+            pass
+        c2 = self._contact_par_cle(cle) or c
+        ch = self._chemin(c2)
+        texte = ("direct, sans relais" if ch["type"] == "direct" else " → ".join(ch["relais"]) if ch["type"] == "relais"
+                 else "toujours inconnu")
+        self.store.add_journal(nom, operateur or "PC", f"Découverte du chemin vers {nom} : {texte}.")
+        self.store._bump()
+        if ch["type"] == "inondation":
+            return {"ok": False, "erreur": f"{nom} a répondu mais aucun chemin n'a été mémorisé. Définissez-le à la main."}
+        return {"ok": True, "message": f"Chemin vers {nom} : {texte}", "chemin": ch}
 
     # ---------- régions (portée des messages en inondation) ----------
     def regions(self, lire_repeteurs: bool = False) -> dict:

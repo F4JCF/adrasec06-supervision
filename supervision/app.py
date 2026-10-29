@@ -17,7 +17,7 @@ from . import aprs, courriel, firmware, rapports, resilience, systeme, taches, v
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.23.0"
+VERSION = "1.24.0"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -351,8 +351,20 @@ class Api:
     def definir_chemin(self, cle, mode, relais=None):
         return self._poller.definir_chemin(cle, mode, relais or [], self._store.get_config("operateur", ""))
 
-    def renvoyer_message(self, mid):
-        return self._poller.renvoyer_message(int(mid))
+    def renvoyer_message(self, mid, forcer=False):
+        return self._poller.renvoyer_message(int(mid), bool(forcer))
+
+    def verrouiller_chemin(self, cle, verrou=True):
+        return self._poller.verrouiller_chemin(cle, bool(verrou), self._store.get_config("operateur", ""))
+
+    def decouvrir_chemin(self, cle):
+        return self._poller.decouvrir_chemin(cle, self._store.get_config("operateur", ""))
+
+    def regler_region_contact(self, cle, region=""):
+        return self._poller.regler_region_contact(cle, region)
+
+    def regler_inondation(self, options):
+        return self._poller.regler_inondation(options)
 
     def _messages_avec_echos(self):
         """Pour nos messages de canal : répéteurs qui l'ont relayé (entendus par le nœud companion)."""
@@ -541,8 +553,8 @@ class Api:
         return self._store.get_config("dernier_port", "")
 
     # ----- messagerie -----
-    def envoyer_message(self, texte, canal=None, contact=None):
-        return self._poller.envoyer_message(texte, canal, contact)
+    def envoyer_message(self, texte, canal=None, contact=None, forcer=False):
+        return self._poller.envoyer_message(texte, canal, contact, bool(forcer))
 
     # ----- commandes à distance -----
     LIBELLES = {"advert": "Envoyer un advert", "reboot": "Redémarrer", "poweroff": "Éteindre",

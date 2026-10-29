@@ -161,6 +161,16 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 - **Companions amis** : bouton « + Ami » (Messagerie → Messages directs) pour ajouter un companion à partir de sa carte de contact « meshcore://… » ou de sa clé publique complète + son nom ; bouton « ☆ Ajouter aux amis / ★ Ami » dans chaque conversation directe ; les amis sont en tête de liste et repérés en doré sur la carte.
 - **Découvrir les voisins** dans la fiche d'un répéteur (commande discover.neighbors), console distante, étalonnage de la batterie du companion.
 
+### Nouveautés de la version 1.24 — chemins des messages privés et inondations
+
+- Messagerie : pastille de chemin pour chaque contact (vert : direct, bleu : via relais, orange : chemin inconnu), dans la liste des conversations, le fil privé et la liste des contacts.
+- Boutons « Chemin… », « Découvrir le chemin » (une seule inondation de découverte, puis la route est mémorisée) et « Verrouiller » directement dans le fil privé et la liste des contacts.
+- Chemin verrouillé : il n'est plus jamais effacé ni remplacé par une inondation en cas d'accusé manquant ; le message est marqué « non confirmé ».
+- Confirmation avant d'envoyer un message privé en inondation, avec la possibilité de découvrir ou définir le chemin d'abord.
+- Réglages « Messages privés : chemins et inondations » : 0, 1 (par défaut) ou 2 inondations au plus par message ; seuil d'alerte par contact et par jour.
+- Compteur des inondations par contact (journal, fil privé, statut du message) et alerte au-delà du seuil.
+- Région (portée) réglable contact par contact pour les messages privés.
+
 ### Nouveautés de la version 1.23
 
 - Bouton « Mise à jour du companion » : version installée et dernière version MeshCore « companion », sauvegarde des contacts et canaux, téléchargement du firmware .uf2 de la carte (Wio Tracker L1 / L1 Pro), installation par copie sur le disque « TRACKER L1 » (double appui sur RST), lien vers le Web Flasher.
