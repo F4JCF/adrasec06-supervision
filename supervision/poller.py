@@ -49,6 +49,14 @@ def list_serial_ports() -> list[dict]:
     return ports
 
 
+AVANCE_TOLEREE = 600  # secondes : une horloge de répéteur en avance de moins de 10 min n'est pas corrigée
+
+
+def _recul_refuse(reponse) -> bool:
+    """Le firmware MeshCore répond « ERR: clock cannot go backwards » s'il faudrait reculer son horloge."""
+    return "backwards" in (reponse or "").lower()
+
+
 class Poller:
     def __init__(self, store: Store, alerte=None):
         self.store = store
@@ -514,7 +522,8 @@ class Poller:
                         self._confirmer_ota(node, fields["firmware"], "AUTO")
                         fields["otaDebut"] = ""
             h = self._horloge(await self._cli(contact, "clock"))
-            if h and abs(h.get("horlogeEcart", 0)) >= 120 and self.store.get_config("horloge_auto", True):
+            if (h and abs(h.get("horlogeEcart", 0)) >= 120 and not 0 < h.get("horlogeEcart", 0) < AVANCE_TOLEREE
+                    and self.store.get_config("horloge_auto", True)):
                 ecart = h["horlogeEcart"]
                 try:
                     await mc.commands.set_time(int(time.time()))
@@ -524,8 +533,12 @@ class Poller:
                 h2 = self._horloge(await self._cli(contact, "clock"))
                 bon = bool(h2) and abs(h2.get("horlogeEcart", 999)) < 120
                 sens = "en avance" if ecart > 0 else "en retard"
-                texte = (f"Heure remise automatiquement ({sens} de {abs(ecart) // 60} min)"
-                         + (" : corrigée." if bon else " : la correction n'a pas pu être vérifiée."))
+                if not bon and _recul_refuse(rep_sync):
+                    texte = (f"Horloge en avance de {ecart // 60} min : le firmware MeshCore refuse de la reculer. "
+                             f"Redémarrez le répéteur pour la remettre à l'heure.")
+                else:
+                    texte = (f"Heure remise automatiquement ({sens} de {abs(ecart) // 60} min)"
+                             + (" : corrigée." if bon else " : la correction n'a pas pu être vérifiée."))
                 self.store.add_journal(name, "AUTO", texte, auto=True)
                 fields["derniereRequete"] = {"libelle": "Remise à l'heure automatique", "date": now_iso(), "ok": bon,
                                              "resultat": (rep_sync or "").strip()[:160] or ("corrigée" if bon else "non vérifiée"),
@@ -1657,8 +1670,24 @@ class Poller:
             self.store.patch_node(node["id"], {"otaDebut": now_iso(), "otaFirmwareAvant": node.get("firmware", ""),
                                                "otaReponse": (reponse or "").strip()})
         if cmd == "clock sync" and reponse:
-            reponse_h = await self._cli(contact, "clock")
-            self.store.patch_node(node["id"], self._horloge(reponse_h))
+            h = self._horloge(await self._cli(contact, "clock"))
+            self.store.patch_node(node["id"], h)
+            if _recul_refuse(reponse):
+                avance = int((h or {}).get("horlogeEcart", 0) or 0)
+                if 0 <= avance < AVANCE_TOLEREE:
+                    etat = "déjà à l'heure (à la minute près)" if avance < 60 else f"en avance de {avance // 60} min"
+                    reponse = (f"Horloge {etat} : le firmware MeshCore refuse de reculer une horloge. "
+                               f"Un écart de quelques minutes ne gêne pas le réseau : inutile de redémarrer le répéteur.")
+                    texte = f"Commande « clock sync » envoyée à {name} — {reponse}"
+                    self.store.add_journal(name, operateur or "AUTO", texte)
+                    self._log(texte)
+                    return {"ok": True, "reponse": reponse}
+                reponse = (f"Horloge en avance de {avance // 60} min : le firmware MeshCore refuse de la reculer. "
+                           f"Redémarrez le répéteur, puis relancez la remise à l'heure.")
+                texte = f"Commande « clock sync » envoyée à {name} — {reponse}"
+                self.store.add_journal(name, operateur or "AUTO", texte)
+                self._log(texte)
+                return {"ok": True, "reponse": reponse}
         if cmd == "clock":
             self.store.patch_node(node["id"], self._horloge(reponse))
         if cmd == "ver" and reponse:

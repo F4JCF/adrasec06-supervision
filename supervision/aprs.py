@@ -30,6 +30,12 @@ def base_call(call: str) -> str:
     return (call or "").upper().split("-")[0].strip()
 
 
+def est_indicatif(call: str) -> bool:
+    """Indicatif radioamateur plausible (F4JCF, HB9ABC…) : l'APRS-IS refuse les connexions « NOCALL »."""
+    import re
+    return bool(re.fullmatch(r"(?=.*\d)[A-Z0-9]{3,7}", call or ""))
+
+
 def indicatifs(texte) -> list[str]:
     if isinstance(texte, list):
         texte = " ".join(texte)
@@ -116,7 +122,8 @@ class AprsIS:
         while not stop.is_set():
             r = self.reglages()
             filtre = construire_filtre(r["indicatifs"], r["rayon"])
-            login = base_call(self.store.get_config("operateur", "") or "") or "NOCALL"
+            login = next((c for c in [base_call(self.store.get_config("operateur", "") or "")]
+                          + [base_call(x) for x in r["indicatifs"]] if est_indicatif(c)), "NOCALL")
             try:
                 self.etat["message"] = f"Connexion à {SERVEUR[0]}…"
                 self.store._bump()

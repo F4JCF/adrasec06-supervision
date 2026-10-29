@@ -161,6 +161,11 @@ Pour chaque répéteur ADRASEC (hors « Prévu ») présent dans les contacts du
 - **Companions amis** : bouton « + Ami » (Messagerie → Messages directs) pour ajouter un companion à partir de sa carte de contact « meshcore://… » ou de sa clé publique complète + son nom ; bouton « ☆ Ajouter aux amis / ★ Ami » dans chaque conversation directe ; les amis sont en tête de liste et repérés en doré sur la carte.
 - **Découvrir les voisins** dans la fiche d'un répéteur (commande discover.neighbors), console distante, étalonnage de la batterie du companion.
 
+### Nouveautés de la version 1.24.1
+
+- Remise à l'heure des répéteurs : une horloge en avance de moins de 10 minutes n'est plus signalée comme une erreur (le firmware MeshCore refuse de reculer une horloge ; inutile de redémarrer le répéteur). Au-delà, le logiciel indique qu'un redémarrage est nécessaire.
+- APRS : si le champ opérateur ne contient pas d'indicatif, la connexion utilise le premier indicatif de la liste APRS au lieu de « NOCALL » (refusé par les serveurs APRS-IS).
+
 ### Nouveautés de la version 1.24 — chemins des messages privés et inondations
 
 - Messagerie : pastille de chemin pour chaque contact (vert : direct, bleu : via relais, orange : chemin inconnu), dans la liste des conversations, le fil privé et la liste des contacts.
