@@ -17,7 +17,7 @@ from . import aprs, courriel, firmware, rapports, resilience, systeme, taches, v
 from .poller import Poller, list_serial_ports
 from .store import Store, data_dir, now_iso, resource_path, slug
 
-VERSION = "1.26.5"
+VERSION = "1.26.6"
 
 logging.basicConfig(
     filename=str(data_dir() / "supervision.log"), level=logging.INFO,
@@ -550,10 +550,22 @@ class Api:
                 doc["posManuelle"] = bool(str(doc.get("lat") or "").strip())
         doc.pop("_pos", None)
         doc.pop("aMotDePasse", None)
+        if "cleComplete" in doc:
+            cle = re.sub(r"[^0-9a-fA-F]", "", str(doc.get("cleComplete") or "")).lower()
+            if cle and len(cle) != 64:
+                return {"ok": False, "erreur": f"La clé publique doit faire 64 caractères hexadécimaux (vous en avez saisi {len(cle)})."}
+            doc["cleComplete"] = cle
+            if cle:
+                doc["cle"] = cle[:12]
         saved = self._store.save_node(doc)
         if mot_de_passe is not None:
             self._store.set_password(saved["id"], mot_de_passe)
-        return {"ok": True, "id": saved["id"]}
+        r = {"ok": True, "id": saved["id"]}
+        if saved.get("cleComplete"):
+            a = self._poller.ajouter_cle_noeud(saved)
+            if a.get("message"):
+                r["message"] = a["message"]
+        return r
 
     def utiliser_position(self, node_id, source="gps"):
         """Place le nœud sur la carte à la position GPS (télémétrie) ou annoncée, et reprend le suivi automatique."""

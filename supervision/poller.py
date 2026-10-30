@@ -486,7 +486,35 @@ class Poller:
         for c in self._contacts.values():
             if (c.get("adv_name") or "").strip().lower() == low:
                 return c
+        # nom différent dans le nœud companion : on cherche par la clé publique saisie dans la fiche
+        n = self.store.find_by_name(name) if name else None
+        cle = ((n or {}).get("cleComplete") or "").lower()
+        if cle:
+            for c in self._contacts.values():
+                if (c.get("public_key") or "").lower() == cle:
+                    return c
         return None
+
+    def ajouter_cle_noeud(self, node: dict) -> dict:
+        """Clé publique saisie dans la fiche : ajoute le nœud aux contacts du companion s'il n'y est pas encore."""
+        cle = (node.get("cleComplete") or "").lower()
+        if self.mc is None or len(cle) != 64:
+            return {"ok": True}
+        if any((c.get("public_key") or "").lower() == cle for c in self._contacts.values()):
+            return {"ok": True}
+        typ = {"repeteur": 2, "room": 3, "companion": 1, "capteur": 4}.get(node.get("role"), 2)
+        a = {"cle": cle, "nom": node.get("nom", ""), "type": typ, "ts": time.time()}
+        try:
+            la, lo = float(node.get("lat")), float(node.get("lon"))
+            a.update(lat=la, lon=lo)
+        except (TypeError, ValueError):
+            pass
+        try:
+            r = self._submit(self._ajouter_annonce(a, False), timeout=60)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "message": f"Clé enregistrée, mais ajout aux contacts du companion impossible : {e}"}
+        return {"ok": r.get("ok"), "message": (f"{node.get('nom')} ajouté aux contacts du nœud companion grâce à sa clé."
+                                                if r.get("ok") else f"Clé enregistrée ; ajout aux contacts refusé : {r.get('erreur')}")}
 
     def _name_for_prefix(self, prefix: str) -> str:
         prefix = (prefix or "").lower()

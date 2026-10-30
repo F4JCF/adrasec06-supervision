@@ -2293,6 +2293,7 @@ const HOT_MIN = 360; // 6 heures
           <label>Altitude (m)<input id="f-alt" inputmode="numeric" value="${v("alt")}"></label>
           <label>Matériel<input id="f-materiel" value="${v("materiel")}" placeholder="Heltec V3"></label>
           <label class="full">Antenne<input id="f-antenne" value="${v("antenne")}"></label>
+          <label class="full">Clé publique (64 caractères — lue automatiquement à la première annonce entendue)<input id="f-cle" class="mono" value="${v("cleComplete")}" maxlength="80" autocomplete="off" spellcheck="false" placeholder="ex. 210257fe3dceb60d587a… (application MeshCore : le nœud → Partager, ou carte du réseau)"></label>
           <label>TX (dBm)<input id="f-tx" inputmode="numeric" value="${v("tx")}"></label>
           <label>Bruit (dBm)<input id="f-bruit" inputmode="numeric" value="${v("bruit")}"></label>
           <label>Erreurs RX<input id="f-erreursRx" inputmode="numeric" value="${v("erreursRx")}"></label>
@@ -3245,7 +3246,7 @@ const HOT_MIN = 360; // 6 heures
         return m ? {nom:m[1].trim(), snr:+m[2].replace("−","-").replace(",",".")} : null;
       }).filter(Boolean);
       const doc = {...(editing.id ? editing : {}), id: editing.id || null, nom, proprio:g("proprio"), proprietaire:($("#f-proprietaire-sel").value === "__autre" ? g("proprietaire") : $("#f-proprietaire-sel").value), statut:g("statut"), role:g("role"), firmware:g("firmware"), site:g("site"), commune:g("commune"),
-        lat:numOr(g("lat")), lon:numOr(g("lon")), alt:numOr(g("alt")), materiel:g("materiel"), antenne:g("antenne"),
+        lat:numOr(g("lat")), lon:numOr(g("lon")), alt:numOr(g("alt")), materiel:g("materiel"), antenne:g("antenne"), cleComplete:g("cle"),
         tx:numOr(g("tx")), bruit:numOr(g("bruit")), erreursRx:numOr(g("erreursRx")), voisins, aFaire:g("aFaire"), notes:g("notes"),
         dateInstallation:g("dateInstallation"), dateBatterie:g("dateBatterie"), derniereVisite:g("derniereVisite"), prochaineVisite:g("prochaineVisite"),
         contactAcces:g("contactAcces"), notesMaintenance:g("notesMaintenance")};
@@ -3254,6 +3255,7 @@ const HOT_MIN = 360; // 6 heures
       const clear = document.getElementById("f-pwdClear")?.checked;
       const r = await api.enregistrer_noeud(doc, clear ? "" : (pwd ? pwd : null));
       if (!r.ok) { $("#formMsg").textContent = r.erreur; $("#formMsg").className="msg err"; return; }
+      if (r.message) toast(r.message);
       sel = r.id; editing = null; refresh(true);
     }
     if (e.target.id === "compose") {
